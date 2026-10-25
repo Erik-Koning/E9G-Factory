@@ -52,3 +52,7 @@ export function roleFor(agentType: string | undefined): string {
   if (!own) return roleOfAgent(agentType);
   return agentType === `e9g:${own}` ? own : `subagent:${agentType}`;
 }
+
+// In setup the session is the setup agent's (agent type e9g:setup, or none); its own subagents write nothing.
+export const setupRole = (agentType: string | undefined): string =>
+  agentType === undefined || agentType === "" || agentType === "e9g:setup" ? "setup" : `subagent:${agentType}`;

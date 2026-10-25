@@ -368,9 +368,11 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
 
 // One T3 provider instance per role; its id carries the team and the role.
 export const instanceId = (team: Pick<Team, "name">, role: string): string => `e9g-${team.name}-${role}`;
+// Own properties only: an instance named "constructor" is no role.
 export function roleForInstance(team: Team, id: string): string | null {
   for (const role of Object.keys(team.roles)) if (instanceId(team, role) === id) return role;
-  return team.legacyInstances[id] ?? null;
+  const legacy = Object.hasOwn(team.legacyInstances, id) ? team.legacyInstances[id] : undefined;
+  return typeof legacy === "string" && Object.hasOwn(team.roles, legacy) ? legacy : null;
 }
 
 // Claude Code reports a plugin agent as "e9g:<role>".

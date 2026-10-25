@@ -3,7 +3,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|mcp__.*",
+        "matcher": "Bash|Monitor|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|mcp__.*",
         "hooks": [{ "type": "command", "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.ts\"" }]
       }
     ],

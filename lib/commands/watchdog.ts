@@ -331,7 +331,12 @@ function install(): void {
   );
   const domain = `gui/${process.getuid?.()}`;
   spawnSync("launchctl", ["bootout", `${domain}/${LABEL}`], { stdio: "ignore" });
-  const loaded = spawnSync("launchctl", ["bootstrap", domain, PLIST], { encoding: "utf8" });
+  // Right after a bootout, launchd can still be tearing the job down and refuse it ("5: Input/output error").
+  let loaded = spawnSync("launchctl", ["bootstrap", domain, PLIST], { encoding: "utf8" });
+  for (let tries = 0; loaded.status !== 0 && tries < 5; tries++) {
+    spawnSync("sleep", ["1"]);
+    loaded = spawnSync("launchctl", ["bootstrap", domain, PLIST], { encoding: "utf8" });
+  }
   if (loaded.status !== 0) die(`launchctl couldn't load ${PLIST}: ${loaded.stderr.trim()}`);
   console.info(`e9g: watchdog installed (${LABEL}, every 5 minutes, runs ${entry})`);
 }

@@ -96,7 +96,8 @@ export function selfInstall(argv: string[]): number {
   const files = sourceFiles().filter((file) => existsSync(join(FACTORY_ROOT, file)));
   const contentHash = hash(...files.map((file) => `${file}\0${readFileSync(join(FACTORY_ROOT, file), "utf8")}`));
   const built = readJson<Build>(join(dest, ".build.json"));
-  if (built && built.hash === contentHash) {
+  // The same files: nothing to copy, unless --force asks for the release to be made again (to record its commit).
+  if (built && built.hash === contentHash && !options["force"]) {
     console.info(`e9g: ${version} is already installed (${dest})`);
   } else {
     if (built && !options["force"])

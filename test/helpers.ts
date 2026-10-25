@@ -174,6 +174,27 @@ export const tool = (
 ): GuardCase => [home, role, name, input, expected, options];
 export const holds = async (cases: GuardCase[]): Promise<void> => assert.deepEqual(await guardAll(cases), []);
 
+// A stand-in for macOS's security tool, first on PATH for this process and the e9g it starts: one generic password
+// per service in a file, and every call's arguments in calls.
+export function fakeKeychain(): string {
+  const dir = tmp("e9g-security-");
+  write(dir, {
+    security: `#!/bin/sh
+echo "$@" >> "${dir}/calls"
+service() { while [ $# -gt 0 ]; do [ "$1" = "-s" ] && echo "$2" && return; shift; done; }
+case "$1" in
+  -i) line=$(cat); s=$(service $line); printf '%s' "$line" | sed -E 's/.* -w ([^ ]+)$/\\1/' | tr -d '\\n' > "${dir}/$s" ;;
+  find-generic-password) s=$(service "$@"); [ -f "${dir}/$s" ] || exit 44; cat "${dir}/$s"; echo ;;
+  delete-generic-password) s=$(service "$@"); [ -f "${dir}/$s" ] || exit 44; rm "${dir}/$s" ;;
+  *) exit 1 ;;
+esac
+`,
+  });
+  chmodSync(join(dir, "security"), 0o755);
+  process.env.PATH = `${dir}:${process.env.PATH}`;
+  return dir;
+}
+
 export const E9G = join(ROOT, "bin", "e9g.ts");
 export function e9g(
   args: string[],

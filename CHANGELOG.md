@@ -12,6 +12,12 @@
   emails are labelled like the planner's Gmail, `[E9G-Planner] [<team title>] …`; the watchdog's own alerts are
   `[<team title>] …`. `e9g doctor` shows the connection. The guard refuses agents `connect` and the Keychain
   commands.
+- **WhatsApp, one way.** `e9g connect whatsapp` sends the same alerts and outbox from the operator's own WhatsApp
+  Business number on Meta's Cloud API. It adds a utility template, `e9g_update`, to the account (a business may
+  message someone first only with an approved one), keeps the access token in the Keychain, and sends a test once
+  Meta approves the template. A planner's messages are about `E9G-Planner · <team title>` (the template's first
+  parameter, so the approved template stays as it is). The `messages` policy now also refuses the Graph API's
+  messages from the shell.
 
 ## 0.3.0: TypeScript, and a second audit
 

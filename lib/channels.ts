@@ -6,6 +6,7 @@ import { emailSettings, hasKey, mailer } from "./email.ts";
 import { PLANNER_TAG } from "./labels.ts";
 import { E9G_HOME } from "./paths.ts";
 import { readJson, writeJson } from "./util.ts";
+import { hasToken, whatsappChannel, whatsappSettings } from "./whatsapp.ts";
 
 // A reply for one team's planner, which its channel has checked came from the operator.
 export interface Reply {
@@ -33,7 +34,7 @@ export interface Channel {
   replies?(seen: Set<string>): Promise<Replies>;
 }
 
-export const channels = (): Channel[] => [mailer()].filter((channel) => channel !== null);
+export const channels = (): Channel[] => [mailer(), whatsappChannel()].filter((channel) => channel !== null);
 
 // How each channel's last send went, written by the watchdog: the planner is told a channel works only while it does.
 const SENDS = join(E9G_HOME, "channel-sends.json");
@@ -67,6 +68,18 @@ export function reachSummary(): { working: string[]; failing: string[] } {
     const problem = hasKey() ? failingSend("email") : "its key isn't in the Keychain";
     if (problem) summary.failing.push(`email (${problem})`);
     else summary.working.push(`email to ${email.to}${email.replyDomain ? ", with replies" : ""}`);
+  }
+  let whatsapp: ReturnType<typeof whatsappSettings> = null;
+  try {
+    whatsapp = whatsappSettings();
+  } catch {
+    summary.failing.push("WhatsApp (~/.e9g/whatsapp.json doesn't read)");
+  }
+  // No phone number: the planner's context reaches its log and its tickets.
+  if (whatsapp) {
+    const problem = hasToken() ? failingSend("whatsapp") : "its token isn't in the Keychain";
+    if (problem) summary.failing.push(`WhatsApp (${problem})`);
+    else summary.working.push("WhatsApp, one way");
   }
   return summary;
 }

@@ -3,11 +3,13 @@
 //
 //   e9g connect                                   what's connected
 //   e9g connect email [--to <address>] [--from <sender>] [--replies <domain> | --no-replies]
-//   e9g connect email --test                      send another test email
-//   e9g disconnect email
+//   e9g connect whatsapp [--phone-number-id <id>] [--account-id <id>] [--to <number>]
+//   e9g connect email|whatsapp --test             send another test message
+//   e9g disconnect email|whatsapp
 //
-// Email goes through Resend with the operator's own API key (lib/email.ts keeps it in the Keychain). The key is typed
-// at a prompt or piped in, and kept only after a test email goes through.
+// Email goes through Resend with the operator's own API key (lib/email.ts); WhatsApp through their WhatsApp Business
+// number on Meta's Cloud API (lib/whatsapp.ts). Each key or token is typed at a prompt or piped in, goes in the
+// Keychain, and is kept only after a test message goes through (or, for WhatsApp, while Meta reviews the template).
 import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { createInterface } from "node:readline/promises";
@@ -28,6 +30,19 @@ import { recordSend } from "../channels.ts";
 import { readRegistry, teamFile } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
 import { die, localTime, parseArgs, readJson, text } from "../util.ts";
+import {
+  businessNumber,
+  ensureTemplate,
+  forgetWhatsApp,
+  readToken,
+  saveWhatsAppSettings,
+  sendWhatsApp,
+  storeToken,
+  TEMPLATE,
+  WHATSAPP_FILE,
+  type WhatsAppSettings,
+  whatsappSettings,
+} from "../whatsapp.ts";
 import { teamNames } from "./team.ts";
 
 const TEST_SUBJECT = "[E9G Factory] Email is connected";
@@ -181,17 +196,135 @@ Until you verify a domain at Resend, it sends only to the address you signed up 
   return 0;
 }
 
+const WHATSAPP_TEST = [
+  "[E9G Factory] WhatsApp is connected",
+  `This is E9G Factory on ${hostname()}. The watchdog messages you here when a team needs you.`,
+] as const;
+
+function whatsappStatus(): void {
+  const settings = whatsappSettings();
+  if (!settings) console.info("whatsapp  not connected: e9g connect whatsapp");
+  else if (!readToken()) console.info(`whatsapp  +${settings.to}, but its token isn't in the Keychain any more: e9g connect whatsapp`);
+  else
+    console.info(
+      `whatsapp  to +${settings.to}, from number ${settings.phoneNumberId}, one way, since ${localTime(new Date(settings.connectedAt))} (e9g connect whatsapp --test sends one)`
+    );
+}
+
+// The test message, once the template is approved; otherwise what Meta says about it.
+async function sendWhatsAppTest(settings: WhatsAppSettings, token: string): Promise<number> {
+  const template = await ensureTemplate(settings.accountId, token);
+  if ("problem" in template) {
+    console.error(`e9g: couldn't read the ${TEMPLATE} template: ${template.problem}`);
+    return 1;
+  }
+  if (template.status !== "APPROVED") {
+    console.info(
+      `e9g: the ${TEMPLATE} template is ${template.status.toLowerCase()}${template.reason ? ` (${template.reason})` : ""}, so nothing can be sent yet. Meta usually reviews it within minutes.`
+    );
+    return template.status === "REJECTED" ? 1 : 0;
+  }
+  const problem = await sendWhatsApp(settings, token, ...WHATSAPP_TEST);
+  if (problem) {
+    console.error(`e9g: the test message didn't go: ${problem}`);
+    return 1;
+  }
+  recordSend("whatsapp", null);
+  console.info(`e9g: Meta accepted a test message to +${settings.to}. If it doesn't arrive in a minute, check the number.`);
+  return 0;
+}
+
+async function connectWhatsApp(argv: string[]): Promise<number> {
+  const { options } = parseArgs(argv, { booleans: ["test"] });
+  const previous = whatsappSettings();
+  if (options["test"]) {
+    const token = readToken();
+    if (!previous || !token) die("WhatsApp isn't connected: e9g connect whatsapp");
+    return sendWhatsAppTest(previous, token);
+  }
+  const interactive = Boolean(process.stdin.isTTY);
+  if (interactive)
+    console.info(`E9G Factory messages you from your WhatsApp Business number, through Meta's Cloud API. You need:
+  - the number's phone number ID and its WhatsApp Business Account ID, from your Meta app's WhatsApp > API Setup;
+  - a permanent access token: a system user's, with whatsapp_business_messaging and whatsapp_business_management
+    (Meta Business Settings > Users > System users).
+WhatsApp lets a business message you first only with a template Meta has approved, so this adds one, ${TEMPLATE},
+to the account. Replies to it don't reach your teams.
+`);
+  const field = async (option: string, question: string, fallback?: string): Promise<string | undefined> =>
+    text(options[option]) ?? (interactive ? (await ask(`${question}${fallback ? ` [${fallback}]` : ""}: `)) || fallback : fallback);
+  const phoneNumberId = await field("phone-number-id", "Phone number ID", previous?.phoneNumberId);
+  if (!phoneNumberId || !/^\d+$/.test(phoneNumberId)) die("--phone-number-id: the business number's id from WhatsApp > API Setup (digits)");
+  const accountId = await field("account-id", "WhatsApp Business Account ID", previous?.accountId);
+  if (!accountId || !/^\d+$/.test(accountId)) die("--account-id: the WhatsApp Business Account ID from WhatsApp > API Setup (digits)");
+  const to = (await field("to", "Your own WhatsApp number, with its country code", previous ? `+${previous.to}` : undefined))?.replace(/[\s()+.-]/g, "");
+  if (!to || !/^\d{8,15}$/.test(to)) die("--to: your WhatsApp number with its country code, like +1 604 555 0123");
+
+  const token = interactive ? await askHidden("Access token (it isn't shown): ") : readFileSync(0, "utf8").trim();
+  if (!/^[\w.-]{20,}$/.test(token)) die("that doesn't look like a Meta access token");
+  const number = await businessNumber(phoneNumberId, token);
+  if ("problem" in number) {
+    console.error(`e9g: couldn't reach the business number ${phoneNumberId} with that token: ${number.problem}. Nothing was saved.`);
+    return 1;
+  }
+  const template = await ensureTemplate(accountId, token);
+  if ("problem" in template) {
+    console.error(`e9g: couldn't find or add the ${TEMPLATE} template on account ${accountId}: ${template.problem}.`);
+    console.error("  The token needs whatsapp_business_management for that account. Nothing was saved.");
+    return 1;
+  }
+  if (template.status === "REJECTED") {
+    console.error(
+      `e9g: Meta rejected the ${TEMPLATE} template${template.reason ? ` (${template.reason})` : ""}; see WhatsApp Manager. Nothing was saved.`
+    );
+    return 1;
+  }
+  // Reconnecting the same number keeps its start, so drafts from before aren't dropped.
+  const connectedAt = previous?.to === to ? previous.connectedAt : new Date().toISOString();
+  const settings: WhatsAppSettings = { provider: "meta", phoneNumberId, accountId, to, connectedAt };
+  if (template.status === "APPROVED") {
+    const problem = await sendWhatsApp(settings, token, ...WHATSAPP_TEST);
+    if (problem) {
+      console.error(`e9g: the test message didn't go: ${problem}. Nothing was saved.`);
+      return 1;
+    }
+  }
+  if (!storeToken(token)) die("the token couldn't be saved in the Keychain (security add-generic-password failed)", 1);
+  saveWhatsAppSettings(settings);
+  recordSend("whatsapp", null);
+  console.info(
+    template.status === "APPROVED"
+      ? `e9g: Meta accepted a test message from ${number.name} to +${to}. If it doesn't arrive in a minute, check the number.`
+      : `e9g: connected to ${number.name}. The ${TEMPLATE} template is waiting for Meta's review, usually minutes; until then nothing can be sent. e9g connect whatsapp --test sends one once it's approved.`
+  );
+  console.info(`  The watchdog now sends the planner's outbox and its alerts there. The token is in the Keychain, the rest in ${WHATSAPP_FILE}.`);
+  return 0;
+}
+
 export async function connect(argv: string[]): Promise<number> {
   operatorOnly("connect");
   const [what, ...rest] = argv;
-  if (!what) return status();
+  if (!what) {
+    status();
+    whatsappStatus();
+    return 0;
+  }
   if (what === "email") return connectEmail(rest);
-  die("usage: e9g connect [email]");
+  if (what === "whatsapp") return connectWhatsApp(rest);
+  die("usage: e9g connect [email|whatsapp]");
 }
 
 export function disconnect(argv: string[]): number {
   operatorOnly("disconnect");
-  if (argv[0] !== "email") die("usage: e9g disconnect email");
+  if (argv[0] === "whatsapp") {
+    if (!whatsappSettings() && !readToken()) console.info("e9g: WhatsApp wasn't connected");
+    else {
+      forgetWhatsApp();
+      console.info(`e9g: WhatsApp is off. The ${TEMPLATE} template stays on the account, and the token still works at Meta.`);
+    }
+    return 0;
+  }
+  if (argv[0] !== "email") die("usage: e9g disconnect email|whatsapp");
   if (!emailSettings() && !readKey()) {
     console.info("e9g: email wasn't connected");
     return 0;

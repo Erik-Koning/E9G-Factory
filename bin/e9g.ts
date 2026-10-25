@@ -23,8 +23,9 @@ Set up and run a team (the operator)
   e9g upgrade <team> [<version>] [--force]   move a team to another installed factory version
   e9g unregister <team>               remove its T3 instances and registry entry (keeps its files)
   e9g watchdog install|remove|run     the one launchd job that looks after every team
-  e9g connect [email] [--to] [--test] email you the watchdog's alerts and the planner's outbox, through Resend
-                                      with your own key  ·  e9g disconnect email
+  e9g connect [email|whatsapp] [--test]  send you the watchdog's alerts and the planner's outbox: email through
+                                      Resend (replies reach the planner), WhatsApp through your business number
+                                      ·  e9g disconnect email|whatsapp
   e9g self-install [--link] [--force] install this checkout's version into ~/.e9g  ·  e9g versions
 
 Team members (the guard decides who may run which)

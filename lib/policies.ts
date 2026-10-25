@@ -246,15 +246,20 @@ export const POLICIES: Policy[] = [
   },
   {
     id: "messages",
-    examples: ["curl -X POST https://hooks.slack.com/services/T0/B0/x -d hi", "sendmail someone@example.com < note.txt"],
+    examples: [
+      "curl -X POST https://hooks.slack.com/services/T0/B0/x -d hi",
+      "sendmail someone@example.com < note.txt",
+      "curl -X POST https://graph.facebook.com/v25.0/1234567890/messages -d @message.json",
+    ],
     default: "deny",
-    summary: "messaging people from the shell (mail, Slack/Discord webhooks, SMS and email APIs)",
+    summary: "messaging people from the shell (mail, Slack/Discord webhooks, SMS, WhatsApp and email APIs)",
     reason: "the team messages nobody but the operator, and only the planner does, with its email tool.",
     rules: [word("sendmail|mail|mailx|mutt|msmtp|swaks")],
     text: [
       anywhere(
         String.raw`\b(?:hooks\.slack\.com|slack\.com/api|discord(?:app)?\.com/api/webhooks|api\.telegram\.org|api\.twilio\.com|api\.sendgrid\.com|api\.postmarkapp\.com|api\.resend\.com|api\.mailgun\.net)`
       ),
+      anywhere(String.raw`\bgraph\.facebook\.com/\S*/(?:messages|message_templates)\b`),
     ],
   },
   {

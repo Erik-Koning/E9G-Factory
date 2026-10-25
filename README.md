@@ -49,6 +49,7 @@ To hear from your teams away from this Mac, and answer them:
 
 ```bash
 e9g connect email          # your address and your own Resend API key (free); it sends a test email first
+e9g connect whatsapp       # or as well: from your WhatsApp Business number, through Meta's Cloud API
 ```
 
 With email connected, planners write to you through the watchdog, under `[E9G-Planner] [<team title>]` like
@@ -59,6 +60,12 @@ passes DMARC. The key stays in the macOS Keychain. The guard refuses agents the 
 any code running as you can reach it, so give the key no more access than you use: sending access only, unless you
 want replies. `e9g connect` shows what's connected, and `e9g disconnect email` turns it off. Without email
 connected, a planner emails you through the claude.ai Gmail connector, when it has one.
+
+WhatsApp is one way. A business may message you first only with a template Meta has approved, so
+`e9g connect whatsapp` adds a utility template, `e9g_update`, to your WhatsApp Business account, and every message
+goes through it (Meta charges each one at its utility rate); a planner's messages are about "E9G-Planner · <team
+title>". Your replies on WhatsApp don't reach the teams: they arrive at the number's webhook, which belongs to
+whatever else uses the number.
 
 ## How it works
 

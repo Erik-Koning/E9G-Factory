@@ -84,6 +84,17 @@ export function guardCases(team: Team): GuardCase[] {
     "starting a member on another team's instance"
   );
   add("planner", "mcp__t3-code__delegate_task", { target: { providerInstanceId: instanceId(team, "planner") } }, "refuse", "starting a second planner");
+  const building = roles.find((r) => team.roles[r]?.worktree);
+  if (building)
+    add(
+      "planner",
+      "mcp__t3-code__delegate_task",
+      { target: { providerInstanceId: instanceId(team, building) } },
+      "refuse",
+      `starting a ${building} without a worktree of its own (isolation: "worktree")`
+    );
+  bash("planner", `git branch -m ${team.branch} e9g-check`, "refuse", "renaming the integration branch");
+  add(builder, "Monitor", { command: "cat .env", description: "e9g check" }, "refuse", "a command run through Monitor");
   if (builder !== "planner")
     add(builder, "mcp__t3-code__delegate_task", { target: { providerInstanceId: instanceId(team, builder) } }, "refuse", "a member starting members");
   if (planner.mcp.includes("mcp__claude_ai_Gmail__send_message")) {

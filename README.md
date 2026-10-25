@@ -115,10 +115,10 @@ Local and reversible work is allowed. Outward-facing and irreversible actions ar
 
 | Policy         | Denied by default                                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `deploy`       | Hosting and app-store CLIs (Vercel, Netlify, Fly, Wrangler, SST, Firebase, Convex, EAS, …), and package scripts named deploy, release or publish |
+| `deploy`       | Hosting and app-store CLIs (Vercel, Netlify, Fly, Wrangler, SST, SAM, Firebase, Convex, EAS, …), and package scripts or turbo/nx tasks named deploy, release or publish |
 | `cloud`        | aws, gcloud, az, terraform, pulumi, kubectl, helm, …                                                                                             |
 | `hosted-data`  | Linking, pushing, migrating or dumping hosted databases (Supabase, Prisma migrate deploy, PlanetScale, Neon, Turso, …)                           |
-| `publish`      | npm, cargo, gem and twine publishing; docker push                                                                                                |
+| `publish`      | npm, pnpm, yarn, lerna, cargo, gem and twine publishing; docker, podman and buildah push (including docker image and compose push)              |
 | `github`       | gh beyond issues, labels, search and reading PRs and runs (no workflows, API, PRs, releases or settings)                                         |
 | `messages`     | mail, Slack or Discord webhooks, SMS and email APIs from the shell. The planner emails only you, through its email tool                          |
 | `payments`     | The Stripe CLI and live payment keys                                                                                                             |

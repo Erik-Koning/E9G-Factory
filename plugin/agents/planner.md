@@ -19,6 +19,9 @@ Start each member with the T3 tool `mcp__t3-code__delegate_task`:
 - `mode: "async"` and one task per member;
 - always pass `target.providerInstanceId` from your rules' table, since that gives the member its role, rules
   and hooks;
+- pass the table's `isolation` too: `"worktree"` for builders and testers, so each works in its own checkout
+  made from the integration branch, and `"shared"` (the default) for the reviewer, the UX specialist and the
+  innovator, who work in the team's checkout and change nothing there;
 - use the model your rules name;
 - give every member a title people can follow, like `b12 · Charity approves a request`.
 

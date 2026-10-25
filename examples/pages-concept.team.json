@@ -18,12 +18,12 @@
     "ux-specialist": { "limit": 1 }
   },
   "gate": { "full": ".e9g/adapters/gate.sh", "quick": ".e9g/adapters/gate.sh --quick", "concurrency": 2 },
-  "environment": { "script": ".e9g/adapters/env.sh", "health": ["http://localhost:9201/"] },
+  "environment": { "script": ".e9g/adapters/env.sh", "health": ["http://localhost:3200/"] },
   "afterMerge": ".e9g/adapters/after-merge.sh",
   "finish": "e9g pages done",
   "progress": "e9g pages status",
   "pages": {
-    "appUrl": "http://localhost:9201",
+    "appUrl": "http://localhost:3200",
     "base": "main",
     "content": ["apps/web/src/app/(concept)/", "apps/web/src/components/concept/", "apps/web/public/concept/"],
     "allowedChanges": ["^apps/web/src/app/\\(concept\\)/", "^apps/web/src/components/concept/", "^apps/web/public/concept/", "^\\.e9g/"],

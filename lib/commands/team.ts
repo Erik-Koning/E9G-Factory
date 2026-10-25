@@ -279,6 +279,9 @@ export function upgrade(argv: string[]): number {
   registerTeam(entry.home, { force, version });
   const file = teamFile(entry.home);
   writeFileSync(file, pinned(readFileSync(file, "utf8"), version));
+  // The prompts' sources include team.json, so compile them again with the pin in it.
+  const team = loadTeam(entry.home);
+  for (const role of Object.keys(team.roles)) writePrompt(team, role, entry.run);
   console.info(`e9g: ${entry.name} now pins E9G Factory ${version}. Commit .e9g/team.json on the integration branch.`);
   return 0;
 }

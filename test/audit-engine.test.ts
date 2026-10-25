@@ -622,6 +622,8 @@ process.exit(overlap ? 4 : 0);`;
       assert.equal(pin(), PACKAGE.version);
       assert.equal(JSON.parse(read(join(w.e9gHome, "teams", "fixture.json"))).version, PACKAGE.version);
       assert.match(read(join(w.t3Home, "userdata", "settings.json")), new RegExp(`versions/${PACKAGE.version.replaceAll(".", "\\.")}/plugin`));
+      const team = loadTeam(w.home);
+      for (const role of Object.keys(team.roles)) assert.ok(!promptStale(team, role, w.run), `${role}'s prompt is compiled with the new pin`);
 
       result = await run("upgrade", "fixture", "0.2.0");
       assert.equal(result.code, 0, result.out);

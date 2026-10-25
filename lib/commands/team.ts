@@ -1,13 +1,27 @@
 // The operator's commands for a team's life: register (alias sync), unregister, start, pause, resume, rotate,
 // status, teams, prompt and upgrade.
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { instanceId, loadTeam, type RawTeam, type Team } from "../config.ts";
-import { defaultRunDir, findHome, PACKAGE, pluginDir, readRegistry, type RegistryEntry, registryFile, teamsDir, versionDir } from "../paths.ts";
+import {
+  defaultRunDir,
+  entryOf,
+  FACTORY_ROOT,
+  findHome,
+  PACKAGE,
+  pluginDir,
+  readRegistry,
+  type RegistryEntry,
+  registryFile,
+  teamFile,
+  teamsDir,
+  versionDir,
+} from "../paths.ts";
 import { compile, promptFile, writePrompt } from "../prompts.ts";
 import * as t3 from "../t3.ts";
 import { die, parseArgs, readJson, writeJson } from "../util.ts";
-import { ensureWatchdog, watchOnce } from "./watchdog.ts";
+import { BUSY, ensureWatchdog, watchOnce } from "./watchdog.ts";
 
 const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : text);
 
@@ -27,20 +41,41 @@ export function versionFor(team: Team): string {
   return version;
 }
 
+// A member's environment: team.json's vars, then the factory's own, so a var never decides who a member is or where
+// its team lives.
+export function memberEnvironment(
+  team: Team,
+  role: string,
+  { home, run, version }: { home: string; run: string; version: string }
+): Record<string, string> {
+  const vars = Object.fromEntries(
+    Object.entries(team.vars).map(([key, value]) => [key, String(value).replaceAll("${home}", home).replaceAll("${run}", run)])
+  );
+  return { ...vars, E9G_TEAM: team.name, E9G_ROLE: role, E9G_HOME_DIR: home, E9G_RUN: run, E9G_VERSION: version };
+}
+
 export function register(argv: string[]): number {
   const { positional, options } = parseArgs(argv, { booleans: ["force"] });
-  const home = homeFrom(positional[0]);
+  return registerTeam(homeFrom(positional[0]), { force: Boolean(options["force"]) });
+}
+
+// Registers the team in `home` to run `version` (else the one its team.json pins). Dies before changing anything
+// when it can't.
+function registerTeam(home: string, { force, version: target }: { force: boolean; version?: string }): number {
   const team = loadTeam(home);
   for (const warning of team.warnings) console.warn(`  note: ${warning}`);
   const problems = t3.contract();
-  if (problems.length && !options["force"]) die(`T3 Code isn't ready:\n  - ${problems.join("\n  - ")}\n(e9g doctor explains; --force registers anyway)`);
+  if (problems.length && !force) die(`T3 Code isn't ready:\n  - ${problems.join("\n  - ")}\n(e9g doctor explains; --force registers anyway)`);
   if (!existsSync(join(home, ".e9g", ".gitignore")))
     console.warn("  note: .e9g/.gitignore is missing; add one with run/ so the team's runtime stays out of git");
 
-  const version = versionFor(team);
+  const version = target ?? versionFor(team);
   const previous = readRegistry(team.name);
   if (previous && previous.home !== home)
     die(`a team named ${team.name} is already registered at ${previous.home}; pick another name or e9g unregister ${team.name}`);
+  // One team per checkout: a renamed team would otherwise run beside the old one on the same files.
+  const other = teamNames().find((name) => name !== team.name && readRegistry(name)?.home === home);
+  if (other) die(`${home} is already registered as the team ${other}; e9g unregister ${other} first, or keep the name ${other}`);
   const run = previous?.run ?? defaultRunDir(team.name);
   mkdirSync(run, { recursive: true });
   const project = previous?.project ?? team.raw.t3ProjectId ?? t3.projectAdd(team.title, home);
@@ -57,25 +92,14 @@ export function register(argv: string[]): number {
       // The planner keeps the account's connectors for its email; everyone else gets only T3 Code's tools.
       team.isolation === "strict" && role !== "planner" ? "--strict-mcp-config" : null,
     ].filter((flag) => flag !== null);
-    const vars = Object.fromEntries(
-      Object.entries(team.vars).map(([key, value]) => [key, String(value).replaceAll("${home}", home).replaceAll("${run}", run)])
-    );
     instances[instanceId(team, role)] = t3.instance({
       displayName: `${team.title} · ${role}`,
       launchArgs: flags.join(" "),
-      environment: { E9G_TEAM: team.name, E9G_ROLE: role, E9G_HOME_DIR: home, E9G_RUN: run, E9G_VERSION: version, ...vars },
+      environment: memberEnvironment(team, role, { home, run, version }),
       compactAt: role === "planner" ? team.plannerCompactAt : null,
     });
   }
-  t3.writeTeam({
-    team: team.name,
-    instances,
-    project,
-    setup: team.worktreeSetup,
-    plannerInstance: instanceId(team, "planner"),
-    model: team.model,
-    branchPrefix: team.branchPrefix,
-  });
+  t3.writeTeam({ team: team.name, instances, project, setup: team.worktreeSetup, branchPrefix: team.branchPrefix });
 
   mkdirSync(teamsDir, { recursive: true });
   const entry: RegistryEntry = {
@@ -136,8 +160,11 @@ export async function start(argv: string[]): Promise<number> {
 
 export function pause(argv: string[]): number {
   const entry = entryFor(argv[0] ?? die("usage: e9g pause <team>"));
+  mkdirSync(entry.run, { recursive: true });
   writeFileSync(join(entry.run, "paused"), new Date().toISOString());
-  console.info(`e9g: ${entry.name} paused: the watchdog sends no ticks and starts nothing. Running members finish what they're doing.`);
+  console.info(
+    `e9g: ${entry.name} paused: the watchdog sends no ticks and starts nothing, and the planner can't start members or merge. Running members finish what they're doing.`
+  );
   return 0;
 }
 
@@ -149,18 +176,28 @@ export function resume(argv: string[]): number {
 }
 
 // A fresh planner thread: after register changed the instances (a running thread keeps its old flags), or to
-// clear a long context. Refused while the planner has members running, since they report to it.
+// clear a long context. Refused while the planner has members running (they report to it), while it's in the
+// middle of a turn, and whenever T3 Code can't say which. The old one is retired inside the watchdog's lock for the
+// team, so a watchdog run can't start or adopt a planner halfway through.
 export async function rotate(argv: string[]): Promise<number> {
   const entry = entryFor(argv[0] ?? die("usage: e9g rotate <team>"));
   const file = join(entry.run, "planner-thread");
-  const old = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
-  if (old) {
+  let old = "";
+  const refused = await watchOnce(entry.name, () => {
+    old = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
+    if (!old) return null;
     const busy = t3.runningChildren(old);
-    if (busy) die(`the planner has ${busy} members running; they report to it, so rotate once they've finished`);
+    if (busy === null) return "T3 Code's database couldn't be read, so it isn't known whether the planner's members are running; try again";
+    if (busy) return `the planner has ${busy} members running; they report to it, so rotate once they've finished`;
+    const thread = t3.threadShow(old);
+    if (!thread && t3.threadExists(old) !== false) return `T3 Code couldn't say what planner ${old} is doing; try again`;
+    if (thread && !thread.archived && BUSY.includes(thread.status ?? ""))
+      return `the planner is in the middle of a turn (${thread.status}); rotate once it's idle`;
     writeFileSync(join(entry.run, "planner-thread.retired"), `${old}\n`, { flag: "a" });
     rmSync(file);
-  }
-  await watchOnce(entry.name);
+    return null;
+  });
+  if (refused) die(`rotate: ${refused}`);
   const now = existsSync(file) ? readFileSync(file, "utf8").trim() : "not started (see the watchdog log)";
   console.info(`e9g: ${entry.name}'s planner was ${old || "none"}, now ${now}`);
   return 0;
@@ -206,15 +243,28 @@ export function prompt(argv: string[]): number {
   return 0;
 }
 
-// e9g upgrade <team> [version]: move the team's pin to an installed version and register again.
+// e9g upgrade <team> [version] [--force]: register the team again on an installed version (this one by default),
+// then move its pin there. It runs in the version it moves to, whose code compiles the prompts and writes the
+// instances; the pin moves only once that worked.
 export function upgrade(argv: string[]): number {
-  const entry = entryFor(argv[0] ?? die("usage: e9g upgrade <team> [version]"));
-  const version = argv[1] ?? PACKAGE.version;
+  const { positional, options } = parseArgs(argv, { booleans: ["force"] });
+  const entry = entryFor(positional[0] ?? die("usage: e9g upgrade <team> [version] [--force]"));
+  const version = positional[1] ?? PACKAGE.version;
   if (!existsSync(versionDir(version))) die(`E9G Factory ${version} isn't installed (e9g versions lists them)`);
-  const file = join(entry.home, ".e9g", "team.json");
+  const force = Boolean(options["force"]);
+  if (realpathSync(versionDir(version)) !== realpathSync(FACTORY_ROOT)) {
+    if (process.env.E9G_UPGRADING === version) die(`E9G Factory ${version} at ${versionDir(version)} handed the upgrade back; run it from that version`);
+    const result = spawnSync(process.execPath, [entryOf(versionDir(version)), "upgrade", entry.name, version, ...(force ? ["--force"] : [])], {
+      stdio: "inherit",
+      env: { ...process.env, E9G_HANDED_OVER: "1", E9G_UPGRADING: version },
+    });
+    return result.status ?? 1;
+  }
+  registerTeam(entry.home, { force, version });
+  const file = teamFile(entry.home);
   const raw = readJson<RawTeam>(file) ?? die(`no ${file}`);
   raw.factory = version;
   writeFileSync(file, `${JSON.stringify(raw, null, 2)}\n`);
   console.info(`e9g: ${entry.name} now pins E9G Factory ${version}. Commit .e9g/team.json on the integration branch.`);
-  return register([entry.home]);
+  return 0;
 }

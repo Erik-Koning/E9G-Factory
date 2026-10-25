@@ -7,8 +7,12 @@ import { describe, test } from "node:test";
 
 const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home } });
 const approve = (home: string, branch: string) =>
-  e9g(["verdict", "review", branch, "approve", "--note", "ok"], { cwd: home, env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer" } });
-const record = (home: string, branch: string): { message: string } => JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
+  e9g(["verdict", "review", branch, "approve", "--sha", git(home, "rev-parse", branch), "--note", "ok"], {
+    cwd: home,
+    env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer" },
+  });
+const record = (home: string, branch: string): { message: string } =>
+  JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
 
 describe("the review's findings stay fixed", { concurrency: true }, () => {
   test("ordinary searches and branch names aren't read as writes", () => {
@@ -130,15 +134,7 @@ describe("the review's findings stay fixed", { concurrency: true }, () => {
         providerInstances: { "e9g-app-planner": of("app", "planner"), "e9g-app-v2-planner": of("app-v2", "planner"), mine: { driver: "codex" } },
       })
     );
-    writeTeam({
-      team: "app",
-      instances: { "e9g-app-builder": of("app", "builder") },
-      project: "p",
-      setup: null,
-      plannerInstance: "e9g-app-planner",
-      model: "m",
-      branchPrefix: "e9g",
-    });
+    writeTeam({ team: "app", instances: { "e9g-app-builder": of("app", "builder") }, project: "p", setup: null, branchPrefix: "e9g" });
     assert.deepEqual(Object.keys(readSettings().providerInstances ?? {}).sort(), ["e9g-app-builder", "e9g-app-v2-planner", "mine"]);
   });
 });

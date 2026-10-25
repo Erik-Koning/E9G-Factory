@@ -40,7 +40,7 @@ const [command = "help", ...args] = process.argv.slice(2);
 function handOver(): void {
   if (
     process.env.E9G_HANDED_OVER ||
-    ["help", "--help", "-h", "self-install", "versions", "doctor", "watchdog", "teams", "init", "--version"].includes(command)
+    ["help", "--help", "-h", "self-install", "versions", "doctor", "watchdog", "teams", "init", "upgrade", "--version"].includes(command)
   )
     return;
   let home: string | null = null;

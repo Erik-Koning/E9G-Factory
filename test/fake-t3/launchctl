@@ -1,0 +1,4 @@
+#!/bin/sh
+# A fake launchctl for the tests: it logs the call and does nothing.
+echo "launchctl $*" >> "${FAKE_T3_LOG:-/dev/null}"
+exit 0

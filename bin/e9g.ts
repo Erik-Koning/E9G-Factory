@@ -2,8 +2,8 @@
 // e9g: E9G Factory's command line. `e9g help` lists the commands; README.md explains them.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
-import { entryOf, FACTORY_ROOT, findHome, PACKAGE, readRegistry, teamFile, versionDir } from "../lib/paths.ts";
+import { resolve, sep } from "node:path";
+import { entryOf, FACTORY_ROOT, findHome, PACKAGE, readRegistry, teamFile, VERSION_NAME, versionDir, versionsDir } from "../lib/paths.ts";
 
 const HELP = `E9G Factory ${PACKAGE.version}: provision a software engineering team in any repository, on T3 Code.
 
@@ -36,8 +36,16 @@ Team members (the guard decides who may run which)
 const [command = "help", ...args] = process.argv.slice(2);
 
 // A team pinned to another installed version runs that version's commands, so a person's `e9g` and an agent's
-// behave the same. Agents already arrive on the right version (their instance sets E9G_VERSION).
+// behave the same. Agents already arrive on the right version (their instance sets E9G_VERSION). A source checkout
+// (node bin/e9g.ts, anywhere outside ~/.e9g/versions) never hands over: it runs its own code, whatever the team pins.
+const installed = (): boolean => {
+  if (!existsSync(versionsDir)) return false;
+  const root = realpathSync(FACTORY_ROOT);
+  const versions = realpathSync(versionsDir);
+  return root.startsWith(`${versions}${sep}`);
+};
 function handOver(): void {
+  if (!installed()) return;
   if (
     process.env.E9G_HANDED_OVER ||
     ["help", "--help", "-h", "self-install", "versions", "doctor", "watchdog", "teams", "init", "--version"].includes(command)
@@ -56,7 +64,8 @@ function handOver(): void {
   } catch {
     return;
   }
-  if (!pin || pin === PACKAGE.version || !existsSync(versionDir(pin)) || realpathSync(versionDir(pin)) === realpathSync(FACTORY_ROOT)) return;
+  if (!pin || !VERSION_NAME.test(pin)) return;
+  if (pin === PACKAGE.version || !existsSync(versionDir(pin)) || realpathSync(versionDir(pin)) === realpathSync(FACTORY_ROOT)) return;
   const result = spawnSync(process.execPath, [entryOf(versionDir(pin)), command, ...args], {
     stdio: "inherit",
     env: { ...process.env, E9G_HANDED_OVER: "1" },

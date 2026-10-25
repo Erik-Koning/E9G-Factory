@@ -90,3 +90,14 @@ describe("e9g init --no-interview", () => {
     assert.match(again.out, /kept \.e9g\/team\.json/, "never overwrites");
   });
 });
+
+describe("e9g upgrade's pin", () => {
+  test("changes only the factory line, or adds one after the name, keeping the file's own formatting", async () => {
+    const { pinned } = await import("../lib/commands/team.ts");
+    const text = '{\n  "name": "shop",\n  "factory": "0.2.0",\n  "protectedBranches": ["main", "master"],\n  "branch": "e9g/next"\n}\n';
+    assert.equal(pinned(text, "0.3.0"), text.replace('"0.2.0"', '"0.3.0"'));
+    const unpinned = '{\n  "name": "shop",\n  "roles": { "planner": {} },\n  "branch": "e9g/next"\n}\n';
+    assert.equal(pinned(unpinned, "0.3.0"), '{\n  "name": "shop",\n  "factory": "0.3.0",\n  "roles": { "planner": {} },\n  "branch": "e9g/next"\n}\n');
+    assert.equal(JSON.parse(pinned('{"branch": "x", "name": "shop"}', "dev")).factory, "dev", "a file it can't edit in place is written out");
+  });
+});

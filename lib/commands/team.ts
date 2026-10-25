@@ -20,7 +20,7 @@ import {
 } from "../paths.ts";
 import { compile, promptFile, writePrompt } from "../prompts.ts";
 import * as t3 from "../t3.ts";
-import { die, parseArgs, readJson, writeJson } from "../util.ts";
+import { die, parseArgs, writeJson } from "../util.ts";
 import { BUSY, ensureWatchdog, watchOnce } from "./watchdog.ts";
 
 const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : text);
@@ -246,6 +246,19 @@ export function prompt(argv: string[]): number {
   return 0;
 }
 
+// team.json with its pin set to version, changing only that line (or adding one after "name"), so the commit is one
+// line and the operator's formatting stays; a file that doesn't allow that is written out whole.
+export function pinned(text: string, version: string): string {
+  const pin = `"factory": ${JSON.stringify(version)}`;
+  const edited = /"factory"\s*:\s*"[^"\n]*"/.test(text)
+    ? text.replace(/"factory"\s*:\s*"[^"\n]*"/, pin)
+    : text.replace(/^([ \t]*)"name"\s*:\s*"[^"\n]*",[ \t]*\n/m, (line, indent: string) => `${line}${indent}${pin},\n`);
+  try {
+    if ((JSON.parse(edited) as RawTeam).factory === version) return edited;
+  } catch {}
+  return `${JSON.stringify({ ...(JSON.parse(text) as RawTeam), factory: version }, null, 2)}\n`;
+}
+
 // e9g upgrade <team> [version] [--force]: register the team again on an installed version (this one by default),
 // then move its pin there. It runs in the version it moves to, whose code compiles the prompts and writes the
 // instances; the pin moves only once that worked.
@@ -265,9 +278,7 @@ export function upgrade(argv: string[]): number {
   }
   registerTeam(entry.home, { force, version });
   const file = teamFile(entry.home);
-  const raw = readJson<RawTeam>(file) ?? die(`no ${file}`);
-  raw.factory = version;
-  writeFileSync(file, `${JSON.stringify(raw, null, 2)}\n`);
+  writeFileSync(file, pinned(readFileSync(file, "utf8"), version));
   console.info(`e9g: ${entry.name} now pins E9G Factory ${version}. Commit .e9g/team.json on the integration branch.`);
   return 0;
 }

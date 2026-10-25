@@ -1,8 +1,8 @@
 // A team's rules: .e9g/team.json in its checkout, read with defaults filled in and checked. Every part of the
 // factory reads the team through loadTeam, so a default or a check lives in one place. schema/team.schema.json
-// describes the same file for editors.
+// describes the same file for editors, and test/audit-setup.test.ts keeps the two in step.
 import { existsSync, readFileSync } from "node:fs";
-import { teamFile } from "./paths.ts";
+import { teamFile, VERSION_NAME } from "./paths.ts";
 import { POLICIES, type PolicyState } from "./policies.ts";
 import { minutes } from "./util.ts";
 
@@ -20,6 +20,7 @@ export interface RoleSettings {
 export interface PageSpec {
   id: string;
   path: string;
+  title?: string;
   exclude?: string[];
 }
 export interface Viewport {
@@ -75,7 +76,7 @@ export interface RawTeam {
   roles?: Record<string, RoleSettings>;
   review?: { required?: string[]; removedPattern?: string | null };
   gate?: { full?: string; quick?: string; concurrency?: number };
-  environment?: { script?: string; health?: string[]; needsDocker?: boolean };
+  environment?: { script?: string | null; health?: string[]; needsDocker?: boolean };
   vars?: Record<string, string>;
   afterMerge?: string | null;
   finish?: string | null;
@@ -235,131 +236,349 @@ export function loadTeam(home: string, { strict = true }: { strict?: boolean } =
   return Object.assign(team, { file, warnings, problems });
 }
 
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+
+// The shapes schema/team.schema.json gives these values; normalize checks the same ones.
+export const TEAM_NAME = /^[a-z][a-z0-9-]{0,30}$/;
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const DURATION = /^\d+(\.\d+)?\s*(m|min|h|d)?$/;
+const HEALTH = /^(any:)?https?:\/\/\S+$/;
+const URL_START = /^https?:\/\/\S+$/;
+// The factory sets E9G_* and Claude Code reads CLAUDE_*; a team's vars must not change either.
+const VAR_NAME = /^(?!E9G_|CLAUDE_)[A-Za-z_][A-Za-z0-9_]*$/;
+// Page and viewport ids name files (results, screenshots, verdicts).
+const ID = /^[\w-]+$/;
+const PAGES_DONE = /\be9g\s+pages\s+done\b/;
+const SCHEMES = ["light", "dark", "no-preference"];
+// Matches nothing: what an invalid pattern becomes, so a team with problems never matches more than it said.
+const NOTHING = "(?!)";
+
+// review.removedPattern's default when the team has a tester: a removed line that calls an assertion (expect(…),
+// assert…(…), should…(…), a matcher such as .toBe(…)), so a test branch that drops one needs a review.
+export const ASSERTION_PATTERN = String.raw`\b(expect|assert\w*|should)(\.\w+)*!?\s*\(|\.to[A-Z]\w*\s*\(`;
+
 export function normalize(raw: RawTeam, home: string): { team: Team; problems: string[]; warnings: string[] } {
   const problems: string[] = [];
   const warnings: string[] = [];
-  const regex = (value: string, where: string): string => {
+
+  // Checks for one value each: they record a problem and return undefined when the value doesn't fit.
+  const bad = (where: string, what: string): undefined => {
+    problems.push(`${where}: ${what}`);
+    return undefined;
+  };
+  const regex = (value: unknown, where: string): string => {
+    if (typeof value !== "string" || value === "") {
+      bad(where, "a regular expression");
+      return NOTHING;
+    }
     try {
       new RegExp(value);
+      return value;
     } catch (error) {
-      problems.push(`${where}: ${(error as Error).message}`);
+      bad(where, (error as Error).message);
+      return NOTHING;
     }
+  };
+  const text = (value: unknown, where: string): string | undefined =>
+    value === undefined || (typeof value === "string" && value !== "") ? value : bad(where, "text (a non-empty string)");
+  const textOrNull = (value: unknown, where: string): string | null | undefined => (value === null ? null : text(value, where));
+  const whole = (value: unknown, where: string, min: number): number | undefined =>
+    value === undefined || (Number.isInteger(value) && (value as number) >= min)
+      ? (value as number | undefined)
+      : bad(where, min ? `a whole number, at least ${min}` : "a whole number");
+  const flag = (value: unknown, where: string): boolean | undefined =>
+    value === undefined || typeof value === "boolean" ? value : bad(where, "true or false");
+  const role = (value: unknown, where: string): string | undefined =>
+    typeof value === "string" && Object.hasOwn(ROLES, value) ? value : bad(where, `a role (${Object.keys(ROLES).join(", ")})`);
+  const need = <T>(value: unknown, where: string, check: (value: unknown, where: string) => T | undefined): T | undefined =>
+    value === undefined ? bad(where, "required") : check(value, where);
+  const list = <T>(value: unknown, where: string, item: (value: unknown, where: string) => T | undefined): T[] | undefined => {
+    if (value === undefined) return undefined;
+    if (!Array.isArray(value)) return bad(where, "a list");
+    return value.map((entry, i) => item(entry, `${where}[${i}]`)).filter((entry): entry is T => entry !== undefined);
+  };
+  // An object with only these keys (null: any keys).
+  const object = (value: unknown, where: string, keys: string[] | null): Record<string, unknown> | undefined => {
+    if (value === undefined) return undefined;
+    if (!isObject(value)) return bad(where, "an object");
+    for (const key of Object.keys(value)) if (keys && !keys.includes(key)) problems.push(`${where}.${key}: no such setting (${keys.join(", ")})`);
     return value;
   };
+  // An object, or the older array form that lists the same values in order ([rule, reason], [title, command]).
+  const entry = (value: unknown, where: string, keys: string[], positional: string[], min = positional.length): Record<string, unknown> | undefined => {
+    if (!Array.isArray(value)) return isObject(value) ? object(value, where, keys) : bad(where, "an object");
+    if (value.length >= min && value.length <= positional.length) return Object.fromEntries(value.map((item: unknown, i) => [positional[i], item]));
+    return bad(where, `[${positional.join(", ")}]`);
+  };
+  const duration = (value: unknown, where: string, fallback: number): number => {
+    if (value === undefined) return fallback;
+    if ((typeof value === "number" && Number.isFinite(value) && value >= 0) || (typeof value === "string" && DURATION.test(value)))
+      return minutes(value, fallback);
+    bad(where, "a duration (45m, 6h, 2d, or a number of minutes)");
+    return fallback;
+  };
 
-  for (const key of Object.keys(raw)) if (!KNOWN_KEYS.has(key)) warnings.push(`unknown key "${key}" (ignored)`);
-  if (!/^[a-z][a-z0-9-]{0,30}$/.test(raw.name ?? ""))
-    problems.push('name: lowercase letters, digits and dashes, starting with a letter (e.g. "shop-redesign")');
-  if (!raw.branch) problems.push("branch: the team's integration branch is required");
-  if (raw.owner !== undefined && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(raw.owner)) problems.push("owner: an email address");
+  const input: Record<string, unknown> = isObject(raw) ? raw : {};
+  if (!isObject(raw)) bad("team.json", "an object with the team's settings");
+  for (const key of Object.keys(input)) if (!KNOWN_KEYS.has(key)) warnings.push(`unknown key "${key}" (ignored)`);
+  text(input["$schema"], "$schema");
+  const name = typeof input.name === "string" ? input.name : "";
+  if (!TEAM_NAME.test(name)) problems.push('name: lowercase letters, digits and dashes, starting with a letter (e.g. "shop-redesign")');
+  const branch = typeof input.branch === "string" ? input.branch : "";
+  if (!branch) problems.push("branch: the team's integration branch is required");
+  if (input.owner !== undefined && !(typeof input.owner === "string" && EMAIL.test(input.owner))) problems.push("owner: an email address");
+  let factory: string | null = null;
+  if (input.factory !== undefined) {
+    if (typeof input.factory === "string" && VERSION_NAME.test(input.factory)) factory = input.factory;
+    else problems.push('factory: an installed version, such as "0.3.0", or "dev" (e9g versions lists them)');
+  }
+  const protectedBranches = list(input.protectedBranches, "protectedBranches", text) ?? ["main", "master", "production", "prod"];
+  if (branch && protectedBranches.includes(branch))
+    problems.push(`branch: ${branch} is protected (protectedBranches), so the team could never merge into it; give it its own branch, such as e9g/next`);
 
-  const prefix = raw.branchPrefix ?? "e9g";
+  const prefix = text(input.branchPrefix, "branchPrefix") ?? "e9g";
   const roles: Record<string, Lane> = {};
-  const given: Record<string, RoleSettings> = raw.roles ?? { planner: {}, builder: {}, reviewer: {} };
-  for (const [role, settings] of Object.entries(given)) {
-    const base = ROLES[role];
-    if (!base) {
-      problems.push(`roles.${role}: no such role (the factory has ${Object.keys(ROLES).join(", ")})`);
+  const given = input.roles === undefined ? { planner: {}, builder: {}, reviewer: {} } : (object(input.roles, "roles", null) ?? {});
+  for (const [id, value] of Object.entries(given)) {
+    const base = ROLES[id];
+    if (!base || !Object.hasOwn(ROLES, id)) {
+      problems.push(`roles.${id}: no such role (the factory has ${Object.keys(ROLES).join(", ")})`);
       continue;
     }
-    const merged: Lane = {
+    const where = `roles.${id}`;
+    // Only the settings a role has: anything else (such as "worktree") would change what the factory gives it.
+    const settings = object(value, where, ["limit", "write", "deny", "branch", "mcp", "readOnly", "compactAt"]) ?? {};
+    const lane: Lane = {
       ...base,
-      ...settings,
-      write: (settings.write ?? base.write).map((rule, i) => (rule === "*" ? rule : regex(rule, `roles.${role}.write[${i}]`))),
-      deny: (settings.deny ?? []).map((rule, i) => regex(rule, `roles.${role}.deny[${i}]`)),
-      mcp: settings.mcp ?? base.mcp ?? [],
+      write: list(settings.write, `${where}.write`, (rule, at) => (rule === "*" ? rule : regex(rule, at))) ?? base.write,
+      deny: list(settings.deny, `${where}.deny`, regex) ?? [],
+      mcp: list(settings.mcp, `${where}.mcp`, text) ?? base.mcp ?? [],
     };
-    if (role !== "planner" && !(Number.isInteger(merged.limit) && (merged.limit ?? -1) >= 0)) problems.push(`roles.${role}.limit: a whole number`);
-    if (base.worktree) merged.branch = regex(settings.branch ?? `^${prefix}/${role === "tester" ? "t-" : "b\\d+-"}`, `roles.${role}.branch`);
-    else if (settings.branch) {
-      // Only roles that work on their own branch have one; a pattern here would let the merge queue take its branches.
-      warnings.push(`roles.${role}.branch: the ${role} works in the shared checkout and has no branch (ignored)`);
-      delete merged.branch;
-    }
-    roles[role] = merged;
+    const limit = whole(settings.limit, `${where}.limit`, 0);
+    if (limit !== undefined) lane.limit = limit;
+    const readOnly = flag(settings.readOnly, `${where}.readOnly`);
+    if (readOnly !== undefined) lane.readOnly = readOnly;
+    const compactAt = whole(settings.compactAt, `${where}.compactAt`, 1);
+    if (compactAt !== undefined) lane.compactAt = compactAt;
+    const pattern = settings.branch === undefined ? undefined : regex(settings.branch, `${where}.branch`);
+    if (base.worktree) lane.branch = pattern ?? regex(`^${prefix}/${id === "tester" ? "t-" : "b\\d+-"}`, `${where}.branch`);
+    // Only roles that work on their own branch have one; a pattern here would let the merge queue take its branches.
+    else if (pattern !== undefined) warnings.push(`${where}.branch: the ${id} works in the shared checkout and has no branch (ignored)`);
+    roles[id] = lane;
   }
   if (!roles["planner"]) problems.push("roles.planner: every team has a planner");
   if (roles["tester"] && !roles["tester"].write.length) problems.push('roles.tester.write: say where tests live (e.g. ["^e2e/"])');
 
   const policies: Record<string, PolicyState> = {};
-  for (const [id, state] of Object.entries(raw.policies ?? {})) {
+  for (const [id, state] of Object.entries(object(input.policies, "policies", null) ?? {})) {
     if (!POLICIES.some((policy) => policy.id === id)) problems.push(`policies.${id}: no such policy (${POLICIES.map((p) => p.id).join(", ")})`);
     else if (state !== "allow" && state !== "deny") problems.push(`policies.${id}: "allow" or "deny"`);
     else policies[id] = state;
   }
 
   // [rule, reason] pairs are accepted too, the way older loop.json files wrote them.
-  const never = (raw.never ?? []).map((entry, i): NeverRule => {
-    const value: NeverRule = Array.isArray(entry) ? { rule: entry[0], reason: entry[1] } : entry;
-    regex(value.rule ?? "", `never[${i}].rule`);
-    if (!value.reason) problems.push(`never[${i}].reason: say why, the agent reads it`);
-    return value;
-  });
-  const commandOwners = (raw.commandOwners ?? []).map((entry, i): CommandOwner => {
-    const value: CommandOwner = Array.isArray(entry) ? { rule: entry[0], roles: entry[1], ...(entry[2] === undefined ? {} : { reason: entry[2] }) } : entry;
-    regex(value.rule ?? "", `commandOwners[${i}].rule`);
-    return value;
-  });
-  const context = (raw.context ?? []).map((entry): ContextCommand => (Array.isArray(entry) ? { title: entry[0], command: entry[1] } : entry));
+  const never =
+    list(input.never, "never", (value, where): NeverRule | undefined => {
+      const rule = entry(value, where, ["rule", "reason", "example"], ["rule", "reason"]);
+      if (!rule) return undefined;
+      const reason = typeof rule.reason === "string" && rule.reason ? rule.reason : bad(`${where}.reason`, "say why, the agent reads it");
+      const example = text(rule.example, `${where}.example`);
+      return { rule: regex(rule.rule, `${where}.rule`), reason: reason ?? "", ...(example === undefined ? {} : { example }) };
+    }) ?? [];
+  const commandOwners =
+    list(input.commandOwners, "commandOwners", (value, where): CommandOwner | undefined => {
+      const owner = entry(value, where, ["rule", "roles", "reason"], ["rule", "roles", "reason"], 2);
+      if (!owner) return undefined;
+      const reason = text(owner.reason, `${where}.reason`);
+      return {
+        rule: regex(owner.rule, `${where}.rule`),
+        roles: need(owner.roles, `${where}.roles`, (owners, at) => list(owners, at, role)) ?? [],
+        ...(reason === undefined ? {} : { reason }),
+      };
+    }) ?? [];
+  const context =
+    list(input.context, "context", (value, where): ContextCommand | undefined => {
+      const command = entry(value, where, ["title", "command"], ["title", "command"]);
+      if (!command) return undefined;
+      const title = need(command.title, `${where}.title`, text);
+      const run = need(command.command, `${where}.command`, text);
+      return title === undefined || run === undefined ? undefined : { title, command: run };
+    }) ?? [];
 
   let push: Team["push"] = null;
-  if (raw.push) push = { remote: raw.push.remote ?? "origin", branch: raw.push.branch ?? raw.branch ?? "", everyMin: minutes(raw.push.every, 0) };
-  const board: Team["board"] =
-    typeof raw.board === "object" && raw.board?.github ? { type: "github", label: raw.board.github.label ?? "loop" } : { type: "files" };
-  if (raw.board && raw.board !== "files" && board.type !== "github") problems.push('board: "files" or {"github": {"label": "loop"}}');
+  if (input.push !== undefined && input.push !== null) {
+    const value = object(input.push, "push", ["remote", "branch", "every"]);
+    if (value)
+      push = {
+        remote: text(value.remote, "push.remote") ?? "origin",
+        branch: text(value.branch, "push.branch") ?? branch,
+        everyMin: duration(value.every, "push.every", 0),
+      };
+  }
+  let board: Team["board"] = { type: "files" };
+  if (input.board !== undefined && input.board !== "files") {
+    const github = isObject(input.board) && Object.keys(input.board).length === 1 && isObject(input.board.github) ? input.board.github : null;
+    if (!github) problems.push('board: "files", or {"github": {"label": "e9g"}}');
+    else board = { type: "github", label: text(object(github, "board.github", ["label"])?.label, "board.github.label") ?? "e9g" };
+  }
 
-  const watchdog = raw.watchdog ?? {};
+  const review = object(input.review, "review", ["required", "removedPattern"]) ?? {};
+  // A tester's branches get the assertion default; null turns it off.
+  let removedPattern: string | null = roles["tester"] ? ASSERTION_PATTERN : null;
+  if (review.removedPattern !== undefined) removedPattern = review.removedPattern === null ? null : regex(review.removedPattern, "review.removedPattern");
+  const gate = object(input.gate, "gate", ["full", "quick", "concurrency"]) ?? {};
+  const full = text(gate.full, "gate.full") ?? null;
+  const environment = object(input.environment, "environment", ["script", "health", "needsDocker"]) ?? {};
+  const vars: Record<string, string> = {};
+  for (const [key, value] of Object.entries(object(input.vars, "vars", null) ?? {})) {
+    if (!VAR_NAME.test(key)) problems.push(`vars.${key}: a variable name (letters, digits and _), and not E9G_… or CLAUDE_…, which the factory sets`);
+    else if (typeof value !== "string") problems.push(`vars.${key}: text (put a number in quotes)`);
+    else vars[key] = value;
+  }
+  const legacyInstances: Record<string, string> = {};
+  for (const [id, value] of Object.entries(object(input.legacyInstances, "legacyInstances", null) ?? {})) {
+    const owner = role(value, `legacyInstances.${id}`);
+    if (owner) legacyInstances[id] = owner;
+  }
+  const finish = textOrNull(input.finish, "finish") ?? null;
+  const watchdog = object(input.watchdog, "watchdog", ["tickEvery", "stuckAfter", "pruneAfter", "doneTickEvery"]) ?? {};
+  const isolation = input.isolation ?? "strict";
+  if (isolation !== "strict" && isolation !== "user") problems.push('isolation: "strict" (no personal skills, plugins or connectors) or "user"');
+  text(input.t3ProjectId, "t3ProjectId");
+
+  // pages: the finish line for teams that build pages (lib/commands/pages.ts).
+  let pages: PagesSettings | null = null;
+  const pagesIn = object(input.pages, "pages", [
+    "appUrl",
+    "base",
+    "content",
+    "allowedChanges",
+    "list",
+    "viewports",
+    "schemes",
+    "ignoreConsole",
+    "settleMs",
+  ]);
+  if (pagesIn) {
+    const page = (value: unknown, where: string): PageSpec | undefined => {
+      const spec = object(value, where, ["id", "path", "title", "exclude"]);
+      if (!spec) return undefined;
+      const id = need(spec.id, `${where}.id`, (id, at) =>
+        typeof id === "string" && ID.test(id) ? id : bad(at, "letters, digits, _ and - (it names the page's files)")
+      );
+      const path = need(spec.path, `${where}.path`, (path, at) =>
+        typeof path === "string" && path.startsWith("/") ? path : bad(at, "the page's path on the app, starting with /")
+      );
+      const title = text(spec.title, `${where}.title`);
+      const exclude = list(spec.exclude, `${where}.exclude`, regex);
+      if (id === undefined || path === undefined) return undefined;
+      return { id, path, ...(title === undefined ? {} : { title }), ...(exclude === undefined ? {} : { exclude }) };
+    };
+    const viewport = (value: unknown, where: string): Viewport | undefined => {
+      const spec = object(value, where, ["id", "width", "height", "isMobile", "deviceScaleFactor"]);
+      if (!spec) return undefined;
+      const id = need(spec.id, `${where}.id`, (id, at) => (typeof id === "string" && ID.test(id) ? id : bad(at, "letters, digits, _ and -")));
+      const width = need(spec.width, `${where}.width`, (n, at) => whole(n, at, 1));
+      const height = need(spec.height, `${where}.height`, (n, at) => whole(n, at, 1));
+      const isMobile = flag(spec.isMobile, `${where}.isMobile`);
+      const scale = spec.deviceScaleFactor;
+      if (scale !== undefined && !(typeof scale === "number" && scale > 0)) bad(`${where}.deviceScaleFactor`, "a number above 0");
+      if (id === undefined || width === undefined || height === undefined) return undefined;
+      return {
+        id,
+        width,
+        height,
+        ...(isMobile === undefined ? {} : { isMobile }),
+        ...(typeof scale === "number" && scale > 0 ? { deviceScaleFactor: scale } : {}),
+      };
+    };
+    const nonEmpty = <T>(value: unknown, where: string, item: (value: unknown, where: string) => T | undefined, what: string): T[] | undefined =>
+      Array.isArray(value) && !value.length ? bad(where, what) : list(value, where, item);
+    pages = {};
+    if (!Array.isArray(pagesIn.list) || !pagesIn.list.length)
+      bad("pages.list", 'the pages to check, at least one (e.g. [{"id": "landing", "path": "/"}])');
+    else pages.list = list(pagesIn.list, "pages.list", page) ?? [];
+    const ids = (pages.list ?? []).map((spec) => spec.id);
+    for (const id of new Set(ids.filter((id, i) => ids.indexOf(id) !== i))) problems.push(`pages.list: more than one page is named ${id}`);
+    const appUrl =
+      pagesIn.appUrl === undefined || (typeof pagesIn.appUrl === "string" && URL_START.test(pagesIn.appUrl))
+        ? pagesIn.appUrl
+        : bad("pages.appUrl", "a URL (http://…)");
+    if (appUrl !== undefined) pages.appUrl = appUrl;
+    const pagesBase = text(pagesIn.base, "pages.base");
+    if (pagesBase !== undefined) pages.base = pagesBase;
+    const content = list(pagesIn.content, "pages.content", text);
+    if (content !== undefined) pages.content = content;
+    const allowedChanges = list(pagesIn.allowedChanges, "pages.allowedChanges", regex);
+    if (allowedChanges !== undefined) pages.allowedChanges = allowedChanges;
+    const viewports = nonEmpty(pagesIn.viewports, "pages.viewports", viewport, "at least one viewport, or leave it out for the defaults");
+    if (viewports !== undefined) pages.viewports = viewports;
+    const schemes = nonEmpty(
+      pagesIn.schemes,
+      "pages.schemes",
+      (scheme, at) => (typeof scheme === "string" && SCHEMES.includes(scheme) ? scheme : bad(at, SCHEMES.join(", "))),
+      "at least one colour scheme, or leave it out for light and dark"
+    );
+    if (schemes !== undefined) pages.schemes = schemes;
+    const ignoreConsole = list(pagesIn.ignoreConsole, "pages.ignoreConsole", regex);
+    if (ignoreConsole !== undefined) pages.ignoreConsole = ignoreConsole;
+    const settleMs = whole(pagesIn.settleMs, "pages.settleMs", 0);
+    if (settleMs !== undefined) pages.settleMs = settleMs;
+  }
+  if (finish && PAGES_DONE.test(finish) && input.pages === undefined)
+    problems.push('pages: the finish line is e9g pages done, so "pages" must list the pages it checks');
+
   const team: Team = {
     raw,
     home,
-    name: raw.name ?? "",
-    title: raw.title ?? raw.name ?? "",
-    owner: raw.owner ?? null,
-    factory: raw.factory ?? null,
-    branch: raw.branch ?? "",
-    base: raw.base ?? "main",
-    protectedBranches: raw.protectedBranches ?? ["main", "master", "production", "prod"],
+    name,
+    title: text(input.title, "title") ?? name,
+    owner: typeof input.owner === "string" ? input.owner : null,
+    factory,
+    branch,
+    base: text(input.base, "base") ?? "main",
+    protectedBranches,
     push,
     board,
     branchPrefix: prefix,
-    model: raw.model ?? "claude-opus-5-5",
+    model: text(input.model, "model") ?? "claude-opus-5-5",
     roles,
-    review: { required: raw.review?.required ?? ["builder"], removedPattern: raw.review?.removedPattern ?? null },
-    gate: {
-      full: raw.gate?.full ?? null,
-      quick: raw.gate?.quick ?? raw.gate?.full ?? null,
-      concurrency: raw.gate?.concurrency ?? 2,
-    },
+    review: { required: list(review.required, "review.required", role) ?? ["builder"], removedPattern },
+    gate: { full, quick: text(gate.quick, "gate.quick") ?? full, concurrency: whole(gate.concurrency, "gate.concurrency", 1) ?? 2 },
     environment: {
-      script: raw.environment?.script ?? null,
-      health: raw.environment?.health ?? [],
-      needsDocker: raw.environment?.needsDocker ?? false,
+      script: textOrNull(environment.script, "environment.script") ?? null,
+      health:
+        list(environment.health, "environment.health", (url, where) =>
+          typeof url === "string" && HEALTH.test(url) ? url : bad(where, "a URL (http://…), or any:<url> to accept any answer")
+        ) ?? [],
+      needsDocker: flag(environment.needsDocker, "environment.needsDocker") ?? false,
     },
-    vars: raw.vars ?? {},
-    afterMerge: raw.afterMerge ?? null,
-    finish: raw.finish ?? null,
-    progress: raw.progress ?? (raw.finish ? raw.finish.replace(/\bdone$/, "status") : null),
-    pages: raw.pages ?? null,
+    vars,
+    afterMerge: textOrNull(input.afterMerge, "afterMerge") ?? null,
+    finish,
+    progress: textOrNull(input.progress, "progress") ?? (finish ? finish.replace(/\bdone$/, "status") : null),
+    pages,
     policies,
     never,
     commandOwners,
     context,
-    docs: raw.docs ?? [".e9g/brief.md", ".e9g/notes.md"],
-    polishRounds: raw.polishRounds ?? 1,
-    worktreeSetup: raw.worktreeSetup ?? null,
+    docs: list(input.docs, "docs", text) ?? [".e9g/brief.md", ".e9g/notes.md"],
+    polishRounds: whole(input.polishRounds, "polishRounds", 0) ?? 1,
+    worktreeSetup: textOrNull(input.worktreeSetup, "worktreeSetup") ?? null,
     watchdog: {
-      tickEveryMin: minutes(watchdog.tickEvery, 10),
-      stuckAfterMin: minutes(watchdog.stuckAfter, 45),
-      pruneAfterMin: minutes(watchdog.pruneAfter, 60),
-      doneTickEveryMin: minutes(watchdog.doneTickEvery, 1440),
+      tickEveryMin: duration(watchdog.tickEvery, "watchdog.tickEvery", 10),
+      stuckAfterMin: duration(watchdog.stuckAfter, "watchdog.stuckAfter", 45),
+      pruneAfterMin: duration(watchdog.pruneAfter, "watchdog.pruneAfter", 60),
+      doneTickEveryMin: duration(watchdog.doneTickEvery, "watchdog.doneTickEvery", 1440),
     },
-    protect: (raw.protect ?? []).map((rule, i) => regex(rule, `protect[${i}]`)),
-    isolation: raw.isolation ?? "strict",
-    startPrompt: raw.startPrompt ?? null,
-    plannerCompactAt: raw.roles?.planner?.compactAt ?? 160000,
-    legacyInstances: raw.legacyInstances ?? {},
+    protect: list(input.protect, "protect", regex) ?? [],
+    isolation: isolation === "user" ? "user" : "strict",
+    startPrompt: textOrNull(input.startPrompt, "startPrompt") ?? null,
+    plannerCompactAt: roles["planner"]?.compactAt ?? 160000,
+    legacyInstances,
   };
-  if (!["strict", "user"].includes(team.isolation)) problems.push('isolation: "strict" (no personal skills, plugins or connectors) or "user"');
+  if (push && push.branch && protectedBranches.includes(push.branch))
+    problems.push(`push.branch: ${push.branch} is protected (protectedBranches); the planner pushes only the team's branch`);
   if (!team.finish) warnings.push("finish: no finish command, so the team can't tell when it's done");
   if (!team.gate.full) warnings.push("gate.full: no gate, so merges aren't checked");
   if (!team.owner) warnings.push("owner: nobody to email when the team is done or needs a decision");

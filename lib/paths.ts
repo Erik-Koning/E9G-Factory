@@ -34,6 +34,8 @@ export const versionsDir = join(E9G_HOME, "versions");
 export const registryFile = (name: string): string => join(teamsDir, `${name}.json`);
 export const defaultRunDir = (name: string): string => join(E9G_HOME, "runs", name);
 export const versionDir = (version: string): string => join(versionsDir, version);
+// What a team may pin (team.json "factory"): a release's version, or "dev". Never a path.
+export const VERSION_NAME = /^(dev|\d+\.\d+\.\d+([-+][0-9A-Za-z.-]+)?)$/;
 export const pluginDir = (version: string): string => join(versionDir(version), "plugin");
 
 // The team's sources and its runtime folder inside its checkout.

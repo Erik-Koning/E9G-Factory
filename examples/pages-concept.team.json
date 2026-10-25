@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
+  "name": "web-concept",
+  "title": "Web concept pages",
+  "owner": "you@example.com",
+  "branch": "concept/next",
+  "base": "main",
+  "push": null,
+  "board": "files",
+  "branchPrefix": "concept",
+  "roles": {
+    "planner": {},
+    "builder": {
+      "limit": 2,
+      "write": ["^apps/web/src/app/\\(concept\\)/", "^apps/web/src/components/concept/", "^apps/web/public/concept/"]
+    },
+    "reviewer": { "limit": 1 },
+    "ux-specialist": { "limit": 1 }
+  },
+  "gate": { "full": ".e9g/adapters/gate.sh", "quick": ".e9g/adapters/gate.sh --quick", "concurrency": 2 },
+  "environment": { "script": ".e9g/adapters/env.sh", "health": ["http://localhost:9201/"] },
+  "afterMerge": ".e9g/adapters/after-merge.sh",
+  "finish": "e9g pages done",
+  "progress": "e9g pages status",
+  "pages": {
+    "appUrl": "http://localhost:9201",
+    "base": "main",
+    "content": ["apps/web/src/app/(concept)/", "apps/web/src/components/concept/", "apps/web/public/concept/"],
+    "allowedChanges": ["^apps/web/src/app/\\(concept\\)/", "^apps/web/src/components/concept/", "^apps/web/public/concept/", "^\\.e9g/"],
+    "list": [
+      { "id": "landing", "path": "/concept", "exclude": ["^apps/web/src/app/\\(concept\\)/concept/settings/"] },
+      { "id": "settings", "path": "/concept/settings", "exclude": ["^apps/web/src/app/\\(concept\\)/concept/page\\.tsx$"] }
+    ],
+    "ignoreConsole": ["Download the React DevTools", "\\[HMR\\]", "\\[Fast Refresh\\]"],
+    "settleMs": 2000
+  },
+  "policies": { "dependencies": "deny" },
+  "never": [{ "rule": "\\bdeploy-all\\.sh\\b", "reason": "the deploy scripts are off limits.", "example": "./scripts/deploy-all.sh" }],
+  "context": [
+    { "title": "Pages", "command": "e9g pages status --brief" },
+    { "title": "Board", "command": "grep -h -m1 '^status:' .e9g/run/board/*.md 2>/dev/null | sort | uniq -c | tr '\\n' ' '" }
+  ],
+  "docs": [".e9g/brief.md", ".e9g/notes.md", ".e9g/style.md", ".e9g/rubric.md"],
+  "polishRounds": 1,
+  "worktreeSetup": "pnpm install --frozen-lockfile --prefer-offline --filter 'web...' --ignore-scripts",
+  "watchdog": { "tickEvery": "15m", "stuckAfter": "40m", "pruneAfter": "2h" }
+}

@@ -1,0 +1,519 @@
+{
+  "version": 1,
+  "meta": {
+    "title": "E9G Factory: a software engineering team in any repository, on T3 Code",
+    "routing": "orthogonal",
+    "versionTag": "0.2"
+  },
+  "zones": [
+    {
+      "id": "mac",
+      "label": "Your Mac",
+      "shape": "rounded",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1300,
+      "provider": "onprem",
+      "providers": ["onprem"],
+      "outline": "dashed"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "t3",
+      "label": "T3 Code server · 127.0.0.1:3773",
+      "kind": "group",
+      "icon": "server",
+      "x": 40,
+      "y": 40,
+      "w": 1040,
+      "h": 330,
+      "zoneId": "mac"
+    },
+    {
+      "id": "planner",
+      "label": "Planner",
+      "kind": "service",
+      "icon": "robot",
+      "x": 424,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "t3",
+      "description": "one per team"
+    },
+    {
+      "id": "builder",
+      "label": "Builders",
+      "kind": "service",
+      "icon": "code",
+      "x": 24,
+      "y": 216,
+      "w": 176,
+      "h": 80,
+      "parentId": "t3",
+      "description": "own worktrees"
+    },
+    {
+      "id": "reviewer",
+      "label": "Reviewer",
+      "kind": "service",
+      "icon": "search",
+      "x": 224,
+      "y": 216,
+      "w": 176,
+      "h": 80,
+      "parentId": "t3",
+      "description": "approves a commit"
+    },
+    {
+      "id": "ux",
+      "label": "UX specialist",
+      "kind": "service",
+      "icon": "eye",
+      "x": 624,
+      "y": 216,
+      "w": 176,
+      "h": 80,
+      "parentId": "t3",
+      "description": "verdict per page"
+    },
+    {
+      "id": "tester",
+      "label": "Testers",
+      "kind": "service",
+      "icon": "check",
+      "x": 824,
+      "y": 216,
+      "w": 176,
+      "h": 80,
+      "parentId": "t3",
+      "description": "and an innovator"
+    },
+    {
+      "id": "checkout",
+      "label": "The team's checkout",
+      "kind": "group",
+      "icon": "branch",
+      "x": 40,
+      "y": 420,
+      "w": 1040,
+      "h": 330,
+      "zoneId": "mac"
+    },
+    {
+      "id": "checker",
+      "label": "Finish line",
+      "kind": "service",
+      "icon": "activity",
+      "x": 24,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "a command, exit 0"
+    },
+    {
+      "id": "env",
+      "label": "Team's app",
+      "kind": "service",
+      "icon": "window",
+      "x": 224,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "own ports, data"
+    },
+    {
+      "id": "queue",
+      "label": "Merge queue",
+      "kind": "service",
+      "icon": "gear",
+      "x": 424,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "e9g merge --queue"
+    },
+    {
+      "id": "branch",
+      "label": "Integration",
+      "kind": "database",
+      "icon": "branch",
+      "x": 624,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "e9g/next, …"
+    },
+    {
+      "id": "sources",
+      "label": ".e9g/",
+      "kind": "io",
+      "icon": "doc",
+      "x": 824,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "team.json, brief"
+    },
+    {
+      "id": "state",
+      "label": "Run state",
+      "kind": "database",
+      "icon": "folder",
+      "x": 24,
+      "y": 216,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "verdicts, results"
+    },
+    {
+      "id": "board",
+      "label": "Board",
+      "kind": "io",
+      "icon": "doc",
+      "x": 224,
+      "y": 216,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "issues or files"
+    },
+    {
+      "id": "locks",
+      "label": "Locks",
+      "kind": "service",
+      "icon": "lock",
+      "x": 424,
+      "y": 216,
+      "w": 176,
+      "h": 80,
+      "parentId": "checkout",
+      "description": "gate, merge, app"
+    },
+    {
+      "id": "factory",
+      "label": "E9G Factory · ~/.e9g",
+      "kind": "group",
+      "icon": "layers",
+      "x": 40,
+      "y": 800,
+      "w": 1040,
+      "h": 220,
+      "zoneId": "mac"
+    },
+    {
+      "id": "plugin",
+      "label": "Plugin",
+      "kind": "io",
+      "icon": "folder",
+      "x": 24,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "factory",
+      "description": "roles and hooks"
+    },
+    {
+      "id": "guard",
+      "label": "Guard",
+      "kind": "service",
+      "icon": "shield",
+      "x": 224,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "factory",
+      "description": "lanes, policies"
+    },
+    {
+      "id": "prompts",
+      "label": "Prompts",
+      "kind": "io",
+      "icon": "doc",
+      "x": 424,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "factory",
+      "description": "compiled per role"
+    },
+    {
+      "id": "cli",
+      "label": "e9g CLI",
+      "kind": "service",
+      "icon": "gear",
+      "x": 624,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "factory",
+      "description": "init, check, register"
+    },
+    {
+      "id": "constitution",
+      "label": "Constitution",
+      "kind": "io",
+      "icon": "doc",
+      "x": 824,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "parentId": "factory",
+      "description": "articles for agents"
+    },
+    {
+      "id": "watchdog",
+      "label": "Watchdog",
+      "kind": "service",
+      "icon": "clock",
+      "x": 1180,
+      "y": 180,
+      "w": 176,
+      "h": 80,
+      "zoneId": "mac",
+      "description": "launchd, 5 min"
+    },
+    {
+      "id": "t3db",
+      "label": "T3 state DB",
+      "kind": "database",
+      "icon": "database",
+      "x": 1180,
+      "y": 476,
+      "w": 176,
+      "h": 80,
+      "zoneId": "mac",
+      "description": "threads, tokens"
+    },
+    {
+      "id": "worktrees",
+      "label": "Worktrees",
+      "kind": "database",
+      "icon": "folder",
+      "x": 1180,
+      "y": 660,
+      "w": 176,
+      "h": 80,
+      "zoneId": "mac",
+      "description": "pruned when done"
+    },
+    {
+      "id": "hosted",
+      "label": "Hosted systems",
+      "kind": "external",
+      "icon": "cloud",
+      "x": 1180,
+      "y": 860,
+      "w": 176,
+      "h": 80,
+      "zoneId": "mac",
+      "description": "denied by policy",
+      "status": "dark"
+    },
+    {
+      "id": "gmail",
+      "label": "Gmail",
+      "kind": "external",
+      "icon": "mail",
+      "x": 1520,
+      "y": 56,
+      "w": 176,
+      "h": 80,
+      "description": "done or a decision"
+    },
+    {
+      "id": "owner",
+      "label": "You",
+      "kind": "client",
+      "icon": "user",
+      "x": 1520,
+      "y": 260,
+      "w": 176,
+      "h": 80,
+      "description": "direct, decide, promote"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "planner",
+      "target": "builder",
+      "label": "delegate_task"
+    },
+    {
+      "id": "e2",
+      "source": "planner",
+      "target": "reviewer",
+      "label": "review"
+    },
+    {
+      "id": "e3",
+      "source": "planner",
+      "target": "ux",
+      "label": "audit"
+    },
+    {
+      "id": "e4",
+      "source": "reviewer",
+      "target": "state",
+      "label": "approve @ commit",
+      "color": "emerald"
+    },
+    {
+      "id": "e5",
+      "source": "ux",
+      "target": "board",
+      "label": "findings",
+      "style": "dashed",
+      "color": "amber"
+    },
+    {
+      "id": "e6",
+      "source": "planner",
+      "target": "queue",
+      "label": "queue; woken after",
+      "direction": "both",
+      "color": "emerald"
+    },
+    {
+      "id": "e7",
+      "source": "queue",
+      "target": "locks",
+      "label": "takes"
+    },
+    {
+      "id": "e8",
+      "source": "queue",
+      "target": "branch",
+      "label": "fast-forward",
+      "color": "emerald"
+    },
+    {
+      "id": "e9",
+      "source": "queue",
+      "target": "env",
+      "label": "rebuild",
+      "color": "emerald"
+    },
+    {
+      "id": "e10",
+      "source": "checker",
+      "target": "env",
+      "label": "checks"
+    },
+    {
+      "id": "e11",
+      "source": "checker",
+      "target": "state",
+      "label": "results"
+    },
+    {
+      "id": "e12",
+      "source": "sources",
+      "target": "cli",
+      "label": "register"
+    },
+    {
+      "id": "e13",
+      "source": "constitution",
+      "target": "prompts",
+      "label": "articles"
+    },
+    {
+      "id": "e14",
+      "source": "cli",
+      "target": "prompts",
+      "label": "compiles"
+    },
+    {
+      "id": "e15",
+      "source": "prompts",
+      "target": "planner",
+      "label": "system prompt",
+      "style": "dashed"
+    },
+    {
+      "id": "e16",
+      "source": "plugin",
+      "target": "guard",
+      "label": "every tool call"
+    },
+    {
+      "id": "e17",
+      "source": "guard",
+      "target": "t3db",
+      "label": "count members",
+      "style": "dashed",
+      "color": "sky"
+    },
+    {
+      "id": "e18",
+      "source": "watchdog",
+      "target": "planner",
+      "label": "tick when idle",
+      "style": "dashed"
+    },
+    {
+      "id": "e19",
+      "source": "watchdog",
+      "target": "t3db",
+      "label": "reads"
+    },
+    {
+      "id": "e20",
+      "source": "watchdog",
+      "target": "worktrees",
+      "label": "prunes",
+      "style": "dashed"
+    },
+    {
+      "id": "e21",
+      "source": "planner",
+      "target": "gmail",
+      "label": "asks, reports",
+      "color": "violet"
+    },
+    {
+      "id": "e22",
+      "source": "gmail",
+      "target": "owner",
+      "label": "email",
+      "color": "violet"
+    },
+    {
+      "id": "e23",
+      "source": "owner",
+      "target": "sources",
+      "label": "directs",
+      "color": "violet"
+    }
+  ],
+  "paths": [
+    {
+      "id": "ticket-to-merge",
+      "title": "A ticket becomes a merge",
+      "steps": ["planner", "builder", "reviewer", "state", "queue", "branch", "env", "checker"],
+      "color": "emerald"
+    },
+    {
+      "id": "rules",
+      "title": "Rules are compiled and enforced",
+      "steps": ["owner", "sources", "cli", "prompts", "planner"],
+      "color": "sky"
+    },
+    {
+      "id": "keep-running",
+      "title": "Keeping it running",
+      "steps": ["watchdog", "planner", "gmail", "owner"],
+      "color": "violet"
+    }
+  ]
+}

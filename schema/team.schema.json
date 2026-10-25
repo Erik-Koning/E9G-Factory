@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
+  "title": "E9G Factory team",
+  "description": "A team's rules: .e9g/team.json. docs/team.md explains every key; lib/config.mjs is what enforces them.",
+  "type": "object",
+  "required": ["name", "branch"],
+  "additionalProperties": false,
+  "$defs": {
+    "regex": { "type": "string", "description": "A JavaScript regular expression." },
+    "duration": { "type": ["string", "number"], "pattern": "^\\d+(\\.\\d+)?\\s*(m|min|h|d)?$", "description": "45m, 6h, 2d, or minutes." },
+    "role": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "limit": { "type": "integer", "minimum": 0, "description": "At most this many at once." },
+        "write": { "type": "array", "items": { "$ref": "#/$defs/regex" }, "description": "Paths the role may write; \"*\" for anything." },
+        "deny": { "type": "array", "items": { "$ref": "#/$defs/regex" }, "description": "Paths the role may never write." },
+        "branch": { "$ref": "#/$defs/regex", "description": "The role's branch pattern (builders, testers)." },
+        "mcp": { "type": "array", "items": { "type": "string" }, "description": "Outside tools the role may call." },
+        "readOnly": { "type": "boolean", "description": "Changes nothing in the checkout." },
+        "compactAt": { "type": "integer", "description": "Planner only: compact its context at this many tokens." }
+      }
+    }
+  },
+  "properties": {
+    "$schema": { "type": "string" },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,30}$" },
+    "title": { "type": "string" },
+    "owner": { "type": "string", "format": "email" },
+    "factory": { "type": "string", "description": "The E9G Factory version the team runs, or \"dev\"." },
+    "branch": { "type": "string", "description": "The integration branch." },
+    "base": { "type": "string" },
+    "protectedBranches": { "type": "array", "items": { "type": "string" } },
+    "push": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "remote": { "type": "string" }, "branch": { "type": "string" }, "every": { "$ref": "#/$defs/duration" } }
+        }
+      ]
+    },
+    "board": {
+      "oneOf": [
+        { "const": "files" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["github"],
+          "properties": { "github": { "type": "object", "properties": { "label": { "type": "string" } }, "additionalProperties": false } }
+        }
+      ]
+    },
+    "branchPrefix": { "type": "string" },
+    "model": { "type": "string" },
+    "roles": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planner"],
+      "properties": {
+        "planner": { "$ref": "#/$defs/role" },
+        "builder": { "$ref": "#/$defs/role" },
+        "tester": { "$ref": "#/$defs/role" },
+        "reviewer": { "$ref": "#/$defs/role" },
+        "ux-specialist": { "$ref": "#/$defs/role" },
+        "innovator": { "$ref": "#/$defs/role" }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "required": { "type": "array", "items": { "type": "string" } }, "removedPattern": { "$ref": "#/$defs/regex" } }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "full": { "type": "string" }, "quick": { "type": "string" }, "concurrency": { "type": "integer", "minimum": 1 } }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "script": { "type": "string" },
+        "health": { "type": "array", "items": { "type": "string" } },
+        "needsDocker": { "type": "boolean" }
+      }
+    },
+    "vars": { "type": "object", "additionalProperties": { "type": ["string", "number", "boolean"] } },
+    "afterMerge": { "type": ["string", "null"] },
+    "finish": { "type": ["string", "null"] },
+    "progress": { "type": ["string", "null"] },
+    "pages": { "type": "object" },
+    "policies": {
+      "type": "object",
+      "additionalProperties": false,
+      "propertyNames": { "enum": ["deploy", "cloud", "hosted-data", "publish", "github", "messages", "payments", "dependencies"] },
+      "patternProperties": { ".*": { "enum": ["allow", "deny"] } }
+    },
+    "never": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["rule", "reason"],
+            "additionalProperties": false,
+            "properties": { "rule": { "$ref": "#/$defs/regex" }, "reason": { "type": "string" }, "example": { "type": "string" } }
+          },
+          { "type": "array", "prefixItems": [{ "type": "string" }, { "type": "string" }], "minItems": 2, "maxItems": 2 }
+        ]
+      }
+    },
+    "commandOwners": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "roles"],
+        "additionalProperties": false,
+        "properties": { "rule": { "$ref": "#/$defs/regex" }, "roles": { "type": "array", "items": { "type": "string" } }, "reason": { "type": "string" } }
+      }
+    },
+    "context": {
+      "type": "array",
+      "items": { "type": "object", "required": ["title", "command"], "properties": { "title": { "type": "string" }, "command": { "type": "string" } } }
+    },
+    "docs": { "type": "array", "items": { "type": "string" } },
+    "polishRounds": { "type": "integer", "minimum": 0 },
+    "worktreeSetup": { "type": ["string", "null"] },
+    "watchdog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tickEvery": { "$ref": "#/$defs/duration" },
+        "stuckAfter": { "$ref": "#/$defs/duration" },
+        "pruneAfter": { "$ref": "#/$defs/duration" },
+        "doneTickEvery": { "$ref": "#/$defs/duration" }
+      }
+    },
+    "protect": { "type": "array", "items": { "$ref": "#/$defs/regex" } },
+    "isolation": { "enum": ["strict", "user"] },
+    "startPrompt": { "type": ["string", "null"] },
+    "t3ProjectId": { "type": "string" },
+    "legacyInstances": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}

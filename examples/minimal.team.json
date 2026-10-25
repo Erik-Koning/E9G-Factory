@@ -1,0 +1,12 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
+  "name": "my-app",
+  "owner": "you@example.com",
+  "branch": "e9g/next",
+  "roles": { "planner": {}, "builder": { "limit": 2 }, "reviewer": { "limit": 1 } },
+  "gate": { "full": ".e9g/adapters/gate.sh", "quick": ".e9g/adapters/gate.sh --quick" },
+  "environment": { "script": ".e9g/adapters/env.sh", "health": ["http://localhost:9310/"] },
+  "afterMerge": ".e9g/adapters/after-merge.sh",
+  "finish": "pnpm test",
+  "worktreeSetup": "pnpm install --frozen-lockfile --prefer-offline"
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
+  "name": "app-complete",
+  "title": "App completeness team",
+  "owner": "you@example.com",
+  "branch": "next",
+  "base": "main",
+  "push": { "remote": "origin", "branch": "next", "every": "6h" },
+  "board": { "github": { "label": "loop" } },
+  "branchPrefix": "loop",
+  "roles": {
+    "planner": { "write": ["^\\.e9g/lessons\\.md$", "^docs/journeys\\.json$"] },
+    "builder": { "limit": 3, "write": ["*"], "deny": ["^e2e/", "^docs/journeys\\.json$", "^scripts/e2e/", "^playwright\\.config\\.ts$"] },
+    "tester": { "limit": 2, "write": ["^e2e/"] },
+    "reviewer": { "limit": 2 },
+    "ux-specialist": { "limit": 1 },
+    "innovator": { "limit": 1 }
+  },
+  "review": { "required": ["builder"], "removedPattern": "\\bexpect\\(" },
+  "gate": { "full": "scripts/e2e/gate.sh", "quick": "scripts/e2e/gate.sh --quick", "concurrency": 2 },
+  "environment": { "script": "scripts/e2e/env.sh", "health": ["http://localhost:9101/", "any:http://127.0.0.1:55321/"], "needsDocker": true },
+  "afterMerge": "scripts/e2e/after-merge.sh",
+  "finish": "node scripts/e2e/journeys.mjs done",
+  "progress": "node scripts/e2e/journeys.mjs status",
+  "protect": ["^\\.e2e-state/(journeys\\.json|runs\\.jsonl)$"],
+  "never": [
+    {
+      "rule": "\\bpnpm\\s+(run\\s+)?db:(migrate|reset|start|stop)\\b",
+      "reason": "those reach the people's local database; the team has its own (e9g env).",
+      "example": "pnpm db:reset"
+    },
+    { "rule": "CHECKOUT_PURCHASES_ENABLED\\s*=\\s*[\"']?true", "reason": "purchases stay off.", "example": "CHECKOUT_PURCHASES_ENABLED=true pnpm dev" }
+  ],
+  "commandOwners": [
+    {
+      "rule": "\\bjourneys\\.mjs\\s+run\\b",
+      "roles": ["planner", "tester"],
+      "reason": "the journey runner records results for the planner and testers only."
+    },
+    { "rule": "\\bjourneys\\.mjs\\s+ux\\b", "roles": ["ux-specialist"], "reason": "only the UX specialist records UX verdicts." }
+  ],
+  "context": [{ "title": "Journeys", "command": "node scripts/e2e/journeys.mjs status --brief" }],
+  "docs": [".e9g/brief.md", ".e9g/notes.md", ".e9g/rubric.md"],
+  "vars": { "E2E_ENV_FILE": "${home}/.e2e-state/app.env" },
+  "worktreeSetup": "pnpm install --frozen-lockfile --prefer-offline",
+  "watchdog": { "tickEvery": "10m", "stuckAfter": "45m", "pruneAfter": "1h" }
+}

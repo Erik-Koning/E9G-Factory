@@ -94,12 +94,28 @@ export function guardCases(team: Team): GuardCase[] {
       `starting a ${building} without a worktree of its own (isolation: "worktree")`
     );
   bash("planner", `git branch -m ${team.branch} e9g-check`, "refuse", "renaming the integration branch");
+  bash("planner", 'gh issue create --title "e9g check" --body x', "refuse", "an issue the planner opens without its label");
   add(builder, "Monitor", { command: "cat .env", description: "e9g check" }, "refuse", "a command run through Monitor");
   if (builder !== "planner")
     add(builder, "mcp__t3-code__delegate_task", { target: { providerInstanceId: instanceId(team, builder) } }, "refuse", "a member starting members");
   if (planner.mcp.includes("mcp__claude_ai_Gmail__send_message")) {
     add("planner", "mcp__claude_ai_Gmail__send_message", { to: ["someone@example.com"] }, "refuse", "email to anyone but the operator");
-    if (team.owner) add("planner", "mcp__claude_ai_Gmail__send_message", { to: [team.owner] }, "allow", "email to the operator");
+    if (team.owner) {
+      add(
+        "planner",
+        "mcp__claude_ai_Gmail__send_message",
+        { to: [team.owner], subject: `[E9G-Planner] [${team.title}] e9g check` },
+        "allow",
+        "email to the operator"
+      );
+      add(
+        "planner",
+        "mcp__claude_ai_Gmail__send_message",
+        { to: [team.owner], subject: `[${team.title}] e9g check` },
+        "refuse",
+        "email without the planner's label"
+      );
+    }
   }
   return cases;
 }

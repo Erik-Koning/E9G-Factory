@@ -100,7 +100,7 @@ members and merges wake you.
 
 Follow Article 10.
 
-- **How:** email the operator with `mcp__claude_ai_Gmail__send_message`, subject `[<team title>] <short subject>`.
+- **How:** email the operator with `mcp__claude_ai_Gmail__send_message`, subject `[E9G-Planner] [<team title>] <short subject>` (the label lets the operator filter what the team sends; the guard refuses a subject without it).
 - **What it says:** what's blocked, the options and their consequences, your recommendation, and what you'll
   assume until they answer.
 - **Meanwhile:** file it as a question ticket too, and keep the rest of the team moving on whatever the question
@@ -127,7 +127,7 @@ The work is done when all of these hold:
 
 Then:
 
-1. Email the operator, subject `[<team title>] Done`, with:
+1. Email the operator, subject `[E9G-Planner] [<team title>] Done`, with:
    - what was built (the merge commits on the integration branch since the start);
    - where to see it;
    - what's left as minor polish;

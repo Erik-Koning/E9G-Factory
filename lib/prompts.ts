@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { instanceId, type Lane, type LoadedTeam, ROLES, type Team } from "./config.ts";
 import { FACTORY_ROOT, PACKAGE } from "./paths.ts";
+import { PLANNER_LABEL } from "./labels.ts";
 import { policyStates } from "./policies.ts";
 import { hash, localTime, writeFileAtomic } from "./util.ts";
 
@@ -90,7 +91,7 @@ function boardText(team: Team, role: string): string {
     return [
       `The board is GitHub issues labelled ${code(l)} on this repository (\`gh issue list --label ${l}\`). Status labels: ${["triage", "ready", "building", "review", "blocked", "question", "proposal"].map((s) => code(`${l}:${s}`)).join(", ")}; also \`kind:bug|feature|ux|test-infra\` and \`sev:blocker|major|minor\`.`,
       role === "planner"
-        ? "You triage findings into tickets, keep the labels true, and the merge queue closes what a branch fixes."
+        ? `You triage findings into tickets, keep the labels true, and the merge queue closes what a branch fixes. Every issue you open also carries ${code(PLANNER_LABEL)} (\`gh issue create --label ${l} --label ${PLANNER_LABEL} …\`; if the repository doesn't have it yet, once: \`gh label create ${PLANNER_LABEL} --color 5319E7 --description "Opened by an E9G team's planner"\`).`
         : "File what you find as a new issue labelled `" + l + "` and `" + l + ":triage`, with a severity; one finding per issue.",
       "Every issue and comment ends with a footer naming its author: `— <role> · <T3 thread id>` (everyone posts as the operator's account).",
       severity,

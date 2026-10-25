@@ -1,9 +1,11 @@
 import { baseTeam, bash, type GuardCase, type GuardOptions, git, holds, makeRepo, ROOT, tmp, tool, write } from "./helpers.ts";
+import assert from "node:assert/strict";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { guardCases } from "../lib/commands/check.ts";
 import { loadTeam, type RawTeam } from "../lib/config.ts";
+import { compile } from "../lib/prompts.ts";
 
 const at = (home: string, path: string) => (path.startsWith("/") ? path : join(home, path));
 const writes = (home: string, role: string, path: string, expected: GuardCase[4], options?: GuardOptions): GuardCase => [
@@ -68,7 +70,7 @@ describe("guard", () => {
       "git add .e9g/lessons.md && git commit -m 'lessons: builders rebase their own branch; never git push' -- .e9g/lessons.md",
       "git worktree add --detach /tmp/e9g-insp-1 e9g/b1-x && cd /tmp/e9g-insp-1 && pnpm test",
       "git -C /tmp/e9g-insp-1 log -3 && git worktree remove --force /tmp/e9g-insp-1",
-      'gh issue create --title "b4: Settings page" --body "Don\'t run vercel deploy." --label e9g',
+      'gh issue create --title "b4: Settings page" --body "Don\'t run vercel deploy." --label e9g --label E9G-Planner',
       "git merge --abort; git reset -- .e9g/lessons.md; git stash list",
     ];
     const reviewer = [
@@ -188,7 +190,9 @@ describe("guard", () => {
     const send = "mcp__claude_ai_Gmail__send_message";
     const delegate = "mcp__t3-code__delegate_task";
     await holds([
-      tool(home, "planner", send, { to: ["op@example.com"], subject: "x" }, "allow"),
+      tool(home, "planner", send, { to: ["op@example.com"], subject: "[E9G-Planner] [Fixture team] x" }, "allow"),
+      tool(home, "planner", send, { to: ["op@example.com"], subject: "[Fixture team] x" }, "refuse"),
+      tool(home, "planner", send, { to: ["op@example.com"] }, "refuse"),
       tool(home, "planner", send, { to: ["someone@example.com"] }, "refuse"),
       tool(home, "planner", send, { to: ["op@example.com"], cc: ["someone@example.com"] }, "refuse"),
       tool(home, "builder", send, { to: ["op@example.com"] }, "refuse"),
@@ -240,5 +244,27 @@ describe("guard", () => {
       writes(fresh, "builder", "src/app.ts", "refuse"),
       bash(fresh, "builder", "ls", "refuse"),
     ]);
+  });
+});
+
+describe("what the planner sends is labelled E9G-Planner", () => {
+  test("its GitHub issues carry the label, however it's given; members' issues and other gh commands are unaffected", () => {
+    const home = makeRepo(baseTeam({ board: { github: { label: "loop" } } }));
+    return holds([
+      bash(home, "planner", 'gh issue create --title "Stuck checkout" --body "x" --label loop --label loop:triage', "refuse"),
+      bash(home, "planner", 'gh issue create -t "Stuck checkout" -b x --label loop --label E9G-Planner', "allow"),
+      bash(home, "planner", 'gh issue create -t "Stuck checkout" -b x -l "loop,loop:triage,E9G-Planner"', "allow"),
+      bash(home, "planner", "gh -R acme/app issue create --title x --body y --label=E9G-Planner", "allow"),
+      bash(home, "planner", 'gh label create E9G-Planner --color 5319E7 --description "Opened by an E9G team\'s planner"', "allow"),
+      bash(home, "planner", "gh issue list --label E9G-Planner", "allow"),
+      bash(home, "planner", "gh issue comment 12 --body 'Merged.'", "allow"),
+      bash(home, "reviewer", 'gh issue create --title "Finding" --body x --label loop --label loop:triage', "allow"),
+    ]);
+  });
+
+  test("the planner's prompt tells it so", () => {
+    const team = loadTeam(makeRepo(baseTeam({ board: { github: { label: "loop" } } })));
+    assert.match(compile(team, "planner"), /--label loop --label E9G-Planner/);
+    assert.doesNotMatch(compile(team, "builder"), /E9G-Planner/);
   });
 });

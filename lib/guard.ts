@@ -12,6 +12,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { FACTORY_PATH, factoryWrite, instanceId, type Lane, laneAllows, normalize as normalizeTeam, roleForInstance, type Team } from "./config.ts";
 import { E9G_HOME } from "./paths.ts";
+import { issueCreateLabels, PLANNER_LABEL, PLANNER_TAG } from "./labels.ts";
 import { brokenRule, commandRules, END, isSecretFile, isSecretWord, OPERATOR_COMMANDS, START } from "./policies.ts";
 import { type HookInput, inSetup, inTeam, setupRole, teamSession } from "./session.ts";
 import { expandPath, fileWords, gitGlobals, lines, operands, parseShell, type ShellCommand, stripGlob, unwrap } from "./shell.ts";
@@ -601,6 +602,13 @@ export function check(input: HookInput): void {
         if (!setup && sub === "merge" && paused()) refuse(PAUSED);
       }
       if (basename(words[0] ?? "") === "git") checkGit(words, command.cwd);
+      if (role === "planner" && basename(words[0] ?? "") === "gh") {
+        const labels = issueCreateLabels(words);
+        if (labels && !labels.includes(PLANNER_LABEL))
+          refuse(
+            `the issues the planner opens carry the label ${PLANNER_LABEL}: add --label ${PLANNER_LABEL} (once, if the repository doesn't have it yet: gh label create ${PLANNER_LABEL} --color 5319E7 --description "Opened by an E9G team's planner").`
+          );
+      }
       // A recursive grep reads ignored files too, env files included; rg, git grep and the Grep tool skip them.
       for (const path of grepSearches(words) ?? []) {
         const at = expandPath(path, command.cwd);
@@ -634,6 +642,9 @@ export function check(input: HookInput): void {
           .match(/[^\s"',<>[\]]+@[^\s"',<>[\]]+/g) ?? [];
       if (!owner || !recipients.length || recipients.some((address) => address !== owner))
         refuse(`email from the team goes only to the operator (${owner || "no owner is set in team.json"}).`);
+      // A new message's subject carries the planner's label, so the operator can filter on it (a reply keeps its thread's).
+      if (/__(send_message|create_draft|send_email|send)$/.test(tool) && !String(args.subject ?? "").startsWith(PLANNER_TAG))
+        refuse(`the planner's email subjects start with ${PLANNER_TAG}: "${PLANNER_TAG} [${team.title}] <short subject>".`);
     }
   }
 

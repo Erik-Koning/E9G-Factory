@@ -208,7 +208,7 @@ describe("the guard audit's findings stay fixed", { concurrency: true }, () => {
     return holds([
       bash(home, "builder", 'git commit -m "Load the Stripe key from .env.local" -- src/app.ts', "allow", inWorktree),
       bash(home, "planner", 'git commit -m "lessons: builders never git push; they hand branches to the merge queue" -- .e9g/lessons.md', "allow"),
-      bash(home, "planner", `gh issue create --title "Env" --body "Before testing, run 'vercel env pull' first"`, "allow"),
+      bash(home, "planner", `gh issue create --title "Env" --body "Before testing, run 'vercel env pull' first" --label E9G-Planner`, "allow"),
       bash(home, "builder", `echo "Deploy with 'vercel deploy --prod' once it's approved." >> docs/DEPLOY.md`, "allow", inWorktree),
       bash(home, "planner", 'gh issue comment 4 --body "The operator will run e9g resume when ready"', "allow"),
     ]);

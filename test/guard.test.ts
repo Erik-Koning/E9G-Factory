@@ -1,10 +1,9 @@
-import { baseTeam, bash, type GuardCase, type GuardOptions, git, holds, makeRepo, tmp, tool, write } from "./helpers.ts";
-import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { baseTeam, bash, type GuardCase, type GuardOptions, git, holds, makeRepo, ROOT, tmp, tool, write } from "./helpers.ts";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { guardCases } from "../lib/commands/check.ts";
-import { loadTeam } from "../lib/config.ts";
+import { loadTeam, type RawTeam } from "../lib/config.ts";
 
 const at = (home: string, path: string) => (path.startsWith("/") ? path : join(home, path));
 const writes = (home: string, role: string, path: string, expected: GuardCase[4], options?: GuardOptions): GuardCase => [
@@ -28,6 +27,74 @@ describe("guard", () => {
 
   test("the self-test e9g check generates passes", () =>
     holds(guardCases(team).map(({ role, tool: name, input, expect }) => [home, role, name, input, expect, { run: `${home}-check-run` }])));
+
+  test("the self-test passes for every example team", () =>
+    holds(
+      readdirSync(join(ROOT, "examples")).flatMap((file) => {
+        const example = makeRepo({ ...(JSON.parse(readFileSync(join(ROOT, "examples", file), "utf8")) as RawTeam), name: "fixture" });
+        return guardCases(loadTeam(example)).map(({ role, tool: name, input, expect }): GuardCase => [
+          example,
+          role,
+          name,
+          input,
+          expect,
+          { run: `${example}-run` },
+        ]);
+      })
+    ));
+
+  test("ordinary work passes", () => {
+    const worktree = join(tmp("e9g-wt-"), "b1");
+    git(home, "worktree", "add", "-q", "-b", "e9g/b1-ordinary", worktree, "e9g/next");
+    const inWorktree = { cwd: worktree };
+    const builder = [
+      "pnpm install --frozen-lockfile --prefer-offline && pnpm --filter web test",
+      'git add -A && git commit -m "Add the login form (b1)"',
+      "git add src/a.ts && git commit -m \"$(cat <<'EOF'\nFix the form\n\n1) validate\n2) submit (later)\nEOF\n)\"",
+      "git rebase e9g/next && git branch -m e9g/b1-login",
+      "git restore . && git checkout -- src/app.ts",
+      "rm -rf dist .next && mkdir -p src/components/login && touch src/components/login/index.ts",
+      "sed -i '' 's/foo/bar/g' src/app.ts && perl -pi -e 's/a/b/' src/app.ts",
+      'jq -r ".data.key" fixtures/x.json && grep -rn "item.key" src/',
+      "cat .env.example && grep -n DATABASE_URL .env.example",
+      "find src -name '*.ts' | xargs wc -l",
+      "echo $((2+3)); for f in src/*.ts; do echo $f; done",
+      "e9g lock app -- pnpm test && timeout 60 pnpm test",
+      "cd packages/db && pnpm drizzle-kit generate",
+      "diff <(git show e9g/next:src/app.ts) src/app.ts",
+      "cat <<'EOF' > src/new.ts\nexport const n = 1; // it's new\nEOF",
+      'gh issue comment 12 --body "Done: see e9g/b1-x"',
+      "git config --get user.email && git -c core.pager=cat log -1",
+      "echo done # it's fine",
+    ];
+    const planner = [
+      'e9g log --label "merge 3" "Merged b1; b2 running; next: b3."',
+      "e9g merge e9g/b1-x --queue --closes 1",
+      "git add .e9g/lessons.md && git commit -m 'lessons: builders rebase their own branch; never git push' -- .e9g/lessons.md",
+      "git worktree add --detach /tmp/e9g-insp-1 e9g/b1-x && cd /tmp/e9g-insp-1 && pnpm test",
+      "git -C /tmp/e9g-insp-1 log -3 && git worktree remove --force /tmp/e9g-insp-1",
+      'gh issue create --title "b4: Settings page" --body "Don\'t run vercel deploy." --label e9g',
+      "git merge --abort; git reset -- .e9g/lessons.md; git stash list",
+    ];
+    const reviewer = [
+      "git worktree add --detach /tmp/review-1 e9g/b1-x && cd /tmp/review-1 && pnpm test",
+      "git -C /tmp/review-1 status && git diff e9g/next...e9g/b1-x && git branch -a",
+      'e9g verdict review e9g/b1-x approve --note "Fine; one nit: don\'t git push from scripts"',
+    ];
+    return holds([
+      ...builder.map((command) => bash(home, "builder", command, "allow", inWorktree)),
+      ...planner.map((command) => bash(home, "planner", command, "allow")),
+      ...reviewer.map((command) => bash(home, "reviewer", command, "allow")),
+      tool(
+        home,
+        "builder",
+        "Monitor",
+        { command: "tail -f /tmp/dev.log | grep --line-buffered Error", description: "errors", timeout_ms: 1000 },
+        "allow",
+        inWorktree
+      ),
+    ]);
+  });
 
   test("shell writes are held to the same lanes as the file tools", () =>
     holds([
@@ -133,14 +200,14 @@ describe("guard", () => {
       tool(home, "planner", "mcp__claude_ai_Claude_Docs__create", {}, "refuse"),
       tool(home, "planner", delegate, { target: { providerInstanceId: "claudeBuilder" } }, "refuse"),
       tool(home, "planner", delegate, { target: { providerInstanceId: "e9g-fixture-planner" } }, "refuse"),
-      tool(home, "planner", delegate, { target: { providerInstanceId: "e9g-fixture-builder" } }, "allow"),
+      tool(home, "planner", delegate, { target: { providerInstanceId: "e9g-fixture-builder" }, isolation: "worktree" }, "allow"),
       tool(home, "builder", delegate, { target: { providerInstanceId: "e9g-fixture-builder" } }, "refuse"),
     ]);
     const draining = makeRepo();
     mkdirSync(join(draining, ".e9g/run/state"), { recursive: true });
     writeFileSync(join(draining, ".e9g/run/state/drain"), "builder tester\n");
     await holds([
-      tool(draining, "planner", delegate, { target: { providerInstanceId: "e9g-fixture-builder" } }, "refuse"),
+      tool(draining, "planner", delegate, { target: { providerInstanceId: "e9g-fixture-builder" }, isolation: "worktree" }, "refuse"),
       tool(draining, "planner", delegate, { target: { providerInstanceId: "e9g-fixture-reviewer" } }, "allow"),
     ]);
   });

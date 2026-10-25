@@ -1,23 +1,26 @@
 import type { Team } from "./config.ts";
-import { flatten, parseShell } from "./shell.ts";
+import { lines, parseShell } from "./shell.ts";
 
 // What a team may not do. Two kinds:
 // - Policies: outward-facing or irreversible actions, denied by default. An operator unlocks one per team in
 //   team.json ("policies": {"deploy": "allow"}); "dependencies" starts allowed and can be denied the same way.
 // - Core rules: never unlocked. Secrets, the machine's services, rewritten history, the factory's own controls.
-// Each rule is a regex over a shell command (after the guard's normalising) and the reason the agent is told.
-// These are a seatbelt for agents that follow instructions, not a sandbox: see CONSTITUTION.md, Article 6.
+// Each rule is a regex over one simple command as the guard reads it (lib/shell.ts lines(): as written and with
+// each wrapper taken off, without its free text) and the reason the agent is told.
+// These are a seatbelt for agents that follow instructions, not a sandbox: see CONSTITUTION.md, Part IV.
 
-// A command word in command position: at the start, or after a separator or an opening quote, past any VAR=value
-// assignments and wrappers (env, nohup, time, xargs, …), with or without a path (./node_modules/.bin/vercel).
-// Package runners in front of it (npx, pnpm dlx, bunx, …) don't hide it. `grep vercel` is not a deploy.
-export const START = String.raw`(?:^|[;&|(\x60"']|\$\()\s*(?:\w+=\S*\s+)*(?:(?:env|nohup|time|command|exec|xargs|nice|caffeinate(?:\s+-\w+)*|timeout\s+\S+|(?:ba|z)?sh\s+-\w*c\w*)\s+(?:-\S+\s+)*)*(?:\S*/)?`;
+// A command word in command position: at the start, past any VAR=value assignments and wrappers (env, nohup, time,
+// xargs, …), with or without a path (./node_modules/.bin/vercel). Package runners in front of it (npx, pnpm dlx,
+// bunx, …) don't hide it. `grep vercel` is not a deploy, and neither is a quoted 'vercel deploy' in a message.
+export const START = String.raw`(?:^|[;&|(\x60]|\$\()\s*(?:\w+=\S*\s+)*(?:(?:env|nohup|time|exec|xargs|nice|caffeinate(?:\s+-\w+)*|timeout\s+\S+|(?:ba|z)?sh\s+-\w*c\w*)\s+(?:-\S+\s+)*)*(?:\S*/)?`;
 const VIA = String.raw`(?:(?:npx|bunx|pnpm(?:\s+(?:dlx|exec))?|yarn(?:\s+dlx)?|bun(?:\s+x)?|npm\s+exec(?:\s+--)?)\s+(?:-\S+\s+)*(?:\S*/)?)?`;
-const END = String.raw`(?=$|[\s;&|)\x60])`;
+export const END = String.raw`(?=$|[\s;&|)\x60])`;
 // A tool may carry a version (npx vercel@latest).
 const AT = String.raw`(?:@[\w.^~<>=-]+)?`;
 const word = (alternatives: string): RegExp => new RegExp(`${START}${VIA}(?:${alternatives})${AT}${END}`);
-const sub = (command: string, subcommands: string): RegExp => new RegExp(`${START}${VIA}(?:${command})${AT}\\s+(?:-\\S+\\s+)*(?:${subcommands})${END}`);
+// Options before the subcommand may take a value (supabase --workdir x db push).
+const sub = (command: string, subcommands: string): RegExp =>
+  new RegExp(`${START}${VIA}(?:${command})${AT}\\s+(?:-\\S+\\s+(?:[^-\\s]\\S*\\s+)?)*(?:${subcommands})${END}`);
 const anywhere = (pattern: string): RegExp => new RegExp(pattern);
 const ASK = "If the work needs it, the planner asks the operator.";
 
@@ -53,6 +56,12 @@ export const POLICIES: Policy[] = [
       "timeout 600 vercel deploy",
       'sh -c "cd app && vercel deploy"',
       'echo "$(vercel whoami)"',
+      "pnpm --filter @app/web exec vercel deploy --prod",
+      "pnpm -r run deploy",
+      "yarn workspace web deploy",
+      "turbo run deploy",
+      "sam deploy",
+      "/bin/bash -c 'vercel deploy'",
     ],
     default: "deny",
     summary: "deploying: hosting and app-store CLIs, and package scripts named deploy, release or publish",
@@ -67,7 +76,10 @@ export const POLICIES: Policy[] = [
       sub("amplify", "publish|push"),
       sub("expo", "publish"),
       sub("cdk", "deploy|destroy"),
+      sub("sam", "deploy|delete|sync"),
       anywhere(String.raw`${START}(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:deploy|release|publish|ship)[\w:-]*${END}`),
+      // A monorepo's task runner running a deploy task: turbo run deploy, turbo run web#deploy, nx run app:deploy.
+      anywhere(String.raw`${START}${VIA}(?:turbo|nx)\s+(?:\S+\s+)*?(?:[\w@/.-]+[#:])?(?:deploy|release|publish|ship)[\w:-]*${END}`),
     ],
   },
   {
@@ -89,6 +101,9 @@ export const POLICIES: Policy[] = [
       "if true; then supabase db push; fi",
       "npx prisma db push",
       "pnpm drizzle-kit push",
+      "e9g lock app -- npx supabase db push",
+      "pnpm -C packages/db exec drizzle-kit push",
+      "supabase --workdir app db push",
     ],
     default: "deny",
     summary: "hosted databases and data services (linking, pushing, migrating, dumping, project keys)",
@@ -107,13 +122,24 @@ export const POLICIES: Policy[] = [
   },
   {
     id: "publish",
-    examples: ["npm publish", "docker push example/app:latest", "pnpm -r publish"],
+    examples: [
+      "npm publish",
+      "docker push example/app:latest",
+      "pnpm -r publish",
+      "lerna publish",
+      "yarn npm publish",
+      "npm -w app publish",
+      "docker image push x",
+      "docker compose push",
+    ],
     default: "deny",
     summary: "publishing packages and images (npm publish, docker push, cargo publish, …)",
     reason: `publishing is done by a person. ${ASK}`,
     rules: [
       anywhere(String.raw`${START}(?:npm|pnpm|yarn|bun)\s+(?:-\S+\s+)*publish${END}`),
-      sub("docker", "push"),
+      sub("docker|podman|buildah", "push|image\\s+push|compose\\s+(?:-\\S+\\s+(?:[^-\\s]\\S*\\s+)?)*push"),
+      sub("docker-compose", "push"),
+      sub("lerna", "publish|version"),
       anywhere(String.raw`${START}docker\s+buildx\s+build\b[^;&|]*\s--push${END}`),
       sub("cargo", "publish"),
       sub("twine", "upload"),
@@ -130,7 +156,13 @@ export const POLICIES: Policy[] = [
     summary: "gh beyond issues, labels, search and reading pull requests and runs (no workflows, API, PRs, releases or settings)",
     reason:
       "the team uses gh for issues and labels (gh issue …, gh label …) and reads PRs and runs; workflows, the API, PRs, releases and settings reach hosted systems.",
-    rules: [anywhere(String.raw`${START}gh\s+(?!(?:issue|label|search|status)\b|(?:pr|run)\s+(?:view|list|diff|checks)\b|repo\s+view\b)[a-z-]+`)],
+    // Past gh's global -R/--repo (all of them, as an atomic group: (?=(…))\1), so gh -R owner/app issue list is an
+    // issue command.
+    rules: [
+      anywhere(
+        String.raw`${START}gh\s+(?=((?:(?:-R|--repo)\s+\S+\s+|--repo=\S+\s+)*))\1(?!(?:issue|label|search|status)\b|(?:pr|run)\s+(?:view|list|diff|checks)\b|repo\s+view\b)[a-z-]+`
+      ),
+    ],
   },
   {
     id: "messages",
@@ -170,7 +202,9 @@ export const POLICIES: Policy[] = [
 ];
 
 // The factory's own commands, which only a person (or the setup agent, for check, register and start) runs.
-export const OPERATOR_COMMANDS = /\be9g\s+(init|register|sync|upgrade|self-install|watchdog|start|pause|resume|rotate|stop|unregister)\b/;
+export const OPERATOR_COMMANDS = new RegExp(
+  `${START}e9g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|rotate|stop|unregister)${END}`
+);
 
 // Never unlocked.
 export const CORE: [RegExp, string][] = [
@@ -191,18 +225,29 @@ export const CORE: [RegExp, string][] = [
   [OPERATOR_COMMANDS, "the operator runs the factory's own commands; the team uses merge, verdict, log, lock, gate, env, finish and pages."],
 ];
 
-// The secret files the file tools may not touch (Read, Grep, Edit, Write), as regexes over a path.
+// The secret files no agent reads or writes, by the file tools or the shell, as regexes over a path.
 export const SECRET_FILES = [
   /(^|\/)\.env(\.[^/]*)?$/,
+  /(^|\/)\.envrc$/,
   /(^|\/)\.dev\.vars$/,
   /\.(pem|p12|key)$/,
   /(^|\/)\.ssh\//,
   /(^|\/)\.npmrc$/,
+  /(^|\/)\.netrc$/,
+  /(^|\/)\.git-credentials$/,
+  /(^|\/)\.aws\/credentials$/,
+  /(^|\/)\.config\/gh\/hosts\.ya?ml$/,
+  /(^|\/)\.docker\/config\.json$/,
+  /(^|\/)[^/]*service[-_]?account[^/]*\.json$/i,
   /(^|\/)\.secrets?(\/|$)/,
   /(^|\/)secrets?\.(json|ya?ml|env|txt)$/,
 ];
 export const SECRET_OK = /(^|\/)\.env(\.[\w-]+)*\.(example|sample|template)$/;
 export const isSecretFile = (path: string): boolean => SECRET_FILES.some((rule) => rule.test(path)) && !SECRET_OK.test(path);
+// A shell word that names a secret file. A name that's a secret only by its extension (server.key) counts when it
+// has a directory or the file exists: in grep -n item.key src/ it's a property.
+export const isSecretWord = (word: string, exists: (word: string) => boolean): boolean =>
+  isSecretFile(word) && (!/\.(pem|p12|key)$/.test(word) || word.includes("/") || exists(word));
 
 export function policyStates(team: Pick<Team, "policies">): (Policy & { state: PolicyState })[] {
   return POLICIES.map((policy) => ({ ...policy, state: team.policies?.[policy.id] ?? policy.default }));
@@ -220,10 +265,11 @@ export const ALLOWED_EXAMPLES = [
   "echo deploying is off",
 ];
 
-// The rule a shell command breaks, or null: the command read the way the guard reads it (lib/shell.ts).
+// The rule a shell command breaks, or null: each of its commands read the way the guard reads them (lib/shell.ts).
 export function refusal(team: Team, command: string): CommandRule | null {
-  const flat = flatten(parseShell(command));
-  return commandRules(team).find(({ rule }) => rule.test(flat)) ?? null;
+  const rules = commandRules(team);
+  for (const parsed of parseShell(command)) for (const line of lines(parsed)) for (const rule of rules) if (rule.rule.test(line)) return rule;
+  return null;
 }
 
 // Every command rule in force for a team: core, the policies it denies, and its own `never` list.

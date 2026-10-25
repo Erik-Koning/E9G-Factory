@@ -4,17 +4,18 @@
 // (~/.e9g/runs/<team>/heartbeat/), which the watchdog can read. Inert outside a team; never in the agent's way.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { roleOfAgent } from "../../lib/config.ts";
-import { type HookInput, inTeam } from "../../lib/session.ts";
+import { type HookInput, inTeam, roleFor } from "../../lib/session.ts";
 
 if (!inTeam() || !process.env.E9G_RUN) process.exit(0);
 try {
   const input = JSON.parse(readFileSync(0, "utf8")) as HookInput;
   const dir = join(resolve(process.env.E9G_RUN), "heartbeat");
   mkdirSync(dir, { recursive: true });
-  const role = roleOfAgent(input.agent_type) || "main";
+  // The session's real role (its instance's E9G_ROLE): a subagent typed e9g:planner in a builder isn't the planner,
+  // whose heartbeats the watchdog reads.
+  const role = roleFor(input.agent_type) || "main";
   writeFileSync(
-    join(dir, `${role}-${input.session_id}.json`),
+    join(dir, `${role.replace(/[^\w.-]/g, "_")}-${input.session_id}.json`),
     JSON.stringify({
       role,
       sessionId: input.session_id,

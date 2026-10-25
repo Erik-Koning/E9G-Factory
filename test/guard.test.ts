@@ -32,14 +32,9 @@ describe("guard", () => {
     holds(
       readdirSync(join(ROOT, "examples")).flatMap((file) => {
         const example = makeRepo({ ...(JSON.parse(readFileSync(join(ROOT, "examples", file), "utf8")) as RawTeam), name: "fixture" });
-        return guardCases(loadTeam(example)).map(({ role, tool: name, input, expect }): GuardCase => [
-          example,
-          role,
-          name,
-          input,
-          expect,
-          { run: `${example}-run` },
-        ]);
+        return guardCases(loadTeam(example)).map(
+          ({ role, tool: name, input, expect }): GuardCase => [example, role, name, input, expect, { run: `${example}-run` }]
+        );
       })
     ));
 

@@ -554,7 +554,7 @@ function e9gCli(words: string[]): string[] {
 // variant is the command that actually runs.
 export function unwrap(words: string[]): string[][] {
   const variants: string[][] = [];
-  for (let current: string[] | null = words; current?.length && variants.length < 16;) {
+  for (let current: string[] | null = words; current?.length && variants.length < 16; ) {
     const cli = e9gCli(current);
     if (variants.some((seen) => seen.length === cli.length && seen.every((word, i) => word === cli[i]))) break;
     variants.push(cli);
@@ -616,15 +616,13 @@ export function withoutText(words: string[]): string[] {
 }
 
 // The lines the guard's rules are matched against for one command: as written and with each wrapper off, read as
-// the plain command, without its free text. Separators inside a word were quoted data, so they're blanked.
-export function lines(command: ShellCommand): string[] {
+// the plain command, without its free text (withText: with it, for a team's own rules, which name data such as a
+// project id or a setting, and so must see it in what echo writes too). Separators inside a word were quoted data,
+// so they're blanked.
+export function lines(command: ShellCommand, { withText = false } = {}): string[] {
   const found = new Set<string>();
   for (const words of unwrap(command.words))
-    found.add(
-      withoutText(normalize(words))
-        .map((word) => word.replace(/[;&|`()\n]/g, " "))
-        .join(" ")
-    );
+    found.add((withText ? normalize(words) : withoutText(normalize(words))).map((word) => word.replace(/[;&|`()\n]/g, " ")).join(" "));
   return [...found];
 }
 

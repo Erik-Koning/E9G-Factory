@@ -55,8 +55,7 @@ export function init(argv: string[]): number {
 
   const found = detect(repo);
   const given = optionText(options["name"]);
-  if (given !== undefined && !TEAM_NAME.test(given))
-    die(`--name ${given}: lowercase letters, digits and dashes, starting with a letter, up to 31`);
+  if (given !== undefined && !TEAM_NAME.test(given)) die(`--name ${given}: lowercase letters, digits and dashes, starting with a letter, up to 31`);
   const name = given ?? teamName(basename(repo));
   const branch = optionText(options["branch"]) ?? "e9g/next";
   const base = optionText(options["base"]) ?? found.git.defaultBranch ?? "main";
@@ -156,7 +155,11 @@ export function init(argv: string[]): number {
   );
   write(
     "adapters/env.sh",
-    fill("adapters/env.sh", { PORT: String(port), INSTALL: install, SERVE: found.scripts["dev"] ? `${runner} dev` : "echo 'fill in: how to serve the app'" }),
+    fill("adapters/env.sh", {
+      PORT: String(port),
+      INSTALL: install,
+      SERVE: found.scripts["dev"] ? `${runner} dev` : "echo 'fill in: how to serve the app'",
+    }),
     0o755
   );
   write("adapters/after-merge.sh", fill("adapters/after-merge.sh", { INSTALL: install }), 0o755);

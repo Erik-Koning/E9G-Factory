@@ -98,7 +98,7 @@ quick gate. **The merge queue** (`e9g merge`) is the only way into the integrati
 
 | Where                                                  | What                                                                                                                                                                                                                                                              |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The factory** (this repository)                      | Everything generic: the [constitution](CONSTITUTION.md), the role prompts (`plugin/agents/`), the hooks (`plugin/hooks/`), the policies (`lib/policies.ts`), the engine (`lib/`), the setup agent and the starter files (`templates/`)                           |
+| **The factory** (this repository)                      | Everything generic: the [constitution](CONSTITUTION.md), the role prompts (`plugin/agents/`), the hooks (`plugin/hooks/`), the policies (`lib/policies.ts`), the engine (`lib/`), the setup agent and the starter files (`templates/`)                            |
 | **The team's `.e9g/`** (in the repository it works on) | Everything about one repository: `team.json` (the rules, [reference](docs/team.md)), `brief.md`, `notes.md`, an optional rubric and style guide, `roles/<role>.md` additions, the planner's `lessons.md`, and `adapters/` (`env.sh`, `gate.sh`, `after-merge.sh`) |
 
 Everything else is generated from these two, and nothing in it is edited by hand:
@@ -113,16 +113,16 @@ Everything else is generated from these two, and nothing in it is edited by hand
 Local and reversible work is allowed. Outward-facing and irreversible actions are denied until you unlock them in
 `team.json` (`"policies": {"deploy": "allow"}`):
 
-| Policy         | Denied by default                                                                                                                                |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Policy         | Denied by default                                                                                                                                                       |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `deploy`       | Hosting and app-store CLIs (Vercel, Netlify, Fly, Wrangler, SST, SAM, Firebase, Convex, EAS, …), and package scripts or turbo/nx tasks named deploy, release or publish |
-| `cloud`        | aws, gcloud, az, terraform, pulumi, kubectl, helm, …                                                                                             |
-| `hosted-data`  | Linking, pushing, migrating or dumping hosted databases (Supabase, Prisma migrate deploy, PlanetScale, Neon, Turso, …)                           |
-| `publish`      | npm, pnpm, yarn, lerna, cargo, gem and twine publishing; docker, podman and buildah push (including docker image and compose push)              |
-| `github`       | gh beyond issues, labels, search and reading PRs and runs (no workflows, API, PRs, releases or settings)                                         |
-| `messages`     | mail, Slack or Discord webhooks, SMS and email APIs from the shell. The planner emails only you, through its email tool                          |
-| `payments`     | The Stripe CLI and live payment keys                                                                                                             |
-| `dependencies` | (allowed by default) adding packages                                                                                                             |
+| `cloud`        | aws, gcloud, az, terraform, pulumi, kubectl, helm, …                                                                                                                    |
+| `hosted-data`  | Linking, pushing, migrating or dumping hosted databases (Supabase, Prisma migrate deploy, PlanetScale, Neon, Turso, …)                                                  |
+| `publish`      | npm, pnpm, yarn, lerna, cargo, gem and twine publishing; docker, podman and buildah push (including docker image and compose push)                                      |
+| `github`       | gh beyond issues, labels, search and reading PRs and runs (no workflows, API, PRs, releases or settings)                                                                |
+| `messages`     | mail, Slack or Discord webhooks, SMS and email APIs from the shell. The planner emails only you, through its email tool                                                 |
+| `payments`     | The Stripe CLI and live payment keys                                                                                                                                    |
+| `dependencies` | (allowed by default) adding packages                                                                                                                                    |
 
 Never unlocked: secrets and env files, the machine's services, force pushes and rewritten history, protected
 branches, and the factory's own files. A team adds its own rules in `never`, each with an example command that

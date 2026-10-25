@@ -71,6 +71,7 @@ members and merges wake you.
    - **Innovator done.** Decide each proposal: accept it as tickets (and as criteria, if the team keeps a list of
      them), or reject it with a one-line reason. A proposal that would change the scope a lot is the operator's
      decision (Article 3).
+
 3. **Triage** every finding: make it a ready ticket with:
    - the outcome and what done looks like;
    - the page, journey or area it touches;

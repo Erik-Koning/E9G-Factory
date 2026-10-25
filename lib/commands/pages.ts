@@ -135,7 +135,8 @@ async function check(base: string, chosen: PageSpec[], outDir: string | null): P
             // Rules match the text or the URL it came from ("Failed to load resource" names no URL itself).
             const url = message.location()?.url ?? "";
             const seen = `${text} ${url}`;
-            if (!ignore.some((rule) => rule.test(seen))) consoleErrors.push(`${(text.split("\n")[0] ?? "").slice(0, 160)}${url ? ` (${url.replace(base, "")})` : ""}`);
+            if (!ignore.some((rule) => rule.test(seen)))
+              consoleErrors.push(`${(text.split("\n")[0] ?? "").slice(0, 160)}${url ? ` (${url.replace(base, "")})` : ""}`);
           });
           const run: PageRun = { viewport: viewport.id, scheme, problems: [] };
           try {
@@ -146,7 +147,9 @@ async function check(base: string, chosen: PageSpec[], outDir: string | null): P
             if (axePath) {
               await tab.addScriptTag({ path: axePath });
               const violations = await tab.evaluate(async () => {
-                const result = await (window as unknown as { axe: Axe }).axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
+                const result = await (window as unknown as { axe: Axe }).axe.run(document, {
+                  runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+                });
                 return result.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id} (${v.nodes.length})`);
               });
               run.axe = violations;

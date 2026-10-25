@@ -12,7 +12,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { FACTORY_PATH, factoryWrite, instanceId, type Lane, laneAllows, normalize as normalizeTeam, roleForInstance, type Team } from "./config.ts";
 import { E9G_HOME } from "./paths.ts";
-import { commandRules, END, isSecretFile, isSecretWord, OPERATOR_COMMANDS, START } from "./policies.ts";
+import { brokenRule, commandRules, END, isSecretFile, isSecretWord, OPERATOR_COMMANDS, START } from "./policies.ts";
 import { type HookInput, inSetup, inTeam, setupRole, teamSession } from "./session.ts";
 import { expandPath, fileWords, gitGlobals, lines, operands, parseShell, type ShellCommand, stripGlob, unwrap } from "./shell.ts";
 import { runningByInstance, T3_HOME, TOOLS } from "./t3.ts";
@@ -588,10 +588,9 @@ export function check(input: HookInput): void {
     const rules = setup ? commandRules(team).filter(({ rule }) => rule !== OPERATOR_COMMANDS) : commandRules(team);
     const owned = setup ? [] : ownedCommands(team);
     for (const command of commands) {
-      for (const line of lines(command)) {
-        for (const { rule, reason } of rules) if (rule.test(line)) refuse(reason);
-        for (const [rule, roles, reason] of owned) if (rule.test(line) && !roles.includes(role)) refuse(reason);
-      }
+      const broken = brokenRule(rules, command);
+      if (broken) refuse(broken.reason);
+      for (const line of lines(command)) for (const [rule, roles, reason] of owned) if (rule.test(line) && !roles.includes(role)) refuse(reason);
       checkSecrets(command);
       // The command that actually runs, its wrappers (timeout, env, e9g lock … --) taken off.
       const words = unwrap(command.words).at(-1) ?? [];

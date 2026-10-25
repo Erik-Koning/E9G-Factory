@@ -15,7 +15,17 @@ const contract = await import(`${BD}/contract.js`);
 const lib = await import(`${BD}/better-diagrams.js`);
 const W = 176,
   H = 80;
-const n = (id: string, label: string, kind: string, icon: string, x: number, y: number, extra: Record<string, unknown> = {}) => ({ id, label, kind, icon, x, y, w: W, h: H, ...extra });
+const n = (id: string, label: string, kind: string, icon: string, x: number, y: number, extra: Record<string, unknown> = {}) => ({
+  id,
+  label,
+  kind,
+  icon,
+  x,
+  y,
+  w: W,
+  h: H,
+  ...extra,
+});
 let k = 0;
 const e = (source: string, target: string, label: string, extra: Record<string, unknown> = {}) => ({ id: `e${++k}`, source, target, label, ...extra });
 const c = (i: number): number => 24 + i * 200;

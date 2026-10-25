@@ -656,7 +656,10 @@ process.exit(overlap ? 4 : 0);`;
       assert.equal(realpathSync(node), realpathSync(process.execPath), "the same node");
       const brew = "/opt/homebrew/bin/node";
       if (existsSync(brew) && realpathSync(brew) === realpathSync(process.execPath)) assert.equal(node, brew, "not its versioned Cellar path");
-      assert.ok(w.calls().some((call) => call.startsWith("launchctl bootstrap")), "through the fake launchctl");
+      assert.ok(
+        w.calls().some((call) => call.startsWith("launchctl bootstrap")),
+        "through the fake launchctl"
+      );
     } finally {
       await w.close();
     }

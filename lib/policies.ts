@@ -1,5 +1,5 @@
 import type { Team } from "./config.ts";
-import { lines, parseShell } from "./shell.ts";
+import { lines, parseShell, type ShellCommand } from "./shell.ts";
 
 // What a team may not do. Two kinds:
 // - Policies: outward-facing or irreversible actions, denied by default. An operator unlocks one per team in
@@ -267,9 +267,19 @@ export const ALLOWED_EXAMPLES = [
 
 // The rule a shell command breaks, or null: each of its commands read the way the guard reads them (lib/shell.ts).
 export function refusal(team: Team, command: string): CommandRule | null {
-  const rules = commandRules(team);
-  for (const parsed of parseShell(command)) for (const line of lines(parsed)) for (const rule of rules) if (rule.rule.test(line)) return rule;
+  for (const parsed of parseShell(command)) {
+    const broken = brokenRule(commandRules(team), parsed);
+    if (broken) return broken;
+  }
   return null;
+}
+
+// The first rule one command breaks. The factory's rules read it without its free text (a commit message that
+// mentions vercel deploy deploys nothing); a team's own rules read that text too, as they always have.
+export function brokenRule(rules: CommandRule[], command: ShellCommand): CommandRule | null {
+  const plain = lines(command);
+  const all = [...new Set([...plain, ...lines(command, { withText: true })])];
+  return rules.find((rule) => (rule.source === "team" ? all : plain).some((line) => rule.rule.test(line))) ?? null;
 }
 
 // Every command rule in force for a team: core, the policies it denies, and its own `never` list.

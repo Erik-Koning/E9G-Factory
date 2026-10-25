@@ -12,7 +12,8 @@ import { readJson, which } from "../util.ts";
 import { teamNames } from "./team.ts";
 import { watchdogLoaded } from "./watchdog.ts";
 
-const version = (command: string, args = ["--version"]): string | null => /(\d+\.\d+\.\d+)/.exec(spawnSync(command, args, { encoding: "utf8" }).stdout ?? "")?.[1] ?? null;
+const version = (command: string, args = ["--version"]): string | null =>
+  /(\d+\.\d+\.\d+)/.exec(spawnSync(command, args, { encoding: "utf8" }).stdout ?? "")?.[1] ?? null;
 
 const SOURCES = /sources ([0-9a-f]{16}) -->/;
 // A prompt's sources hash includes the factory version that compiled it, so a team pinned to another version is
@@ -53,7 +54,9 @@ export async function doctor(): Promise<number> {
   if (!t3Version) fail("T3 Code (t3) isn't on PATH: https://github.com/pingdotgg/t3code");
   else if (contract.length) for (const problem of contract) fail(problem);
   else ok(`T3 Code ${t3Version}: in range ${t3.SUPPORTED}, and its database, CLI and settings are what this factory reads`);
-  (await t3.serverUp()) ? ok(`T3 Code's server answers at ${t3.serverUrl()}`) : fail(`T3 Code's server doesn't answer at ${t3.serverUrl()} (t3 service restart)`);
+  (await t3.serverUp())
+    ? ok(`T3 Code's server answers at ${t3.serverUrl()}`)
+    : fail(`T3 Code's server doesn't answer at ${t3.serverUrl()} (t3 service restart)`);
   // The factory no longer turns this on for you: it's a setting of the whole of T3 Code.
   if (existsSync(t3.SETTINGS) && t3.readSettings().autoResumeLimitedThreads !== true)
     warn("T3 Code doesn't resume threads that hit a usage limit (autoResumeLimitedThreads), so a team stops at a limit until you resume it");
@@ -83,7 +86,9 @@ export async function doctor(): Promise<number> {
     const hookNode = spawnSync("sh", ["-c", "command -v node"], { encoding: "utf8", env: { ...process.env, PATH: servicePath } }).stdout.trim();
     if (probe.status !== 0) fail(`T3 Code's service PATH has no node, so the factory's hooks can't run`);
     else if (probe.stdout === "false")
-      fail(`the hooks would run ${hookNode} (${version(hookNode) ?? "unknown version"}), which can't run TypeScript: put Node 22.18 or newer first on T3 Code's PATH`);
+      fail(
+        `the hooks would run ${hookNode} (${version(hookNode) ?? "unknown version"}), which can't run TypeScript: put Node 22.18 or newer first on T3 Code's PATH`
+      );
     else ok(`the hooks run ${hookNode}, which runs TypeScript`);
   }
   watchdogLoaded() ? ok("the watchdog is loaded (ca.e9g.watchdog)") : warn("the watchdog isn't loaded: e9g watchdog install (e9g start does it too)");
@@ -115,7 +120,12 @@ export async function doctor(): Promise<number> {
       else if (stale.length) warn(`${name}: prompts out of date for ${stale.join(", ")} (e9g register ${entry.home})`);
       else ok(`${name}: rules load, prompts current${pin === PACKAGE.version ? "" : ` (judged by ${pin})`}`);
     } catch (error) {
-      fail(`${name}: ${String((error as Error).message).split("\n").slice(0, 3).join(" ")}`);
+      fail(
+        `${name}: ${String((error as Error).message)
+          .split("\n")
+          .slice(0, 3)
+          .join(" ")}`
+      );
     }
   }
 

@@ -1,4 +1,4 @@
-// Shared by the tests. Imported first, so E9G_HOME and T3CODE_HOME point at empty temporary folders before any of
+// Shared by the tests. Imported first, so E9G_HOME, T3CODE_HOME and HOME point at empty temporary folders before any of
 // the factory's modules read them: no test touches ~/.e9g, ~/.t3, launchd or T3 Code's settings.
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -13,6 +13,9 @@ export const tmp = (prefix = "e9g-test-") => realpathSync(mkdtempSync(join(tmpdi
 
 process.env.E9G_HOME = tmp("e9g-home-");
 process.env.T3CODE_HOME = tmp("e9g-t3-");
+// HOME too, for whatever resolves homedir(): ~/.local/bin, ~/Library/LaunchAgents, ~/.claude. Repositories made here
+// set their own git identity, since a fresh HOME has no ~/.gitconfig.
+process.env.HOME = tmp("e9g-user-");
 for (const key of ["E9G_TEAM", "E9G_HOME_DIR", "E9G_RUN", "E9G_ROLE", "E9G_SETUP", "E9G_VERSION", "E9G_MERGE_QUEUED", "CLAUDE_PROJECT_DIR"])
   delete process.env[key];
 

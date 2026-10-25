@@ -6,7 +6,7 @@
 // looping. Each result is recorded for the planner. Inert outside a team and for other roles.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { FACTORY_ROOT, stateDir } from "../../lib/paths.mjs";
 import { inTeam, teamSession } from "../../lib/session.mjs";
 import { git } from "../../lib/util.mjs";
@@ -25,6 +25,11 @@ const refusals = existsSync(counterFile) ? Number(readFileSync(counterFile, "utf
 
 function refuse(reason) {
   if (refusals >= 3) {
+    // Letting it stop with work possibly uncommitted: keep its worktree from the watchdog's pruning.
+    if (process.env.E9G_RUN) {
+      mkdirSync(join(process.env.E9G_RUN, "keep"), { recursive: true });
+      writeFileSync(join(process.env.E9G_RUN, "keep", basename(cwd)), `${new Date().toISOString()} ${reason.split("\n")[0]}\n`);
+    }
     process.stderr.write(`Still not passing after three tries; stopping anyway. Say in your report that it fails: ${reason}`);
     process.exit(0);
   }

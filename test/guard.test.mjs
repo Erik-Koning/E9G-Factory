@@ -1,4 +1,4 @@
-import { baseTeam, guardAll, makeRepo, tmp, write } from "./helpers.mjs";
+import { baseTeam, git, guardAll, makeRepo, tmp, write } from "./helpers.mjs";
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -52,14 +52,20 @@ describe("guard", () => {
       bash(home, "planner", "git commit -m lessons -- .e9g/lessons.md", "allow"),
     ]));
 
-  test("the push cadence", async () => {
+  test("the push cadence counts pushes that happened", async () => {
     const pushing = makeRepo(baseTeam({ push: { every: "6h" } }));
+    const remote = tmp("e9g-remote-");
+    git(remote, "init", "-q", "--bare");
+    git(pushing, "remote", "add", "origin", remote);
     const run = tmp("e9g-run-");
     await holds([
       bash(pushing, "builder", "git push origin e9g/next", "refuse", { run }),
       bash(pushing, "planner", "git push origin other", "refuse", { run }),
+      bash(pushing, "planner", "git push origin e9g/next", "allow", { run }),
     ]);
+    // Allowed but never run (or failed): it doesn't start the clock.
     await holds([bash(pushing, "planner", "git push origin e9g/next", "allow", { run })]);
+    git(pushing, "push", "-q", "origin", "e9g/next");
     await holds([bash(pushing, "planner", "git push origin e9g/next", "refuse", { run })]);
   });
 

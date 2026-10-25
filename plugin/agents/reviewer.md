@@ -28,7 +28,8 @@ code to judge it. Check, in this order:
 
 You work in the team's shared checkout, so don't check out, switch, stash, edit, commit or push there; the guard
 refuses it. To run something on the branch, use a detached copy:
-`git worktree add --detach /tmp/review-<n> <branch>`.
+`git worktree add --detach /tmp/review-<n> <branch>`. Remove it before you answer
+(`git worktree remove --force /tmp/review-<n>`): each copy holds the whole repository and its build output.
 
 Record your verdict before you answer:
 

@@ -6,12 +6,14 @@
 // the rules it runs under. In setup (E9G_SETUP=1) the setup agent may write only .e9g/. Inert for everyone else.
 // Exit 2 refuses the tool call and tells the agent why.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { FACTORY_PATH, instanceId, laneAllows, normalize as normalizeTeam, roleForInstance } from "../../lib/config.mjs";
 import { commandRules, isSecretFile, OPERATOR_COMMANDS } from "../../lib/policies.mjs";
 import { inSetup, inTeam, teamSession } from "../../lib/session.mjs";
 import { runningByInstance, TOOLS } from "../../lib/t3.mjs";
+import { flatten, parseShell } from "../../lib/shell.mjs";
 import { escapeRegex } from "../../lib/util.mjs";
 
 if (!inTeam() && !inSetup()) process.exit(0);
@@ -74,6 +76,9 @@ function checkPath(absolute, { viaShell = false } = {}) {
   if (inside(absolute, work)) return checkWork(absolute);
   for (const rule of team.protect)
     if (new RegExp(rule).test(relative(home, absolute))) refuse(`${relative(home, absolute)} is written by the team's scripts only.`);
+  // A member in its own worktree never changes the team's checkout: that's the planner's, and holds the live rules.
+  if (!setup && !inside(root, home) && inside(absolute, home))
+    refuse(`${absolute} is in the team's checkout, which only the planner changes; work in your own worktree (${root}).`);
   const rel = relative(root, absolute);
   if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
     if (scratchDirs.some((dir) => absolute.startsWith(dir))) return;
@@ -92,6 +97,7 @@ function checkPath(absolute, { viaShell = false } = {}) {
 }
 
 function checkWrite(path) {
+  if (path && isSecretFile(path)) refuse(`${path} is a secrets file; agents never write them. The team's environment has what it needs.`);
   checkPath(isAbsolute(path) ? path : resolve(input.cwd ?? root, path));
 }
 
@@ -132,24 +138,58 @@ const OWNED = [
   ...team.commandOwners.map(({ rule, roles, reason }) => [new RegExp(rule), roles, reason ?? "that command belongs to another role."]),
 ];
 
+// When the branch was last pushed, from git's own record (the remote-tracking ref's reflog says "update by push"),
+// so a push that failed or was refused doesn't count.
+function minutesSincePush(remote, branch) {
+  try {
+    const lines = execFileSync("git", ["log", "-g", "--format=%ct %gs", `refs/remotes/${remote}/${branch}`], {
+      cwd: home,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const pushed = lines.split("\n").find((line) => /update by push/.test(line));
+    if (pushed) return (Date.now() / 1000 - Number(pushed.split(" ")[0])) / 60;
+  } catch {}
+  // Before the reflog has one: the stamp older versions of the guard wrote.
+  const stamp = run && join(run, "last-push");
+  return stamp && existsSync(stamp) ? (Date.now() - statSync(stamp).mtimeMs) / 60_000 : Number.POSITIVE_INFINITY;
+}
+
 function pushAllowed(command) {
   const push = team.push;
   if (role !== "planner" || !push) return `${push ? "only the planner pushes" : "this team pushes nothing"}; everything stays on this machine.`;
-  const exact = new RegExp(`\\bgit\\s+push\\s+${escapeRegex(push.remote)}\\s+${escapeRegex(push.branch)}\\s*($|[;&|])`);
+  const exact = new RegExp(`(?:^|; )git\\s+push\\s+${escapeRegex(push.remote)}\\s+${escapeRegex(push.branch)}\\s*($|;)`);
   if (!exact.test(command)) return `the planner pushes only ${push.branch}: git push ${push.remote} ${push.branch}.`;
-  if (run && push.everyMin) {
-    const stamp = join(run, "last-push");
-    const minutes = existsSync(stamp) ? (Date.now() - statSync(stamp).mtimeMs) / 60_000 : Number.POSITIVE_INFINITY;
+  if (push.everyMin) {
+    const minutes = minutesSincePush(push.remote, push.branch);
     if (minutes < push.everyMin)
       return `${push.branch} was pushed ${(minutes / 60).toFixed(1)} h ago; pushes are at most every ${(push.everyMin / 60).toFixed(1)} h.`;
-    mkdirSync(run, { recursive: true });
-    writeFileSync(stamp, new Date().toISOString());
   }
   return null;
 }
 
+// A recursive grep reads ignored files too, env files included; rg, git grep and the Grep tool skip them.
+function envFilesPresent() {
+  const has = (dir) => {
+    try {
+      return readdirSync(dir).some((name) => /^\.env(\.|$)/.test(name) && !isSecretOk(name));
+    } catch {
+      return false;
+    }
+  };
+  if (has(root)) return true;
+  for (const group of ["packages", "apps"]) {
+    try {
+      for (const name of readdirSync(join(root, group))) if (has(join(root, group, name))) return true;
+    } catch {}
+  }
+  return false;
+}
+const isSecretOk = (name) => /\.(example|sample|template)$/.test(name);
+
 function checkCommand(raw) {
-  const command = normalize(raw);
+  const commands = parseShell(normalize(raw));
+  const command = flatten(commands);
   const rules = setup ? commandRules(team).filter(({ rule }) => rule !== OPERATOR_COMMANDS) : commandRules(team);
   for (const { rule, reason } of rules) if (rule.test(command)) refuse(reason);
   if (setup) {
@@ -158,23 +198,32 @@ function checkCommand(raw) {
   } else {
     for (const [rule, roles, reason] of OWNED) if (rule.test(command) && !roles.includes(role)) refuse(reason);
   }
+  if (
+    commands.some(({ words }) => words[0] === "grep" && words.some((word) => /^-\w*[rR]\w*$|^--(recursive|dereference-recursive)$/.test(word))) &&
+    envFilesPresent()
+  )
+    refuse("grep -r reads env files too; use rg, git grep or the Grep tool, which skip ignored files.");
   const protectedAlt = team.protectedBranches.map(escapeRegex).join("|");
-  if (new RegExp(`\\bgit\\s+push\\b[^;&|]*\\b(${protectedAlt})\\b`).test(command)) refuse(`nothing is pushed to ${team.protectedBranches.join(" or ")}.`);
+  if (new RegExp(`\\bgit\\s+push\\b[^;]*\\b(${protectedAlt})\\b`).test(command)) refuse(`nothing is pushed to ${team.protectedBranches.join(" or ")}.`);
   if (/\bgit\s+push\b/.test(command)) {
     const problem = setup ? "setup pushes nothing." : pushAllowed(command);
     if (problem) refuse(problem);
   }
   const integration = escapeRegex(team.branch);
-  if (new RegExp(`\\bgit\\s+(branch\\s+(-[a-zA-Z]*[fdDmM][a-zA-Z]*|--force|--delete|--move)|update-ref)\\b[^;&|]*\\b${integration}\\b`).test(command))
+  if (new RegExp(`\\bgit\\s+(branch\\s+(-[a-zA-Z]*[fdDmM][a-zA-Z]*|--force|--delete|--move)|update-ref)\\b[^;]*\\b${integration}\\b`).test(command))
     refuse(`${team.branch} changes only through e9g merge.`);
-  if (
-    role === "planner" &&
-    inside(resolve(input.cwd ?? root), home) &&
-    /\bgit\s+(merge(?!\s+--abort)|pull|rebase|cherry-pick|revert|am|reset\s+--(hard|merge|keep))\b/.test(command)
-  )
-    refuse(`${team.branch} changes only through e9g merge, and a builder rebases its own branch.`);
+  // In the team's checkout the planner keeps the integration branch checked out and clean: the merge queue
+  // fast-forwards it while the planner works, and every member's rules are read from it.
+  if (role === "planner" && inside(resolve(input.cwd ?? root), home)) {
+    if (/\bgit\s+(merge(?!\s+--abort)|pull|rebase|cherry-pick|revert|am|reset\s+--(hard|merge|keep))\b/.test(command))
+      refuse(`${team.branch} changes only through e9g merge, and a builder rebases its own branch.`);
+    if (/\bgit\s+(switch|stash|checkout(?!\s+--\s))\b/.test(command))
+      refuse(
+        `the team's checkout stays on ${team.branch}; inspect other branches with git show, git diff or git worktree add --detach /tmp/<name> <branch>.`
+      );
+  }
   if (readOnly && !setup) {
-    const branchList = /\bgit\s+branch(\s+(-a|-r|-v|-vv|--list|--show-current|--contains\s+\S+|--merged(\s+\S+)?|--no-merged(\s+\S+)?))*\s*($|[;&|])/;
+    const branchList = /\bgit\s+branch(\s+(-a|-r|-v|-vv|--list|--show-current|--contains\s+\S+|--merged(\s+\S+)?|--no-merged(\s+\S+)?))*\s*($|;)/;
     if (
       /\bgit\s+(checkout|switch|stash|reset|restore|clean|commit|merge|rebase|cherry-pick|revert|pull|am|apply|tag|branch|push|mv|rm)\b/.test(command) &&
       !branchList.test(command)
@@ -183,34 +232,38 @@ function checkCommand(raw) {
         `the ${role || "unnamed"} role changes nothing in the checkout; inspect branches with git show, git diff, or git worktree add --detach /tmp/<name> <branch>.`
       );
   }
-  for (const target of writeTargets(command)) checkPath(isAbsolute(target) ? target : resolve(input.cwd ?? root, target), { viaShell: true });
+  for (const target of writeTargets(commands, resolve(input.cwd ?? root))) checkPath(target, { viaShell: true });
 }
 
 // The paths a shell command writes: redirect targets, tee, sed -i/perl -i operands, the destination of cp, mv, ln
-// and install, and the operands of rm, touch, truncate, mkdir and git rm/mv/checkout/restore. Approximate on
-// purpose: it catches the ordinary ways round the file tools, and the merge queue checks every lane again.
-function writeTargets(command) {
+// and install, the operands of rm, touch, truncate, mkdir, git rm and git mv, git restore's paths and the paths
+// after git checkout's --. A cd changes where later relative paths point. Approximate on purpose: it catches the
+// ordinary ways round the file tools, and the merge queue checks every lane again.
+function writeTargets(commands, start) {
   const targets = [];
-  const paths = (words) => words.filter((word) => word && !word.startsWith("-") && !/^\d*>|^&/.test(word));
-  for (const segment of command.split(/&&|\|\||[;|\n]/)) {
-    for (const match of segment.matchAll(/(?:^|[^\d&>])\d?>>?\s*([^\s&;|<>]+)/g)) if (!match[1].startsWith("&")) targets.push(match[1]);
-    const words = segment
-      .replace(/\d?>>?\s*\S+/g, " ")
-      .trim()
-      .split(/\s+/)
-      .map((word) => word.replace(/^["']|["']$/g, ""));
-    // The command word: skip VAR=value assignments and wrappers like env, nohup, time, command, xargs.
-    let at = 0;
-    while (at < words.length && (/^\w+=/.test(words[at]) || /^(env|nohup|time|command|sudo|xargs|exec)$/.test(words[at]))) at++;
-    if (at >= words.length || !/^(tee|sed|perl|cp|mv|ln|install|rm|touch|truncate|mkdir|git)$/.test(words[at].split("/").pop())) continue;
-    const verb = words[at].split("/").pop();
-    const rest = words.slice(at + 1);
-    if (verb === "tee" || ["rm", "touch", "truncate", "mkdir"].includes(verb)) targets.push(...paths(rest));
-    else if (verb === "sed" && rest.some((word) => /^-[a-zA-Z]*i/.test(word))) targets.push(...paths(rest).slice(1));
-    else if (verb === "perl" && rest.some((word) => /^-[a-zA-Z]*i/.test(word))) targets.push(...paths(rest).slice(1));
-    else if (["cp", "mv", "ln", "install"].includes(verb)) targets.push(...paths(rest).slice(-1));
-    else if (verb === "git" && /^(rm|mv|checkout|restore)$/.test(rest[0] ?? ""))
-      targets.push(...paths(rest.slice(1)).filter((word) => word.includes("/") || word.includes(".")));
+  let cwd = start;
+  const at = (path) => resolve(cwd, path.replace(/^~(?=\/|$)/, homedir()));
+  const paths = (words) => words.filter((word) => word && !word.startsWith("-"));
+  for (const { words, redirects } of commands) {
+    for (const target of redirects) targets.push(at(target));
+    let i = 0;
+    while (i < words.length && (/^\w+=/.test(words[i]) || /^(env|nohup|time|command|sudo|xargs|exec|nice|timeout)$/.test(words[i]))) {
+      i += words[i] === "timeout" && /^\d/.test(words[i + 1] ?? "") ? 2 : 1;
+    }
+    const verb = (words[i] ?? "").split("/").pop();
+    const rest = words.slice(i + 1);
+    if (verb === "cd") {
+      cwd = at(rest[0] ?? homedir());
+      continue;
+    }
+    let written = [];
+    if (verb === "tee" || ["rm", "touch", "truncate", "mkdir"].includes(verb)) written = paths(rest);
+    else if ((verb === "sed" || verb === "perl") && rest.some((word) => /^-[a-zA-Z]*i/.test(word))) written = paths(rest).slice(1);
+    else if (["cp", "mv", "ln", "install"].includes(verb)) written = paths(rest).slice(-1);
+    else if (verb === "git" && /^(rm|mv)$/.test(rest[0] ?? "")) written = paths(rest.slice(1));
+    else if (verb === "git" && rest[0] === "restore") written = paths(rest.slice(1).filter((word, j, all) => !/^(-s|--source)$/.test(all[j - 1] ?? "")));
+    else if (verb === "git" && rest[0] === "checkout" && rest.includes("--")) written = rest.slice(rest.indexOf("--") + 1);
+    targets.push(...written.map(at));
   }
   return targets.filter((target) => !/[$`*]/.test(target) && target !== "/dev/null");
 }

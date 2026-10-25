@@ -2,10 +2,10 @@ import "./helpers.mjs";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { normalize } from "../lib/config.mjs";
-import { ALLOWED_EXAMPLES, commandRules, isSecretFile, POLICIES, policyStates } from "../lib/policies.mjs";
+import { ALLOWED_EXAMPLES, isSecretFile, POLICIES, policyStates, refusal } from "../lib/policies.mjs";
 
 const team = (raw = {}) => normalize({ name: "fixture", branch: "e9g/next", ...raw }).team;
-const refused = (t, command) => commandRules(t).find(({ rule }) => rule.test(command)) ?? null;
+const refused = (t, command) => refusal(t, command);
 
 describe("policies", () => {
   test("every policy's examples are refused when it's denied", () => {
@@ -71,8 +71,9 @@ describe("policies", () => {
   });
 
   test("secret files", () => {
-    for (const path of [".env", "app/.env.local", "certs/key.pem", "/Users/x/.ssh/id_ed25519", ".npmrc", "config/secrets/a.json", ".dev.vars"])
+    for (const path of [".env", "app/.env.local", "certs/key.pem", "/Users/x/.ssh/id_ed25519", ".npmrc", "config/secrets.json", ".secrets/a", ".dev.vars"])
       assert.ok(isSecretFile(path), path);
-    for (const path of [".env.example", "app/.env.sample", "src/env.ts", "docs/environment.md"]) assert.ok(!isSecretFile(path), path);
+    for (const path of [".env.example", "app/.env.sample", ".env.local.example", "src/env.ts", "docs/environment.md", "src/lib/secrets/index.ts"])
+      assert.ok(!isSecretFile(path), path);
   });
 });

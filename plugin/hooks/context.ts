@@ -5,7 +5,7 @@
 //   session) and says so. The planner also gets the members running against the limits, the team's context
 //   commands (team.json "context") and its latest log entries.
 // - UserPromptSubmit, planner only (every wake): the real time, members running, merge results it hasn't seen,
-//   and whether the environment is draining.
+//   whether the environment is draining, and whether the operator paused the team.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
@@ -24,6 +24,8 @@ if (!team.roles[role]) process.exit(0);
 if (event === "UserPromptSubmit" && role !== "planner") process.exit(0);
 const state = stateDir(home);
 const LIMIT = 9000;
+// While the operator has the team paused, the guard refuses new members and merges.
+const paused = existsSync(join(run, "paused")) ? "The operator paused the team: start no members and merge nothing until they run e9g resume." : null;
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max)}\n(… cut at ${max} characters)` : text);
 const runCommand = (command: string): string => {
@@ -63,6 +65,7 @@ if (event === "UserPromptSubmit") {
     slots(),
     finished.length ? `Merge queue results:\n${finished.join("\n")}` : null,
     existsSync(drain) ? `Draining for an environment reset: no new ${readFileSync(drain, "utf8").trim()} until e9g drain off.` : null,
+    paused,
   ]
     .filter(Boolean)
     .join("\n");
@@ -75,6 +78,7 @@ if (event === "UserPromptSubmit") {
     );
   }
   if (role === "planner") {
+    if (paused) parts.push(paused);
     parts.push(slots());
     for (const { title, command } of team.context) parts.push(`${title}:\n${clip(runCommand(command), 2000)}`);
     const logFile = join(state, "log.md");

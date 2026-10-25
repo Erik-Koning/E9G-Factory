@@ -1,0 +1,4 @@
+#!/bin/sh
+# A fake docker for the tests: it logs the call and does nothing.
+echo "docker $*" >> "${FAKE_T3_LOG:-/dev/null}"
+exit 0

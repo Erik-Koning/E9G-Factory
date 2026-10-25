@@ -15,10 +15,10 @@ describe("team members' commands", { concurrency: true }, () => {
     git(home, "checkout", "-q", "e9g/next");
     assert.equal((await e9g(["verdict", "review", "e9g/b1-x", "approve"], as(home, "builder"))).code, 2);
     assert.equal((await e9g(["verdict", "ux", "landing", "pass"], as(home, "reviewer"))).code, 2);
-    assert.equal((await e9g(["verdict", "review", "e9g/b1-x", "approve", "--note", "fine"], as(home, "reviewer"))).code, 0);
+    assert.equal((await e9g(["verdict", "review", "e9g/b1-x", "approve", "--sha", sha, "--note", "fine"], as(home, "reviewer"))).code, 0);
     const review = JSON.parse(readFileSync(join(home, ".e9g/run/state/reviews/e9g_b1-x.json"), "utf8"));
     assert.deepEqual([review.verdict, review.sha, review.note, review.by], ["approve", sha, "fine", "reviewer"]);
-    assert.equal((await e9g(["verdict", "ux", "landing", "issues"], { cwd: home })).code, 0, "the operator, outside the team");
+    assert.equal((await e9g(["verdict", "ux", "landing", "issues", "--ref", sha], { cwd: home })).code, 0, "the operator, outside the team");
     assert.equal(JSON.parse(readFileSync(join(home, ".e9g/run/state/ux/landing.json"), "utf8")).by, "operator");
     assert.equal((await e9g(["verdict", "review", "e9g/b1-x", "maybe"], as(home, "reviewer"))).code, 2);
   });

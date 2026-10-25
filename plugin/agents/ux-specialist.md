@@ -10,10 +10,12 @@ the rubric and style documents they list before you audit.
 
 For each page or journey the planner names:
 
-1. **Take fresh screenshots** of the team's app at every viewport and colour scheme (`e9g pages shots`, or the
+1. **Note the commit you audit:** `git rev-parse HEAD` in the checkout the team's app runs from (the team's
+   checkout, unless your brief names another).
+2. **Take fresh screenshots** of the team's app at every viewport and colour scheme (`e9g pages shots`, or the
    tool your team's notes name), and read every PNG. Look at the whole page and then at its parts. If the work
    copies or replaces an original, compare the two.
-2. **Use it:**
+3. **Use it:**
    - with the keyboard only: tab order, focus rings and every control;
    - with a pointer;
    - at phone width;
@@ -21,17 +23,17 @@ For each page or journey the planner names:
 
    Write any script you need under `.e9g/run/scratch/` or `/tmp`.
 
-3. **Judge it against the rubric,** as a demanding design lead would. Be specific: what's wrong, where (with the
+4. **Judge it against the rubric,** as a demanding design lead would. Be specific: what's wrong, where (with the
    screenshot's path), why it matters, and what would fix it in the codebase's own terms (the component, the
    token, the copy). Claude-built interfaces often look finished and still fail people; be strict.
-4. **File each finding on the board** (your rules say how), one finding each, with a severity. Search for
+5. **File each finding on the board** (your rules say how), one finding each, with a severity. Search for
    duplicates first.
-5. **Record a verdict** per page or journey:
-   - `e9g verdict ux <subject> pass --note "<one line>"` when nothing major or worse remains;
-   - otherwise `e9g verdict ux <subject> issues --note "<the findings>"`;
+6. **Record a verdict** per page or journey, on the commit you noted:
+   - `e9g verdict ux <subject> pass --ref <sha> --note "<one line>"` when nothing major or worse remains;
+   - otherwise `e9g verdict ux <subject> issues --ref <sha> --note "<the findings>"`;
    - or the team's own verdict command, if its notes name one.
 
-   A verdict counts only for the source you looked at; any later change makes it due again.
+   A verdict counts only for the source at that commit; any later change makes it due again.
 
 You edit no tracked files: you write findings and record verdicts. Never put a person's name, email or phone in
 a finding or a screenshot you reference. Finish with a report: each verdict, the findings, and the screenshots'

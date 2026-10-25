@@ -22,8 +22,18 @@ export function articles(): string {
 const roleNotesFile = (team: Team, role: string): string => join(team.home, ".e9g", "roles", `${role}.md`);
 const lessonsFile = (team: Team): string => join(team.home, ".e9g", "lessons.md");
 
+// The documents a prompt lists are the ones that exist when it's compiled.
+const existingDocs = (team: Team): string[] => team.docs.filter((doc) => existsSync(join(team.home, doc)));
+
 export function sourcesHash(team: LoadedTeam, role: string): string {
-  return hash(PACKAGE.version, read(join(FACTORY_ROOT, "CONSTITUTION.md")), read(team.file), read(roleNotesFile(team, role)), read(lessonsFile(team)));
+  return hash(
+    PACKAGE.version,
+    read(join(FACTORY_ROOT, "CONSTITUTION.md")),
+    read(team.file),
+    read(roleNotesFile(team, role)),
+    read(lessonsFile(team)),
+    existingDocs(team).join("\n")
+  );
 }
 
 const code = (text: string): string => `\`${text}\``;
@@ -34,7 +44,7 @@ function laneText(team: Team, role: string): string {
   const writes = lane.write.length ? lane.write.map((rule) => (rule === "*" ? "anything in the repository" : code(rule))).join(", ") : "nothing";
   const parts = [`Writes: ${writes}.`];
   if (lane.deny.length) parts.push(`Never: ${lane.deny.map(code).join(", ")}.`);
-  parts.push("Never the factory's own files: `.e9g/` (except what your lane names), `.claude/settings*.json`, `.claude/hooks/`, `.claude/agents/`.");
+  parts.push("Never the factory's own files: `.e9g/` (except what your lane names), `.claude/` and `.mcp.json`.");
   if (lane.readOnly) parts.push("You work in the shared checkout and change nothing in it: no checkout, switch, stash, commit or edits.");
   if (lane.branch) parts.push(`Your branch matches ${code(lane.branch)}, made from ${code(team.branch)} in your own worktree.`);
   return parts.join(" ");
@@ -61,8 +71,13 @@ function commandsFor(team: Team, role: string): string {
     if (team.pages) lines.push("`e9g pages run [ids…]`: check the pages on the team's app and record the results.");
   }
   if (role === "reviewer")
-    lines.push('`e9g verdict review <branch> approve|changes --note "<one line>"`: record your verdict on the branch\'s current commit.');
-  if (role === "ux-specialist") lines.push('`e9g verdict ux <subject> pass|issues --note "<one line>"`: record your verdict on what you audited.');
+    lines.push(
+      '`e9g verdict review <branch> approve|changes --sha <the commit you reviewed> --note "<one line>"`: record your verdict on exactly that commit. It\'s refused if the branch has moved past it; review what was added and record again. The merge queue merges only the commit you approved.'
+    );
+  if (role === "ux-specialist")
+    lines.push(
+      '`e9g verdict ux <subject> pass|issues --ref <the commit you audited> --note "<one line>"`: record your verdict on that commit (the one the app ran, `git rev-parse HEAD` in the checkout it runs from, noted before your screenshots).'
+    );
   for (const owner of team.commandOwners) if (owner.roles.includes(role) && owner.reason) lines.push(`${code(owner.rule)}: ${owner.reason}`);
   return list(lines);
 }
@@ -90,11 +105,25 @@ function boardText(team: Team, role: string): string {
   ].join("\n");
 }
 
+// Builders and testers get their own worktree from delegate_task; everyone else shares the team's checkout, which
+// is T3's default.
+const isolationOf = (lane: Lane): string => (lane.worktree ? "worktree" : "shared");
+
 function teamTable(team: Team): string {
   const rows = Object.entries(team.roles)
     .filter(([role]) => role !== "planner")
-    .map(([role, lane]) => `| ${role} | ${code(instanceId(team, role))} | ${lane.limit} | ${ROLES[role]?.summary ?? ""} |`);
-  return ["| Role | providerInstanceId | At most | Does |", "| --- | --- | --- | --- |", ...rows].join("\n");
+    .map(
+      ([role, lane]) => `| ${role} | ${code(instanceId(team, role))} | ${code(`"${isolationOf(lane)}"`)} | ${lane.limit} | ${ROLES[role]?.summary ?? ""} |`
+    );
+  return ["| Role | providerInstanceId | isolation | At most | Does |", "| --- | --- | --- | --- | --- |", ...rows].join("\n");
+}
+
+// What leaves the machine: the planner's pushes, if any, and a GitHub board's issues and comments.
+function pushText(team: Team): string {
+  const board = team.board.type === "github" ? " The board's issues and comments go to GitHub." : "";
+  if (team.push)
+    return `Pushes: only the planner, only ${code(`git push ${team.push.remote} ${team.push.branch}`)}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}.${board} Nothing else leaves this machine.`;
+  return board ? `Pushes: none, so the code stays on this machine.${board} Nothing else leaves it.` : "Pushes: none. Everything stays on this machine.";
 }
 
 export function compile(team: LoadedTeam, role: string): string {
@@ -110,15 +139,13 @@ export function compile(team: LoadedTeam, role: string): string {
           ? `The finish line: ${code(team.finish)} exits 0, with no blocker or major ticket open.`
           : "The team has no finish command yet; the brief says what done means.",
         `Polish: ${team.polishRounds} round(s) of minor fixes per page or journey, then one last audit (Article 9).`,
-        team.push
-          ? `Pushes: only the planner, only ${code(`git push ${team.push.remote} ${team.push.branch}`)}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}. Nothing else leaves this machine.`
-          : "Pushes: none. Everything stays on this machine.",
+        pushText(team),
         `Protected branches, never pushed or merged into by the team: ${team.protectedBranches.map(code).join(", ")}.`,
         role === "planner" && team.owner ? `The operator: ${team.owner} (Article 10).` : null,
       ].filter((line) => line !== null)
     ),
     role === "planner"
-      ? `## Your team members\n\nStart each with \`${"mcp__t3-code__delegate_task"}\`, \`mode: "async"\`, \`model: "${team.model}"\`, and \`target.providerInstanceId\` from this table; the instance gives the member its role, its rules and its hooks. The guard refuses a start over a limit.\n\n${teamTable(team)}`
+      ? `## Your team members\n\nStart each with \`${"mcp__t3-code__delegate_task"}\`, \`mode: "async"\`, \`model: "${team.model}"\`, and \`target.providerInstanceId\` and the top-level \`isolation\` from this table. The instance gives the member its role, its rules and its hooks. \`isolation: "worktree"\` gives a builder or tester its own checkout, made from the integration branch's commit; without it (\`"shared"\`, the default) a member works in the team's checkout, which only the reviewer, the UX specialist and the innovator do, changing nothing there. The guard refuses a start over a limit, or a builder or tester without its worktree.\n\n${teamTable(team)}`
       : null,
     `## Your lane\n\n${laneText(team, role)}`,
     `## Commands\n\n${commandsFor(team, role)}`,
@@ -137,7 +164,7 @@ export function compile(team: LoadedTeam, role: string): string {
             .join("; ")}.`
         : ""
     }`,
-    `## Read first\n\n${list(["`CLAUDE.md` (the repository's own rules; already in your context)", ...team.docs.filter((doc) => existsSync(join(team.home, doc))).map(code)])}`,
+    `## Read first\n\n${list(["`CLAUDE.md` (the repository's own rules; already in your context)", ...existingDocs(team).map(code)])}`,
     read(roleNotesFile(team, role)) ? `## The operator's notes for the ${role}\n\n${read(roleNotesFile(team, role))}` : null,
     read(lessonsFile(team)) ? `## Lessons the team has learned (.e9g/lessons.md)\n\n${read(lessonsFile(team))}` : null,
   ];

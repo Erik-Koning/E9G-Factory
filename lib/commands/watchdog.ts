@@ -7,9 +7,10 @@
 //
 //   e9g watchdog install | remove | run [<team>]
 import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { acquireSlot } from "../lock.ts";
 import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
 import * as t3 from "../t3.ts";
 import { die, which } from "../util.ts";
@@ -34,48 +35,51 @@ async function answers(target: string): Promise<boolean> {
   }
 }
 
-// A lock in the team's run folder (which launchd can read), held by a live pid; up to a minute's wait.
-async function acquireRun(run: string): Promise<(() => void) | null> {
-  const dir = join(run, ".watch.lock");
-  mkdirSync(run, { recursive: true });
-  for (let tries = 0; tries < 30; tries++) {
-    try {
-      mkdirSync(dir);
-      writeFileSync(join(dir, "pid"), String(process.pid));
-      return () => rmSync(dir, { recursive: true, force: true });
-    } catch {
-      let pid = 0;
-      try {
-        pid = Number(readFileSync(join(dir, "pid"), "utf8"));
-      } catch {}
-      let alive = false;
-      try {
-        process.kill(pid, 0);
-        alive = pid > 0;
-      } catch {}
-      if (!alive && minutesSince(dir) > 0.2) rmSync(dir, { recursive: true, force: true });
-      else await new Promise((done) => setTimeout(done, 2000));
+// The team's lock in its run folder (which launchd can read): one watcher at a time, up to a minute's wait. The same
+// slot as lib/lock.ts's, so a dead holder's lock is taken over safely, and a holder releases only its own.
+const acquireRun = (run: string): Promise<(() => void) | null> => acquireSlot([join(run, ".watch.lock")], { waitMin: 1, holder: "watchdog" });
+
+// A planner busy with a turn.
+export const BUSY = ["running", "starting", "preparing", "queued"];
+
+// Whether T3 Code answers, restarting it when it hasn't for two checks a minute or more apart: one slow answer
+// isn't a crash, and a restart interrupts every member of every team.
+async function t3Answers(glog: (text: string) => void): Promise<boolean> {
+  const unanswered = join(E9G_HOME, ".stamp-t3-unanswered");
+  if (await t3.serverUp()) {
+    rmSync(unanswered, { force: true });
+    return true;
+  }
+  const since = minutesSince(unanswered);
+  if (since < 1) return false;
+  if (since > 15) {
+    writeFileSync(unanswered, "");
+    glog("T3 Code isn't answering; the watchdog restarts it if it still isn't at its next check");
+    return false;
+  }
+  glog(`T3 Code hasn't answered for ${Math.round(since)} min; restarting its service`);
+  t3.restartService();
+  for (let waited = 0; waited < 30_000; waited += 2000) {
+    await new Promise((done) => setTimeout(done, 2000));
+    if (await t3.serverUp()) {
+      rmSync(unanswered, { force: true });
+      return true;
     }
   }
-  return null;
+  const mark = join(E9G_HOME, ".stamp-t3-down");
+  if (minutesSince(mark) >= 60) {
+    writeFileSync(mark, "");
+    notify("E9G Factory", `T3 Code won't start, so every team is stopped. See ${GLOBAL_LOG}.`);
+  }
+  return false;
 }
 
-export async function watchOnce(only?: string): Promise<void> {
+// Watches every team, or only one. `before` runs for that team inside its lock, ahead of the watch; a sentence it
+// returns stops it there. Resolves to why the watch didn't happen, or null.
+export async function watchOnce(only?: string, before?: (entry: RegistryEntry) => string | null): Promise<string | null> {
   mkdirSync(E9G_HOME, { recursive: true });
   const glog = (text: string) => appendFileSync(GLOBAL_LOG, `${stamp()} ${text}\n`);
-  if (!(await t3.serverUp())) {
-    glog("T3 Code isn't answering; restarting its service");
-    t3.restartService();
-    await new Promise((done) => setTimeout(done, 20_000));
-    if (!(await t3.serverUp())) {
-      const mark = join(E9G_HOME, ".stamp-t3-down");
-      if (minutesSince(mark) >= 60) {
-        writeFileSync(mark, "");
-        notify("E9G Factory", `T3 Code won't start, so every team is stopped. See ${GLOBAL_LOG}.`);
-      }
-      return;
-    }
-  }
+  if (!(await t3Answers(glog))) return "T3 Code isn't answering (see ~/.e9g/watchdog.log)";
   const names = only
     ? [only]
     : existsSync(teamsDir)
@@ -83,23 +87,28 @@ export async function watchOnce(only?: string): Promise<void> {
           .filter((f) => f.endsWith(".json"))
           .map((f) => f.replace(/\.json$/, ""))
       : [];
+  let skipped: string | null = null;
   for (const name of names) {
     const entry = readRegistry(name);
     if (!entry) continue;
     // One watcher per team at a time: launchd's run and e9g start can overlap, and both would start a planner.
+    mkdirSync(entry.run, { recursive: true });
     const release = await acquireRun(entry.run);
     if (!release) {
       glog(`${name}: another watchdog run is busy with it; skipped`);
+      skipped = "another watchdog run is busy with the team; try again in a minute";
       continue;
     }
     try {
-      await watchTeam(entry);
+      skipped = before?.(entry) ?? null;
+      if (!skipped) await watchTeam(entry);
     } catch (error) {
       glog(`watching ${name} failed: ${(error as Error).message}`);
     } finally {
       release();
     }
   }
+  return skipped;
 }
 
 async function watchTeam(entry: RegistryEntry): Promise<void> {
@@ -124,11 +133,15 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
   }
 
   const threadFile = join(run, "planner-thread");
+  const plannerTitle = `${title} · planner`;
   const startPlanner = (why: string): void => {
-    // A planner started by an earlier run whose id never came back (a slow CLI): adopt it, never start a second.
+    // A planner started by an earlier run whose id never came back (a slow CLI): adopt it, never start a second. Only
+    // a thread on the planner's instance with the planner's title, and only when the database could be read.
     const retiredFile = join(run, "planner-thread.retired");
     const retired = existsSync(retiredFile) ? readFileSync(retiredFile, "utf8").split(/\s+/) : [];
-    const orphan = t3.liveThreadsOn(entry.project, entry.plannerInstance, 180).find((id) => !retired.includes(id));
+    const live = t3.liveThreadsOn(entry.project, entry.plannerInstance, plannerTitle, 180);
+    if (live === null) return log(`couldn't read T3 Code's database to look for a planner an earlier run started, so none was started (${why})`);
+    const orphan = live.find((id) => !retired.includes(id));
     if (orphan) {
       writeFileSync(threadFile, `${orphan}\n`);
       return log(`adopted planner thread ${orphan}, which an earlier run started (${why})`);
@@ -136,7 +149,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
     const { id, error } = t3.threadStart(entry.project, entry.startPrompt, {
       instance: entry.plannerInstance,
       model: entry.model,
-      title: `${title} · planner`,
+      title: plannerTitle,
     });
     if (id) {
       writeFileSync(threadFile, `${id}\n`);
@@ -178,7 +191,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
   );
 
   const tickText = (extra = "") => `tick (${new Date().toLocaleString("sv-SE").slice(0, 16)}${extra}).${envNote}`;
-  if (["running", "starting", "preparing", "queued"].includes(status)) {
+  if (BUSY.includes(status)) {
     if (quiet >= (w.stuckAfterMin ?? 45) && oncePer("stuck", 60)) {
       log(`planner ${planner} has been ${status} with nothing happening for ${quiet} min`);
       notify(title, `The planner looks stuck (${quiet} min without activity). Open T3 Code to look.`);
@@ -200,17 +213,24 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
   }
   if (quietMembers.length && oncePer("stuck-members", 60)) notify(title, `Members quiet for ${w.stuckAfterMin ?? 45}+ min: ${quietMembers.join("; ")}`);
 
-  // Worktrees of members that finished a while ago: their work is committed (the stop gate sees to that), and each
-  // holds a copy of node_modules and build output. One the stop gate let go with uncommitted work is kept (a marker
-  // in keep/), and so is any a running member still uses. The merge queue prunes git's records of them.
+  // Worktrees of members done with them: each holds a copy of node_modules and build output. Removed only when git
+  // shows nothing in them to lose (no change, no untracked file, no commit on no branch), by git itself, which
+  // refuses one with changes. Kept: any a member still uses, one with a marker in keep/, and those of interrupted,
+  // failed or cancelled members for a week (T3 can resume them). Under launchd a checkout in ~/Documents can't be
+  // read, so its worktrees wait for a run from a terminal (e9g watchdog run <team>).
   if (entry.worktreesDir && oncePer("prune", 60)) {
+    const pruneAfter = w.pruneAfterMin ?? 60;
     let freed = 0;
-    for (const path of t3.finishedWorktrees(entry.project, w.pruneAfterMin ?? 60)) {
+    const kept: string[] = [];
+    for (const path of t3.finishedWorktrees(entry.project, { completedAfterMin: pruneAfter, stoppedAfterMin: Math.max(pruneAfter, STOPPED_KEEP_MIN) })) {
       if (!path.startsWith(`${entry.worktreesDir}/`) || !existsSync(path) || existsSync(join(run, "keep", basename(path)))) continue;
-      rmSync(path, { recursive: true, force: true });
-      freed++;
+      const work = workIn(path);
+      if (work) kept.push(`${basename(path)}: ${work}`);
+      else if (spawnSync("git", ["-C", entry.home, "worktree", "remove", path], { stdio: "ignore" }).status === 0) freed++;
+      else kept.push(`${basename(path)}: git worktree remove refused`);
     }
     if (freed) log(`removed ${freed} finished worktrees`);
+    if (kept.length && oncePer("prune-kept", 1440)) log(`kept ${kept.length} finished worktrees that may hold work: ${kept.join("; ")}`);
   }
 
   // Email the planner couldn't send.
@@ -226,13 +246,41 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
   if (lines.length > 5000) writeFileSync(logFile, lines.slice(-2000).join("\n"));
 }
 
+// How long the worktrees of interrupted, failed or cancelled members are kept.
+const STOPPED_KEEP_MIN = 7 * 1440;
+
+// What a finished member's worktree still holds that removing it would lose, or null when there's nothing.
+function workIn(path: string): string | null {
+  const status = spawnSync("git", ["-C", path, "status", "--porcelain"], { encoding: "utf8" });
+  if (status.status !== 0) return "git couldn't read it";
+  if (status.stdout.trim()) return "uncommitted or untracked files";
+  if (spawnSync("git", ["-C", path, "symbolic-ref", "-q", "HEAD"], { stdio: "ignore" }).status !== 0) {
+    const refs = spawnSync("git", ["-C", path, "for-each-ref", "--contains", "HEAD", "--count=1", "refs/heads", "refs/remotes"], { encoding: "utf8" });
+    if (refs.status !== 0 || !refs.stdout.trim()) return "commits on a detached HEAD that no branch has";
+  }
+  return null;
+}
+
 // The plist runs the installed current version from ~/.e9g, which launchd can read.
 export function ensureWatchdog(): void {
   if (!existsSync(PLIST)) install();
 }
 
+// The node that runs this, by a path that outlives an upgrade of it (Homebrew's /opt/homebrew/bin/node, not its
+// versioned Cellar path, which brew upgrade removes), when one leads to the same binary.
+function stableNode(): string {
+  const same = (path: string | null): boolean => {
+    try {
+      return path !== null && realpathSync(path) === realpathSync(process.execPath);
+    } catch {
+      return false;
+    }
+  };
+  return [which("node"), "/opt/homebrew/bin/node", "/usr/local/bin/node"].find(same) ?? process.execPath;
+}
+
 function install(): void {
-  const node = process.execPath;
+  const node = stableNode();
   const entry = entryOf(join(E9G_HOME, "current"));
   if (!existsSync(entry)) die(`no installed version at ${dirname(dirname(entry))}; run e9g self-install first`);
   const path = [

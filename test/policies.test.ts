@@ -57,6 +57,9 @@ describe("policies", () => {
       "cat .env.local",
       "sudo rm x",
       "e9g register",
+      "e9g connect email --to me@example.com",
+      "e9g disconnect email",
+      "security find-generic-password -s ca.e9g.email -a resend -w",
       "rm -rf ~",
       "npm i -g pnpm",
     ])

@@ -284,7 +284,7 @@ export const POLICIES: Policy[] = [
 
 // The factory's own commands, which only a person (or the setup agent, for check, register and start) runs.
 export const OPERATOR_COMMANDS = new RegExp(
-  `${START}e9g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|rotate|stop|unregister)${END}`
+  `${START}e9g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|rotate|stop|unregister|connect|disconnect)${END}`
 );
 
 // An env file named in a command it reads or writes. Not in what only lists names (ls -la .env*), and not in what
@@ -313,7 +313,10 @@ export const CORE: [Matcher, string][] = [
   [/\b(npm|pnpm|yarn|bun)\s+[^;&|]*\s(-g|--global)\b|\bpnpm\s+add\s+-g\b/, "the team installs nothing globally."],
   [/\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-[a-zA-Z]+\s+)*(\/|~|\$HOME|\/Users\/[^/\s]+)\/?(\s|$)/, "that would delete far too much."],
   [namesEnvFile, "env files hold secrets; agents never read or write them. The team's environment has what it needs."],
-  [/\bsecurity\s+(find|dump|export)-|\bgh\s+auth\s+token\b|\.ssh\/id_|\baws\s+configure\s+get\b/, "credentials are never read by the team."],
+  [
+    /\bsecurity\s+(find|dump|export|add|delete|set)-|\bca\.e9g\.(email|whatsapp)\b|\bgh\s+auth\s+token\b|\.ssh\/id_|\baws\s+configure\s+get\b/,
+    "credentials are never read or changed by the team.",
+  ],
   [OPERATOR_COMMANDS, "the operator runs the factory's own commands; the team uses merge, verdict, log, lock, gate, env, finish and pages."],
 ];
 

@@ -422,6 +422,25 @@ describe("guard", () => {
     ]);
   });
 
+  test("the factory's folder and the run folder: only the planner's outbox, by any route", () => {
+    const run = tmp("e9g-run-");
+    const factory = process.env.E9G_HOME ?? "";
+    return holds([
+      bash(home, "planner", `echo "Subject: Which?" > ${run}/outbox/2026-10-25-question.md`, "allow", { run }),
+      bash(home, "builder", `echo "Subject: from the team" > ${run}/outbox/x.md`, "refuse", { run }),
+      bash(home, "planner", `echo x > ${run}/replies/r-1`, "refuse", { run }),
+      bash(home, "builder", `echo '{"to":"attacker@example.com"}' > ${factory}/email.json`, "refuse", { run }),
+      writes(home, "planner", join(factory, "email.json"), "refuse", { run }),
+      bash(home, "builder", "security add-generic-password -U -s ca.e9g.email -a resend -w re_mine", "refuse"),
+      bash(
+        home,
+        "builder",
+        `node -e 'require("child_process").execFileSync("security", ["find-generic-password", "-s", "ca.e9g.email", "-w"])'`,
+        "refuse"
+      ),
+    ]);
+  });
+
   test("the run folder in the checkout: board, scratch, state", () =>
     holds([
       writes(home, "ux-specialist", ".e9g/run/board/f-20261025-1200-contrast.md", "allow"),

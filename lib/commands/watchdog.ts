@@ -2,20 +2,23 @@
 // no model. macOS doesn't let launchd jobs read ~/Documents, so it runs the installed copy in ~/.e9g and never
 // touches a checkout (E9G_LAUNCHD tells it it's that job). It reads T3 Code (its CLI and database), Docker, each
 // team's health URLs and its run folder, and sends anything that needs a checkout to the team's planner as a
-// message. Run from a terminal (e9g watchdog run, e9g start) it also clears finished worktrees.
+// message. What needs the operator also goes through every channel they've connected (e9g connect,
+// lib/channels.ts), and their replies go to the planner. Run from a terminal (e9g watchdog run, e9g start) it also
+// clears finished worktrees.
 //
-// Per team, in its run folder: watchdog.log, planner-thread, heartbeat/, outbox/, paused, complete.
+// Per team, in its run folder: watchdog.log, planner-thread, heartbeat/, outbox/, replies/, paused, complete.
 //
 //   e9g watchdog install | remove | run [<team>]
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { basename, dirname, join } from "node:path";
+import { type Channel, channels, failingSend, outboxMessage, recordSend, type Replies, type Reply } from "../channels.ts";
 import { acquireSlot } from "../lock.ts";
 import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
 import * as t3 from "../t3.ts";
-import { die, which, writeFileAtomic } from "../util.ts";
+import { die, readJson, which, writeFileAtomic, writeJson } from "../util.ts";
 
 const LABEL = "ca.e9g.watchdog";
 const PLIST = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
@@ -27,6 +30,131 @@ function notify(title: string, text: string): void {
   spawnSync("osascript", ["-e", `display notification "${clean(text)}" with title "${clean(title)}"`], { stdio: "ignore" });
 }
 const minutesSince = (path: string): number => (existsSync(path) ? (Date.now() - statSync(path).mtimeMs) / 60_000 : Number.POSITIVE_INFINITY);
+
+// An alert through each connected channel too: the same one at most every 6 hours per channel (stamped in dir), so a
+// night of waiting is a message and a reminder, not one an hour. A failed send is tried again with the next alert.
+// Sent for a team, the operator can answer it. Returns what to log.
+const RESEND_ALERT_MIN = 360;
+
+// One send through a channel, recorded (lib/channels.ts) so the planner is told a channel works only while it does.
+// A channel that throws counts as one that failed.
+async function sendThrough(channel: Channel, subject: string, text: string, team?: string, id?: string): Promise<string | null> {
+  let problem: string | null;
+  try {
+    problem = await channel.send(subject, text, team, id);
+  } catch (error) {
+    problem = (error as Error).message;
+  }
+  recordSend(channel.name, problem);
+  return problem;
+}
+
+export async function alertChannels(reach: Channel[], dir: string, kind: string, subject: string, text: string, team?: string): Promise<string[]> {
+  const said: string[] = [];
+  for (const channel of reach) {
+    const mark = join(dir, `.stamp-${channel.name}-${kind}`);
+    if (minutesSince(mark) < RESEND_ALERT_MIN) continue;
+    const problem = await sendThrough(channel, subject, `${text}\n\nSent by the E9G Factory watchdog on ${hostname()}.\n`, team);
+    if (problem) said.push(`couldn't send the ${kind} alert by ${channel.name}: ${problem}`);
+    else {
+      writeFileSync(mark, "");
+      said.push(`sent the ${kind} alert by ${channel.name}`);
+    }
+  }
+  return said;
+}
+
+// Drafts in the planner's outbox, through each connected channel, once a draft has been left alone for a minute (so
+// one written in steps goes whole). One written before the channel was connected isn't sent; a failed send is tried
+// again on later runs, for a day, under an id that keeps a retry from arriving twice.
+export async function sendOutbox(reach: Channel[], outbox: string, title: string, team: string, log: (text: string) => void): Promise<void> {
+  for (const draft of readdirSync(outbox).filter((f) => f.endsWith(".md"))) {
+    const path = join(outbox, draft);
+    const age = minutesSince(path);
+    if (age < 1 || age > 1440) continue;
+    for (const channel of reach) {
+      const sent = `${path}.sent-${channel.name}`;
+      if (existsSync(sent) || statSync(path).mtimeMs < Date.parse(channel.connectedAt)) continue;
+      const { subject, text } = outboxMessage(title, draft, readFileSync(path, "utf8"));
+      const problem = await sendThrough(channel, subject, text, team, `${team}/${draft}`);
+      if (problem) log(`couldn't send ${draft} by ${channel.name}: ${problem}`);
+      else {
+        writeFileSync(sent, "");
+        log(`sent ${draft} by ${channel.name}`);
+      }
+    }
+  }
+}
+
+// A Mac notification, at most hourly, for each connected channel whose last send failed: otherwise the operator
+// learns only from a log that the factory can't reach them.
+function warnFailing(reach: Channel[], glog: (text: string) => void): void {
+  for (const channel of reach) {
+    const problem = failingSend(channel.name);
+    const mark = join(E9G_HOME, `.stamp-failing-${channel.name}`);
+    if (!problem || minutesSince(mark) < 60) continue;
+    writeFileSync(mark, "");
+    notify("E9G Factory", `Can't reach you by ${channel.name}: ${problem}. e9g connect ${channel.name} --test checks it.`);
+    glog(`${channel.name} is failing: ${problem}`);
+  }
+}
+
+// The operator's replies from the channels that take them, and those it read and passed over, which go into seen so
+// they aren't read again.
+async function readReplies(reach: Channel[], seen: Set<string>, glog: (text: string) => void): Promise<Reply[]> {
+  const replies: Reply[] = [];
+  for (const channel of reach) {
+    if (!channel.replies) continue;
+    let got: Replies;
+    try {
+      got = await channel.replies(seen);
+    } catch (error) {
+      got = { replies: [], ignored: [], problem: (error as Error).message };
+    }
+    const mark = join(E9G_HOME, `.stamp-replies-${channel.name}`);
+    if (got.problem && minutesSince(mark) >= 60) {
+      writeFileSync(mark, "");
+      glog(`couldn't read the ${channel.name} replies: ${got.problem}`);
+    }
+    for (const { id, why } of got.ignored) {
+      seen.add(id);
+      glog(`passed over ${why}`);
+    }
+    replies.push(...got.replies);
+  }
+  const registered = (team: string): boolean => {
+    try {
+      return Boolean(readRegistry(team));
+    } catch {
+      return true; // a registry entry that doesn't read is the team loop's problem; the reply waits
+    }
+  };
+  for (const reply of replies.filter((r) => !registered(r.team))) {
+    seen.add(reply.id);
+    glog(`passed over a ${reply.via} reply for ${reply.team}, which isn't a registered team`);
+  }
+  return replies.filter((reply) => !seen.has(reply.id));
+}
+
+// Each reply to the team's planner (tell sends a message to its thread), once: the marker in replies/ is written under
+// the team's lock, so an overlapping run doesn't pass it on twice.
+export function passReplies(replies: Reply[], run: string, tell: (text: string) => boolean, seen: Set<string>, log: (text: string) => void): void {
+  for (const reply of replies) {
+    const marker = join(run, "replies", reply.id);
+    if (!existsSync(marker)) {
+      const text = `The operator answered by ${reply.via}, to "${reply.subject}":\n\n${reply.text}\n\nThe watchdog checked it came from them. Record the answer on the question's ticket and act on it.`;
+      if (!tell(text)) {
+        log(`couldn't pass the operator's ${reply.via} reply to the planner; trying again next run`);
+        continue;
+      }
+      mkdirSync(join(run, "replies"), { recursive: true });
+      writeFileSync(marker, "");
+      log(`passed the operator's ${reply.via} reply to "${reply.subject}" to the planner`);
+    }
+    seen.add(reply.id);
+  }
+}
+
 async function answers(target: string): Promise<boolean> {
   const any = target.startsWith("any:");
   try {
@@ -46,7 +174,7 @@ export const BUSY = ["running", "starting", "preparing", "queued"];
 
 // Whether T3 Code answers, restarting it when it hasn't for two checks a minute or more apart: one slow answer
 // isn't a crash, and a restart interrupts every member of every team.
-async function t3Answers(glog: (text: string) => void): Promise<boolean> {
+async function t3Answers(glog: (text: string) => void, reach: Channel[]): Promise<boolean> {
   const unanswered = join(E9G_HOME, ".stamp-t3-unanswered");
   if (await t3.serverUp()) {
     rmSync(unanswered, { force: true });
@@ -71,7 +199,9 @@ async function t3Answers(glog: (text: string) => void): Promise<boolean> {
   const mark = join(E9G_HOME, ".stamp-t3-down");
   if (minutesSince(mark) >= 60) {
     writeFileSync(mark, "");
-    notify("E9G Factory", `T3 Code won't start, so every team is stopped. See ${GLOBAL_LOG}.`);
+    const text = `T3 Code won't start, so every team is stopped. See ${GLOBAL_LOG}.`;
+    notify("E9G Factory", text);
+    for (const said of await alertChannels(reach, E9G_HOME, "t3-down", "[E9G Factory] T3 Code won't start", text)) glog(said);
   }
   return false;
 }
@@ -81,7 +211,21 @@ async function t3Answers(glog: (text: string) => void): Promise<boolean> {
 export async function watchOnce(only?: string, before?: (entry: RegistryEntry) => string | null): Promise<string | null> {
   mkdirSync(E9G_HOME, { recursive: true });
   const glog = (text: string) => appendFileSync(GLOBAL_LOG, `${stamp()} ${text}\n`);
-  if (!(await t3Answers(glog))) return "T3 Code isn't answering (see ~/.e9g/watchdog.log)";
+  // Nothing about the channels stops the watchdog's own work: a bad settings file means no channels this run.
+  let reach: Channel[] = [];
+  try {
+    reach = channels();
+  } catch (error) {
+    glog(`couldn't read how the operator is connected: ${(error as Error).message}`);
+  }
+  if (!(await t3Answers(glog, reach))) return "T3 Code isn't answering (see ~/.e9g/watchdog.log)";
+  // Ids of replies already passed on or passed over; only those Resend still lists matter, so the newest few hundred.
+  const seenFile = join(E9G_HOME, "replies-seen.json");
+  let seen = new Set<string>();
+  try {
+    seen = new Set(readJson<string[]>(seenFile, []));
+  } catch {}
+  const replies = await readReplies(reach, seen, glog);
   const names = only
     ? [only]
     : existsSync(teamsDir)
@@ -103,17 +247,25 @@ export async function watchOnce(only?: string, before?: (entry: RegistryEntry) =
     }
     try {
       skipped = before?.(entry) ?? null;
-      if (!skipped) await watchTeam(entry);
+      if (!skipped)
+        await watchTeam(
+          entry,
+          reach,
+          replies.filter((reply) => reply.team === name),
+          seen
+        );
     } catch (error) {
       glog(`watching ${name} failed: ${(error as Error).message}`);
     } finally {
       release();
     }
   }
+  if (reach.some((channel) => channel.replies)) writeJson(seenFile, [...seen].slice(-500));
+  warnFailing(reach, glog);
   return skipped;
 }
 
-async function watchTeam(entry: RegistryEntry): Promise<void> {
+async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[], seen: Set<string>): Promise<void> {
   const { run, title } = entry;
   const w: Partial<RegistryEntry["watchdog"]> = entry.watchdog ?? {};
   const log = (text: string) => appendFileSync(join(run, "watchdog.log"), `${stamp()} ${text}\n`);
@@ -123,6 +275,12 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
     if (minutesSince(mark) < minutes) return false;
     writeFileSync(mark, "");
     return true;
+  };
+  // What needs the operator: on this Mac, and through each channel they've connected.
+  const alert = async (kind: string, text: string): Promise<void> => {
+    notify(title, text);
+    for (const said of await alertChannels(reach, run, kind, `[${title}] ${text}`, `${text}\n\ne9g status ${entry.name} shows the team.`, entry.name))
+      log(said);
   };
   mkdirSync(join(run, "heartbeat"), { recursive: true });
   mkdirSync(join(run, "outbox"), { recursive: true });
@@ -136,7 +294,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
 
   const threadFile = join(run, "planner-thread");
   const plannerTitle = `${title} · planner`;
-  const startPlanner = (why: string): void => {
+  const startPlanner = async (why: string): Promise<void> => {
     // A planner started by an earlier run whose id never came back (a slow CLI): adopt it, never start a second. Only
     // a thread on the planner's instance with the planner's title, and only when the database could be read.
     const retiredFile = join(run, "planner-thread.retired");
@@ -158,7 +316,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
       log(`started planner thread ${id} (${why})`);
     } else {
       log(`couldn't start a planner thread: ${error ?? "no id"}`);
-      if (oncePer("planner-failed", 60)) notify(title, "The team couldn't start its planner. See its watchdog log.");
+      if (oncePer("planner-failed", 60)) await alert("planner-failed", "The team couldn't start its planner. See its watchdog log.");
     }
   };
   const planner = existsSync(threadFile) ? readFileSync(threadFile, "utf8").trim() : "";
@@ -171,6 +329,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
   }
   const status = thread.status ?? "unknown";
   const pending = thread.pendingRequestCount ?? 0;
+  passReplies(replies, run, (text) => t3.threadSend(planner, text), seen, log);
 
   // The environment: only the planner can restart it (it lives in the checkout), so tell it.
   let envNote = "";
@@ -196,13 +355,13 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
   if (BUSY.includes(status)) {
     if (quiet >= (w.stuckAfterMin ?? 45) && oncePer("stuck", 60)) {
       log(`planner ${planner} has been ${status} with nothing happening for ${quiet} min`);
-      notify(title, `The planner looks stuck (${quiet} min without activity). Open T3 Code to look.`);
+      await alert("stuck", `The planner looks stuck (${quiet} min without activity). Open T3 Code to look.`);
     }
     if (envNote && oncePer("env-down", 30) && t3.threadSend(planner, tickText())) log("queued an environment-down note");
   } else if (status === "waiting" || pending > 0) {
     if (oncePer("waiting", 60)) {
-      notify(title, "The planner is waiting for an answer in T3 Code.");
       log("planner waiting on a person");
+      await alert("waiting", "The planner is waiting for an answer in T3 Code.");
     }
   } else if (existsSync(join(run, "complete"))) {
     if (
@@ -217,7 +376,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
 
   pruneWorktrees(entry);
 
-  // Email the planner couldn't send.
+  // The planner's outbox: a notification on this Mac, and the message itself through each connected channel.
   for (const draft of readdirSync(join(run, "outbox")).filter((f) => f.endsWith(".md"))) {
     const marker = join(run, "outbox", `${draft}.notified`);
     if (existsSync(marker)) continue;
@@ -225,6 +384,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
     writeFileSync(marker, "");
     log(`notified about ${draft}`);
   }
+  await sendOutbox(reach, join(run, "outbox"), title, entry.name, log);
   const logFile = join(run, "watchdog.log");
   const lines = readFileSync(logFile, "utf8").split("\n");
   if (lines.length > 5000) writeFileSync(logFile, lines.slice(-2000).join("\n"));

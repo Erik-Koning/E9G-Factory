@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **Email from the factory, both ways.** `e9g connect email` keeps the operator's own Resend API key in the macOS
+  Keychain, once a test email has gone through. The watchdog then emails its alerts (a planner waiting, stuck or
+  unable to start; T3 Code down) and the planner's outbox, so they reach the operator away from the Mac. With a
+  full-access key and the account's receiving domain, each email about a team can be answered: the watchdog reads
+  what Resend received and passes to that team's planner only replies from the operator's address that its domain
+  signed (DKIM) or that pass DMARC. Planners use the outbox while the operator's connection works (their context
+  says so, from the watchdog's last send), and the operator gets a Mac notification when it doesn't. The outbox's
+  emails are labelled like the planner's Gmail, `[E9G-Planner] [<team title>] …`; the watchdog's own alerts are
+  `[<team title>] …`. `e9g doctor` shows the connection. The guard refuses agents `connect` and the Keychain
+  commands.
+
 ## 0.3.0: TypeScript, and a second audit
 
 - **TypeScript, the way T3 Code writes it.** Node (22.18 or newer) runs the `.ts` files as they are, with no build

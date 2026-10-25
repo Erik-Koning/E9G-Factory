@@ -23,6 +23,8 @@ Set up and run a team (the operator)
   e9g upgrade <team> [<version>] [--force]   move a team to another installed factory version
   e9g unregister <team>               remove its T3 instances and registry entry (keeps its files)
   e9g watchdog install|remove|run     the one launchd job that looks after every team
+  e9g connect [email] [--to] [--test] email you the watchdog's alerts and the planner's outbox, through Resend
+                                      with your own key  ·  e9g disconnect email
   e9g self-install [--link] [--force] install this checkout's version into ~/.e9g  ·  e9g versions
 
 Team members (the guard decides who may run which)
@@ -48,7 +50,9 @@ function handOver(): void {
   if (!installed()) return;
   if (
     process.env.E9G_HANDED_OVER ||
-    ["help", "--help", "-h", "self-install", "versions", "doctor", "watchdog", "teams", "init", "upgrade", "--version"].includes(command)
+    ["help", "--help", "-h", "self-install", "versions", "doctor", "watchdog", "teams", "init", "upgrade", "connect", "disconnect", "--version"].includes(
+      command
+    )
   )
     return;
   let home: string | null = null;
@@ -91,6 +95,8 @@ const COMMANDS: Record<string, () => Promise<number | void>> = {
   upgrade: () => import("../lib/commands/team.ts").then((m) => m.upgrade(args)),
   metrics: () => import("../lib/commands/metrics.ts").then((m) => m.run(args)),
   watchdog: () => import("../lib/commands/watchdog.ts").then((m) => m.watchdog(args)),
+  connect: () => import("../lib/commands/connect.ts").then((m) => m.connect(args)),
+  disconnect: () => import("../lib/commands/connect.ts").then((m) => m.disconnect(args)),
   "self-install": () => import("../lib/commands/install.ts").then((m) => m.selfInstall(args)),
   versions: () => import("../lib/commands/install.ts").then((m) => m.versions()),
   merge: () => import("../lib/commands/merge.ts").then((m) => m.run(args)),

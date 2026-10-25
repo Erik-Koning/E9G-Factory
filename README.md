@@ -45,6 +45,21 @@ e9g pause my-app           # and e9g resume my-app; e9g rotate my-app for a fres
 
 You can also watch a team in the T3 Code window: one planner thread, with a child thread per member.
 
+To hear from your teams away from this Mac, and answer them:
+
+```bash
+e9g connect email          # your address and your own Resend API key (free); it sends a test email first
+```
+
+With email connected, planners write to you through the watchdog, under `[E9G-Planner] [<team title>]` like
+everything else they send. It also emails you when a planner is waiting for your answer, looks stuck or can't start,
+or T3 Code is down (each at most every 6 hours). With a full-access key and your Resend receiving address, a reply
+goes to that team's planner; the watchdog passes on only mail from your address that its domain signed or that
+passes DMARC. The key stays in the macOS Keychain. The guard refuses agents the commands that read or change it, but
+any code running as you can reach it, so give the key no more access than you use: sending access only, unless you
+want replies. `e9g connect` shows what's connected, and `e9g disconnect email` turns it off. Without email
+connected, a planner emails you through the claude.ai Gmail connector, when it has one.
+
 ## How it works
 
 ```
@@ -132,10 +147,10 @@ branches, and the factory's own files. A team adds its own rules in `never`, eac
 
 `e9g help` lists them all.
 
-| For                                                    | Commands                                                                                                                                                                                            |
-| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The operator**                                       | `doctor`, `init`, `check`, `register` (alias `sync`), `start`, `pause`, `resume`, `rotate`, `status`, `teams`, `metrics`, `prompt`, `upgrade`, `unregister`, `watchdog`, `self-install`, `versions` |
-| **Team members** (the guard decides who may run which) | `merge`, `verdict`, `log`, `lock`, `drain`, `gate`, `env`, `finish`, `progress`, `pages`                                                                                                            |
+| For                                                    | Commands                                                                                                                                                                                                                     |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The operator**                                       | `doctor`, `init`, `check`, `register` (alias `sync`), `start`, `pause`, `resume`, `rotate`, `status`, `teams`, `metrics`, `prompt`, `upgrade`, `unregister`, `watchdog`, `connect`, `disconnect`, `self-install`, `versions` |
+| **Team members** (the guard decides who may run which) | `merge`, `verdict`, `log`, `lock`, `drain`, `gate`, `env`, `finish`, `progress`, `pages`                                                                                                                                     |
 
 ## T3 Code and Claude Code
 
@@ -208,7 +223,8 @@ To make a release:
   get past a pattern. For hard guarantees, scope the credentials on the machine (for example, a GitHub token that
   can only read code and write issues) and protect production with required reviewers. See the constitution's
   Part IV.
-- **Platform:** macOS only for now. The watchdog is a launchd job, and notifications use `osascript`.
+- **Platform:** macOS only for now. The watchdog is a launchd job, notifications use `osascript`, and the email
+  key is kept in the Keychain.
 - **No interrupt:** T3 Code 0.1.x has no command to interrupt a thread, so the watchdog notifies you instead.
 - **One shared environment per team:** full runs and rebuilds are serialised by locks, not isolated.
 

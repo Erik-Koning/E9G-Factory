@@ -175,12 +175,16 @@ export const tool = (
 export const holds = async (cases: GuardCase[]): Promise<void> => assert.deepEqual(await guardAll(cases), []);
 
 export const E9G = join(ROOT, "bin", "e9g.ts");
-export function e9g(args: string[], { cwd, env = {} }: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<{ code: number | null; out: string }> {
+export function e9g(
+  args: string[],
+  { cwd, env = {}, input }: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string } = {}
+): Promise<{ code: number | null; out: string }> {
   return new Promise((done) => {
     const child = spawn(process.execPath, [E9G, ...args], { env: { ...process.env, ...HOOK_ENV, ...env }, ...(cwd === undefined ? {} : { cwd }) });
     let out = "";
     for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk: Buffer) => (out += chunk));
     child.on("close", (code) => done({ code, out }));
+    if (input !== undefined) child.stdin.end(input);
   });
 }
 

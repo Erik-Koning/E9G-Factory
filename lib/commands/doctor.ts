@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadTeam, TeamError } from "../config.ts";
+import { emailSettings, readKey } from "../email.ts";
 import { E9G_HOME, entryOf, type FactoryPackage, PACKAGE, readRegistry, versionDir } from "../paths.ts";
 import { promptFile, promptStale } from "../prompts.ts";
 import * as t3 from "../t3.ts";
@@ -104,6 +105,10 @@ export async function doctor(): Promise<number> {
     else ok(`the hooks run ${hookNode}, which runs TypeScript`);
   }
   watchdogLoaded() ? ok("the watchdog is loaded (ca.e9g.watchdog)") : warn("the watchdog isn't loaded: e9g watchdog install (e9g start does it too)");
+  const email = emailSettings();
+  if (!email) warn("email isn't connected, so the watchdog's alerts show only on this Mac: e9g connect email");
+  else if (!readKey()) fail("email: its Resend key isn't in the Keychain any more: e9g connect email");
+  else ok(`email: the watchdog's alerts and the planner's outbox go to ${email.to}${email.replyDomain ? ", and replies come back" : " (no replies)"}`);
 
   const gh = spawnSync("gh", ["auth", "status"], { encoding: "utf8" });
   gh.status === 0 ? ok("gh is signed in (for GitHub boards)") : warn("gh isn't signed in; teams with a GitHub board need it");

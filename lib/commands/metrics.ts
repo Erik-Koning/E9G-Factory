@@ -3,7 +3,7 @@
 // What a team has cost, per role: agents (T3 threads), runs (T3 turns: one wake of the planner, one task of a
 // member), model requests and tool calls (from the Claude transcripts), tokens and wall time. Two sources that
 // should agree: T3 Code's database (per-turn token usage) and the transcripts under ~/.claude/projects.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { roleForInstance, roleOfAgent } from "../config.ts";
@@ -94,7 +94,8 @@ export function run(args: string[]): number {
   // Every transcript folder for the loop checkout or a worktree made from it, including worktrees the watchdog has
   // already removed (their transcripts stay in ~/.claude/projects).
   const worktreePrefix = `${encode(worktrees)}-`;
-  const dirs = readdirSync(projects)
+  // No transcripts yet (Claude Code hasn't run on this machine, or under this HOME): T3 Code's counts stand alone.
+  const dirs = (existsSync(projects) ? readdirSync(projects) : [])
     .filter((name) => name === encode(home) || name.startsWith(worktreePrefix))
     .map((name) => join(projects, name));
   const sinceMs = Date.parse(since);

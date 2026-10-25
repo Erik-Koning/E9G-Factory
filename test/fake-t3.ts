@@ -2,10 +2,8 @@
 // `launchctl`, `docker` and `open` first on PATH (test/fake-t3/), a T3 database with the tables the factory reads,
 // a server that answers while a flag file exists, and a registered team. Nothing touches ~/.t3, ~/.e9g or launchd.
 import { baseTeam, e9g, git, makeRepo, ROOT, tmp } from "./helpers.ts";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import { basename, join } from "node:path";
 import type { RawTeam } from "../lib/config.ts";
 import type { RegistryEntry } from "../lib/paths.ts";
@@ -44,15 +42,27 @@ export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }:
   execFileSync("sqlite3", [db], { input: readFileSync(join(BIN, "schema.sql"), "utf8") });
   writeFileSync(join(t3Home, "userdata", "settings.json"), "{}\n");
 
-  // T3's server answers while `up` exists; the fake `t3 service restart` creates it.
+  // T3's server answers while `up` exists; the fake `t3 service restart` creates it. It runs in a process of its
+  // own: tests running beside each other block this one's event loop with git and sqlite calls, and a server
+  // that answered late would read as T3 being down.
   const up = join(root, "t3-up");
   writeFileSync(up, "");
-  const server = createServer((_, response) => {
-    response.statusCode = existsSync(up) ? 200 : 503;
-    response.end();
+  const server = spawn(
+    process.execPath,
+    [
+      "-e",
+      `const { existsSync } = require("node:fs");
+       const server = require("node:http").createServer((_, response) => { response.statusCode = existsSync(process.argv[1]) ? 200 : 503; response.end(); });
+       server.listen(0, "127.0.0.1", () => console.log(server.address().port));
+       process.stdin.on("end", () => process.exit(0)).resume();`,
+      up,
+    ],
+    { stdio: ["pipe", "pipe", "inherit"] }
+  );
+  const port = await new Promise<number>((done, fail) => {
+    server.stdout.once("data", (chunk: Buffer) => done(Number(String(chunk).trim())));
+    server.once("error", fail);
   });
-  await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  const { port } = server.address() as AddressInfo;
   writeFileSync(join(t3Home, "userdata", "server-runtime.json"), JSON.stringify({ origin: `http://127.0.0.1:${port}` }));
 
   const home = makeRepo(team);
@@ -125,6 +135,11 @@ export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }:
     calls: () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : []),
     setUp: (on) => (on ? writeFileSync(up, "") : rmSync(up, { force: true })),
     e9g: (...args) => e9g(args, { cwd: root, env }),
-    close: () => new Promise<void>((done) => server.close(() => done())),
+    // Closing its stdin ends the server; so does this process ending.
+    close: () =>
+      new Promise<void>((done) => {
+        server.once("exit", () => done());
+        server.stdin.end();
+      }),
   };
 }

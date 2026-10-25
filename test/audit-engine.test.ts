@@ -487,7 +487,8 @@ process.exit(overlap ? 4 : 0);`;
       const started = Date.now();
       const result = await e9g(["lock", "app", "--wait-min", "0.02m", "--", "true"], { cwd: home, env: { E9G_HOME_DIR: home } });
       assert.equal(result.code, 75, result.out);
-      assert.ok(Date.now() - started < 20_000);
+      // It gives up (the bug waited forever); the bound is loose because a loaded machine starts processes slowly.
+      assert.ok(Date.now() - started < 60_000);
       for (const bad of [
         ["--slots", "0"],
         ["--slots", "1.5"],

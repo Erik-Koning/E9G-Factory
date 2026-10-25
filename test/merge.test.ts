@@ -6,8 +6,12 @@ import { describe, test } from "node:test";
 
 const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home } });
 const approve = (home: string, branch: string) =>
-  e9g(["verdict", "review", branch, "approve", "--note", "ok"], { cwd: home, env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer" } });
-const record = (home: string, branch: string): { result: string; message: string; sha: string } => JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
+  e9g(["verdict", "review", branch, "approve", "--sha", git(home, "rev-parse", branch), "--note", "ok"], {
+    cwd: home,
+    env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer" },
+  });
+const record = (home: string, branch: string): { result: string; message: string; sha: string } =>
+  JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
 const tip = (home: string, ref = "e9g/next"): string => git(home, "rev-parse", ref);
 
 // A branch made from the integration branch, with one commit, and the checkout back on the integration branch.

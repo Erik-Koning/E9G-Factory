@@ -5,6 +5,7 @@
 // guard enforces. A prompt records the hash of its sources; the session-start hook recompiles a stale one.
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { instanceId, type Lane, type LoadedTeam, ROLES, type Team } from "./config.ts";
 import { FACTORY_ROOT, PACKAGE } from "./paths.ts";
 import { PLANNER_LABEL } from "./labels.ts";
@@ -29,6 +30,8 @@ const existingDocs = (team: Team): string[] => team.docs.filter((doc) => existsS
 export function sourcesHash(team: LoadedTeam, role: string): string {
   return hash(
     PACKAGE.version,
+    // This compiler too, so a reinstalled release that renders the rules differently recompiles them.
+    read(fileURLToPath(import.meta.url)),
     read(join(FACTORY_ROOT, "CONSTITUTION.md")),
     read(team.file),
     read(roleNotesFile(team, role)),

@@ -74,3 +74,12 @@ describe("prompts", () => {
     assert.ok(promptStale(loadTeam(home), "builder", run), "team.json changed");
   });
 });
+
+describe("a compiled prompt's sources", () => {
+  test("include the compiler, so a reinstalled release that renders differently recompiles", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../lib/prompts.ts", import.meta.url), "utf8");
+    // The hash reads lib/prompts.ts itself; checking the line that does it keeps the guarantee from quietly going.
+    assert.match(source, /read\(fileURLToPath\(import\.meta\.url\)\)/);
+  });
+});

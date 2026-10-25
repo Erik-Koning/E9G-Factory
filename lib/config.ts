@@ -388,6 +388,14 @@ export function roleForBranch(team: Team, branch: string): string | null {
   return null;
 }
 
-// The factory's own files: the team's sources (.e9g/, except what a role's lane names, like the planner's lessons)
-// and Claude Code's project settings and hooks, which would change how the agents themselves run.
-export const FACTORY_PATH = /^\.e9g\/|^\.claude\/(settings(\.local)?\.json$|hooks\/|agents\/)/;
+// The factory's own files: the team's sources (.e9g/), and Claude Code's project configuration (.claude/ and
+// .mcp.json: settings, hooks, agents, skills, commands), which would change how the agents themselves run.
+export const FACTORY_PATH = /^\.e9g\/|^\.claude(\/|$)|^\.mcp\.json$/;
+
+// Only a lane rule that names a factory path itself opens it (the planner's "^\.e9g/lessons\.md$"); a broad rule
+// that happens to match one ("\.json$") doesn't.
+const NAMES_FACTORY_PATH = /^\^\\?\.(?:e9g\/|claude\/|mcp\\?\.json)/;
+export function factoryWrite(team: Team, role: string, rel: string): boolean {
+  if (!FACTORY_PATH.test(rel)) return false;
+  return !(team.roles[role]?.write ?? []).some((rule) => NAMES_FACTORY_PATH.test(rule) && new RegExp(rule).test(rel));
+}

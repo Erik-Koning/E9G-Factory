@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
   FACTORY_PATH,
+  factoryWrite,
   instanceId,
   laneAllows,
   loadTeam,
@@ -115,9 +116,22 @@ describe("config", () => {
       ".claude/settings.local.json",
       ".claude/hooks/x.mjs",
       ".claude/agents/a.md",
+      ".claude/commands/x.md",
+      ".claude/skills/deploy/SKILL.md",
+      ".claude",
+      ".mcp.json",
     ])
       assert.ok(FACTORY_PATH.test(path), path);
-    for (const path of ["src/.e9g.ts", ".claude/commands/x.md", "docs/e9g.md", "CLAUDE.md"]) assert.ok(!FACTORY_PATH.test(path), path);
+    for (const path of ["src/.e9g.ts", "docs/e9g.md", "CLAUDE.md", ".claudex/a"]) assert.ok(!FACTORY_PATH.test(path), path);
+  });
+
+  test("only a lane rule that names a factory file opens it", () => {
+    const { team } = norm({ roles: { planner: {}, builder: { limit: 1, write: ["^src/", "\\.json$", "\\.md$", "^\\.claude/agents/notes\\.md$"] } } });
+    assert.ok(!factoryWrite(team, "planner", ".e9g/lessons.md"), "the planner's default lane names its lessons");
+    assert.ok(factoryWrite(team, "planner", ".e9g/team.json"));
+    for (const path of [".e9g/team.json", ".e9g/brief.md", ".claude/settings.json", ".mcp.json"]) assert.ok(factoryWrite(team, "builder", path), path);
+    assert.ok(!factoryWrite(team, "builder", ".claude/agents/notes.md"), "named by the rule itself");
+    assert.ok(!factoryWrite(team, "builder", "src/app.ts"), "not a factory path");
   });
 
   test("loadTeam reads the checkout's file and refuses a broken one", () => {

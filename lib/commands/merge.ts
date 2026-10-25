@@ -16,7 +16,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { FACTORY_PATH, laneAllows, roleForBranch, type Team } from "../config.ts";
+import { factoryWrite, laneAllows, roleForBranch, type Team } from "../config.ts";
 import { acquire, TIMED_OUT, withLock } from "../lock.ts";
 import { entryOf, FACTORY_ROOT, stateDir, workDir } from "../paths.ts";
 import { inTeam, teamSession } from "../session.ts";
@@ -46,8 +46,7 @@ export const usage = "e9g merge <branch> [--closes 12,13] [--rebased-from <appro
 
 // The paths in a diff that a role may not change: outside its lane, or the factory's own files.
 export function outsideLane(team: Team, role: string, paths: string[]): string[] {
-  const explicit = (rel: string) => (team.roles[role]?.write ?? []).some((rule) => rule !== "*" && new RegExp(rule).test(rel));
-  return paths.filter((path) => (FACTORY_PATH.test(path) && !explicit(path)) || !laneAllows(team, role, path));
+  return paths.filter((path) => factoryWrite(team, role, path) || !laneAllows(team, role, path));
 }
 
 export async function run(argv: string[]): Promise<number> {

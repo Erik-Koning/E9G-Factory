@@ -9,7 +9,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { type CommandOwner, FACTORY_PATH, instanceId, laneAllows, normalize as normalizeTeam, roleForInstance, type Team } from "../../lib/config.ts";
+import { type CommandOwner, factoryWrite, instanceId, laneAllows, normalize as normalizeTeam, roleForInstance, type Team } from "../../lib/config.ts";
 import { commandRules, isSecretFile, OPERATOR_COMMANDS } from "../../lib/policies.ts";
 import { type HookInput, inSetup, inTeam, teamSession } from "../../lib/session.ts";
 import { runningByInstance, TOOLS } from "../../lib/t3.ts";
@@ -79,9 +79,6 @@ function checkWork(absolute: string): void {
   refuse(`.e9g/run/${rel} isn't yours to write; use .e9g/run/scratch/ or /tmp.`);
 }
 
-// Only a lane rule naming the path itself lets a role write one of the factory's files (the planner's lessons).
-const explicitlyAllowed = (rel: string): boolean => (lane?.write ?? []).some((rule) => rule !== "*" && new RegExp(rule).test(rel));
-
 function checkPath(absolute: string, { viaShell = false } = {}): void {
   if (inside(absolute, work)) return checkWork(absolute);
   for (const rule of team.protect)
@@ -101,7 +98,7 @@ function checkPath(absolute: string, { viaShell = false } = {}): void {
     return;
   }
   if (viaShell && ignored(rel)) return;
-  if (FACTORY_PATH.test(rel) && !explicitlyAllowed(rel))
+  if (factoryWrite(team, role, rel))
     refuse(`${rel} is the team's rules or the factory's own files, which the operator changes (Article 12).`);
   if (!laneAllows(team, role, rel)) refuse(`the ${role || "unnamed"} role doesn't write ${rel}; it's outside its lane (Article 6).`);
 }

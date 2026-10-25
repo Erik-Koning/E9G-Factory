@@ -1,18 +1,38 @@
 // e9g doctor: is this machine ready to run teams? Checks the tools, T3 Code against the range this factory supports
 // and against what its adapter reads, the launcher and the watchdog, disk space, and every registered team.
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadTeam } from "../config.ts";
-import { E9G_HOME, PACKAGE, readRegistry } from "../paths.ts";
-import { promptStale } from "../prompts.ts";
+import { E9G_HOME, entryOf, type FactoryPackage, PACKAGE, readRegistry, versionDir } from "../paths.ts";
+import { promptFile, promptStale } from "../prompts.ts";
 import * as t3 from "../t3.ts";
-import { which } from "../util.ts";
+import { readJson, which } from "../util.ts";
 import { teamNames } from "./team.ts";
 import { watchdogLoaded } from "./watchdog.ts";
 
 const version = (command: string, args = ["--version"]): string | null => /(\d+\.\d+\.\d+)/.exec(spawnSync(command, args, { encoding: "utf8" }).stdout ?? "")?.[1] ?? null;
+
+const SOURCES = /sources ([0-9a-f]{16}) -->/;
+// A prompt's sources hash includes the factory version that compiled it, so a team pinned to another version is
+// judged by that version's own code: its e9g prompt, compiled now, against the registered copy.
+function pinnedStale(pin: string, name: string, run: string, roles: string[]): string[] | null {
+  const root = versionDir(pin);
+  const stale: string[] = [];
+  for (const role of roles) {
+    const compiled = spawnSync(process.execPath, [entryOf(root), "prompt", name, role], {
+      encoding: "utf8",
+      timeout: 60_000,
+      env: { ...process.env, E9G_HANDED_OVER: "1", NODE_COMPILE_CACHE: join(root, ".cache"), E9G_NODE_CACHE: "1" },
+    });
+    const now = SOURCES.exec(compiled.stdout ?? "")?.[1];
+    if (!now) return null;
+    const file = promptFile(run, role);
+    if (SOURCES.exec(existsSync(file) ? readFileSync(file, "utf8").slice(0, 400) : "")?.[1] !== now) stale.push(role);
+  }
+  return stale;
+}
 
 export async function doctor(): Promise<number> {
   const results: ["ok" | "warn" | "FAIL", string][] = [];
@@ -41,11 +61,15 @@ export async function doctor(): Promise<number> {
     ? spawnSync("plutil", ["-extract", "EnvironmentVariables.PATH", "raw", plist], { encoding: "utf8" }).stdout.trim()
     : "";
   const launcherDir = join(homedir(), ".local", "bin");
-  if (!existsSync(join(E9G_HOME, "current"))) fail("E9G Factory isn't installed: e9g self-install (from a clone of the factory)");
-  else ok(`E9G Factory ${PACKAGE.version} installed in ${E9G_HOME}`);
+  const current = readJson<FactoryPackage>(join(E9G_HOME, "current", "package.json"));
+  if (!current) fail("E9G Factory isn't installed: e9g self-install (from a clone of the factory)");
+  else ok(`E9G Factory ${current.version} is the current version in ${E9G_HOME}`);
   if (!existsSync(join(launcherDir, "e9g"))) fail(`the launcher isn't at ${launcherDir}/e9g: e9g self-install`);
-  else if (servicePath && !servicePath.split(":").includes(launcherDir))
-    fail(`T3 Code's service PATH doesn't include ${launcherDir}, so agents can't run e9g`);
+  else if (!existsSync(plist))
+    warn(`T3 Code's service isn't a launchd job here (${plist}), so whether its agents can run e9g and the hooks' node can't be checked`);
+  else if (!servicePath)
+    warn(`T3 Code's service sets no PATH (${plist}), so its agents may get launchd's default one, without ${launcherDir} (e9g) or node`);
+  else if (!servicePath.split(":").includes(launcherDir)) fail(`T3 Code's service PATH doesn't include ${launcherDir}, so agents can't run e9g`);
   else ok("agents can run e9g (the launcher is on T3 Code's PATH)");
   // The hooks run the first node on that PATH, which may not be the one running this.
   if (servicePath) {
@@ -74,11 +98,19 @@ export async function doctor(): Promise<number> {
       const team = loadTeam(entry.home);
       if (team.environment.needsDocker && spawnSync("docker", ["info"], { stdio: "ignore" }).status !== 0)
         warn(`${name}: needs Docker, which isn't running`);
-      const stale = Object.keys(team.roles).filter((role) => promptStale(team, role, entry.run));
-      stale.length
-        ? warn(`${name}: prompts out of date for ${stale.join(", ")} (e9g register ${entry.home})`)
-        : ok(`${name}: rules load, prompts current`);
-      if (!existsSync(join(E9G_HOME, "versions", entry.version))) fail(`${name}: pins E9G Factory ${entry.version}, which isn't installed`);
+      // Its agents run the registered version; e9g register would compile with the pinned one.
+      const pin = team.factory ?? PACKAGE.version;
+      if (!existsSync(versionDir(entry.version))) fail(`${name}: its agents run E9G Factory ${entry.version}, which isn't installed`);
+      if (pin !== entry.version) warn(`${name}: pins E9G Factory ${pin} but is registered with ${entry.version} (e9g register ${entry.home})`);
+      const roles = Object.keys(team.roles);
+      if (pin !== PACKAGE.version && !existsSync(versionDir(pin))) {
+        fail(`${name}: pins E9G Factory ${pin}, which isn't installed`);
+        continue;
+      }
+      const stale = pin === PACKAGE.version ? roles.filter((role) => promptStale(team, role, entry.run)) : pinnedStale(pin, name, entry.run, roles);
+      if (stale === null) warn(`${name}: rules load; its prompts are ${pin}'s, which doctor couldn't compile to compare (e9g prompt ${name} <role>)`);
+      else if (stale.length) warn(`${name}: prompts out of date for ${stale.join(", ")} (e9g register ${entry.home})`);
+      else ok(`${name}: rules load, prompts current${pin === PACKAGE.version ? "" : ` (judged by ${pin})`}`);
     } catch (error) {
       fail(`${name}: ${String((error as Error).message).split("\n").slice(0, 3).join(" ")}`);
     }

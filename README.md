@@ -15,7 +15,7 @@ the articles every agent works under.
 
 ```bash
 git clone https://github.com/Erik-Koning/E9G-Factory && cd E9G-Factory
-npm install && node bin/e9g.ts self-install     # installs ~/.e9g and puts `e9g` on PATH
+npm install && node bin/e9g.ts self-install     # installs ~/.e9g and links `e9g` into ~/.local/bin (keep that on PATH)
 e9g doctor                                       # tools, T3 Code's version and contract, the watchdog
 
 e9g init ~/code/my-app                           # detect, make the team's checkout, then interview you
@@ -26,10 +26,14 @@ e9g init ~/code/my-app                           # detect, make the team's check
 1. Detects what it can about the repository: its scripts, what CI runs, its tests and UI, and every way it can
    reach outside the machine (deploy targets, hosted databases, publishing, payments).
 2. Makes the team's own checkout beside yours (`~/code/my-app-e9g`, on a new branch `e9g/next`).
-3. Writes a draft `.e9g/`.
+3. Writes a draft `.e9g/`, pinned to the factory version that wrote it.
 4. Opens the **setup agent**. It asks you only what it couldn't detect: the goal, how done is proven, the team,
-   the budget, branches, data, contact, taste, and which policies to unlock. It finishes `.e9g/` and proves it
-   with `e9g check --run`. If you say so, it registers and starts the team.
+   a budget, branches, the board, data, contact, taste, and which policies to unlock. The budget goes into the
+   brief as guidance for the planner; nothing enforces it, so watch `e9g metrics` and pause the team when it's
+   spent. It finishes `.e9g/`, commits it on the integration branch (members' worktrees are made from it), and
+   proves it with `e9g check --run`. If you say so, it registers and starts the team.
+
+`e9g init --no-interview` writes the draft only, and prints the same steps for you to do by hand.
 
 To watch a team:
 
@@ -153,10 +157,13 @@ When T3 Code updates (`t3 update`), run `e9g doctor`:
 
 - **Releases:** `e9g self-install` installs this checkout's version into `~/.e9g/versions/<version>` and makes it
   current. An installed release doesn't change under a running team.
-- **Pins:** each team pins one release in `team.json` (`"factory": "0.2.0"`), and its agents run that release.
+- **Pins:** each team pins one release in `team.json` (`"factory": "0.3.0"`; `e9g init` writes the version that
+  drafted it), and its agents run that release. A team without a pin runs whichever version registers it.
 - **Upgrading:** `e9g upgrade <team> [version]` moves the pin and registers the team again.
 - **Development:** `self-install --link` adds `versions/dev`, pointing at this checkout, for teams that should pick
   up changes immediately.
+- **Which code runs:** the installed `e9g` hands a team's commands to the version the team pins. A source checkout
+  (`node bin/e9g.ts …`) never hands over: it runs its own code, whatever the team pins.
 
 ## Repository layout
 
@@ -180,7 +187,7 @@ hooks and the launcher run with Node's compile cache on, so stripping the types 
 
 ```bash
 npm test                         # type-check, then the suite: policies, config, prompts, guard, merge queue, locks
-node bin/e9g.ts check <dir>     # any team's setup, from this checkout
+node bin/e9g.ts check <dir>     # any team's setup, with this checkout's code (whatever the team pins)
 node bin/e9g.ts self-install --link
 ```
 

@@ -236,10 +236,18 @@ function rows(): { id: string; path: string; checks: string; ux: string; problem
   });
 }
 
+// What the branch changed outside pages.allowedChanges, since pages.base (the team's base when it's left out).
 function outsideChanges(): string[] {
-  if (!pages.base || !pages.allowedChanges) return [];
+  if (!pages.allowedChanges) return [];
+  const base = pages.base ?? team.base;
   const allowed = pages.allowedChanges.map((rule) => new RegExp(rule));
-  return git("diff", "--name-only", `${pages.base}...HEAD`)
+  let changed: string;
+  try {
+    changed = git("diff", "--name-only", `${base}...HEAD`);
+  } catch {
+    throw new Error(`can't compare with ${base}, which allowedChanges is checked against (pages.base, or the team's base)`);
+  }
+  return changed
     .split("\n")
     .filter(Boolean)
     .filter((path) => !allowed.some((rule) => rule.test(path)));
@@ -258,6 +266,11 @@ export async function run(argv: string[]): Promise<number> {
     const [value] = rest.splice(at, 2).slice(1);
     return value;
   };
+  // Nothing to check is never done: an empty list would pass every finish line.
+  if (["run", "status", "done"].includes(command ?? "") && !list.length) {
+    console.error('pages: team.json "pages.list" names no pages, so there is nothing to check');
+    return 2;
+  }
 
   if (command === "run") {
     if (git("rev-parse", "--abbrev-ref", "HEAD") !== team.branch) {
@@ -306,7 +319,7 @@ export async function run(argv: string[]): Promise<number> {
       if (!rest.includes("--brief")) for (const problem of row.problems.slice(0, 6)) console.info(`             ↳ ${problem}`);
     }
     const outside = outsideChanges();
-    if (outside.length) console.info(`Changed outside the allowed paths since ${pages.base}: ${outside.join(", ")}`);
+    if (outside.length) console.info(`Changed outside the allowed paths since ${pages.base ?? team.base}: ${outside.join(", ")}`);
   } else if (command === "done") {
     const gaps = rows().flatMap((row) => [
       ...(row.checks === "pass" ? [] : [`${row.id}: checks ${row.checks}`]),

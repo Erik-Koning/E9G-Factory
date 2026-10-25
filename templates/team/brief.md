@@ -11,6 +11,13 @@ from the interview; the operator can rewrite it at any time. Whatever it leaves 
 
 {{FINISH}}
 
+## Budget
+
+{{BUDGET}}
+
+This is the operator's guidance for the planner's choices (how many members to run, when to stop polishing), not a
+limit the factory enforces. The operator watches what the team costs and pauses it when the budget is spent.
+
 ## What the team decides itself
 
 Anything this brief leaves open, within the team's rules: it picks what fits the brief best and logs why.

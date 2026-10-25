@@ -4,6 +4,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { RawTeam, RoleSettings } from "./config.ts";
+import { PACKAGE } from "./paths.ts";
 import { gitOk, git as gitRaw } from "./util.ts";
 
 interface PackageJson {
@@ -213,7 +214,9 @@ export function detect(root: string) {
   };
 }
 
-// A starting team.json from what was detected. The setup agent and the operator refine it.
+// A starting team.json from what was detected. The setup agent and the operator refine it. It pins the factory
+// version that drafted it, and keeps tickets on the machine (a files board): a GitHub board posts issues where
+// people read them, so the setup interview offers it rather than assuming it.
 export function draftTeam(found: Detected, { name, branch, owner }: { name: string; branch: string; owner?: string | null | undefined }): RawTeam {
   const policies: Record<string, string> = {};
   const tests = found.e2eDir ? `^${found.e2eDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/` : null;
@@ -229,11 +232,12 @@ export function draftTeam(found: Detected, { name, branch, owner }: { name: stri
     $schema: "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
     name,
     title: name,
+    factory: PACKAGE.version,
     ...(owner ? { owner } : {}),
     branch,
     ...(found.git.defaultBranch ? { base: found.git.defaultBranch } : {}),
     push: null,
-    board: found.git.github ? { github: { label: "e9g" } } : "files",
+    board: "files",
     roles,
     gate: { full: ".e9g/adapters/gate.sh", quick: ".e9g/adapters/gate.sh --quick", concurrency: 2 },
     environment: { script: ".e9g/adapters/env.sh", health: [], needsDocker: found.surfaces.some((s) => s.id === "supabase") },

@@ -6,8 +6,8 @@
   "branch": "next",
   "base": "main",
   "push": { "remote": "origin", "branch": "next", "every": "6h" },
-  "board": { "github": { "label": "loop" } },
-  "branchPrefix": "loop",
+  "board": { "github": { "label": "e9g" } },
+  "branchPrefix": "team",
   "roles": {
     "planner": { "write": ["^\\.e9g/lessons\\.md$", "^docs/journeys\\.json$"] },
     "builder": { "limit": 3, "write": ["*"], "deny": ["^e2e/", "^docs/journeys\\.json$", "^scripts/e2e/", "^playwright\\.config\\.ts$"] },
@@ -18,18 +18,18 @@
   },
   "review": { "required": ["builder"], "removedPattern": "\\bexpect\\(" },
   "gate": { "full": "scripts/e2e/gate.sh", "quick": "scripts/e2e/gate.sh --quick", "concurrency": 2 },
-  "environment": { "script": "scripts/e2e/env.sh", "health": ["http://localhost:9101/", "any:http://127.0.0.1:55321/"], "needsDocker": true },
+  "environment": { "script": "scripts/e2e/env.sh", "health": ["http://localhost:3100/", "any:http://127.0.0.1:54400/"], "needsDocker": true },
   "afterMerge": "scripts/e2e/after-merge.sh",
   "finish": "node scripts/e2e/journeys.mjs done",
   "progress": "node scripts/e2e/journeys.mjs status",
   "protect": ["^\\.e2e-state/(journeys\\.json|runs\\.jsonl)$"],
   "never": [
     {
-      "rule": "\\bpnpm\\s+(run\\s+)?db:(migrate|reset|start|stop)\\b",
-      "reason": "those reach the people's local database; the team has its own (e9g env).",
-      "example": "pnpm db:reset"
+      "rule": "\\bdocker[\\s-]+compose\\s+down\\b[^;&|]*\\s(-v|--volumes)\\b",
+      "reason": "that deletes the operator's local database volumes; the team has its own (e9g env).",
+      "example": "docker compose down -v"
     },
-    { "rule": "CHECKOUT_PURCHASES_ENABLED\\s*=\\s*[\"']?true", "reason": "purchases stay off.", "example": "CHECKOUT_PURCHASES_ENABLED=true pnpm dev" }
+    { "rule": "\\bLIVE_PAYMENTS\\s*=\\s*[\"']?(1|true)\\b", "reason": "live payments stay off.", "example": "LIVE_PAYMENTS=true pnpm dev" }
   ],
   "commandOwners": [
     {

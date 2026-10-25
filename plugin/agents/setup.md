@@ -65,13 +65,17 @@ about ten questions at most, in this order:
 | Finish line  | How done is proven: end-to-end journeys, page checks (`e9g pages`), the test suite passing, an empty ticket list, or a command of theirs | From the goal                                                                                            |
 | Scope        | What the team may change, and what must stay untouched                                                                                   | The whole repository except the factory's files                                                          |
 | Team         | Which roles, and how many at once                                                                                                        | Planner, 2 builders, 1 reviewer; a UX specialist if there's a UI; a tester if there are end-to-end tests |
-| Budget       | A cap on agent-hours or tokens, or a deadline                                                                                            | None, but show what similar runs cost (`e9g metrics` on other teams)                                     |
-| Branch       | The integration branch, its base, and whether and how often it's pushed                                                                  | A local branch, never pushed                                                                             |
+| Budget       | A cap on agent-hours or tokens, or a deadline: guidance for the planner in `brief.md`, which nothing enforces                            | None, but show what similar runs cost (`e9g metrics` on other teams)                                     |
+| Branch       | The integration branch (never a protected one), its base, and whether and how often it's pushed                                          | A local branch, never pushed                                                                             |
+| Board        | Files in `.e9g/run/board/`, or GitHub issues with a label (posted where people read them; needs `gh`)                                    | Files; offer GitHub when the repository is on GitHub                                                     |
 | Data         | What data the team may use, and whether it may reach outside APIs                                                                        | Seed or made-up data only, no real keys                                                                  |
 | Contact      | Who hears from the team, and what's worth an interruption                                                                                | The operator's email: done, and decisions that change the outcome a lot                                  |
 | Taste        | A style guide, a rubric or reference pages                                                                                               | The repository's design docs                                                                             |
 | Dependencies | May the team add packages?                                                                                                               | Allowed                                                                                                  |
 | Policies     | Show the deny list, with what you detected marked, and ask what to unlock                                                                | Everything outward stays denied                                                                          |
+
+Nothing enforces the budget. Say so when you ask: the planner reads it as guidance, and the operator watches
+`e9g metrics` and pauses the team (`e9g pause`) when it's spent.
 
 The policies are deploy, cloud, hosted-data, publish, github, messages and payments. Recommend keeping all of them
 denied, and explain each unlock's risk in one line. Unlocking is the operator's call (Article 3); don't argue,
@@ -81,9 +85,9 @@ but say what a mistake would cost.
 
 In `.e9g/`, write:
 
-- **`team.json`:** the rules. Use `docs/team.md`'s shape exactly.
-- **`brief.md`:** the operator's direction in their words, then what "done" means, then what the team decides
-  itself.
+- **`team.json`:** the rules. Use `docs/team.md`'s shape exactly, and keep the `factory` pin the draft wrote.
+- **`brief.md`:** the operator's direction in their words, then what "done" means, the budget if they gave one,
+  then what the team decides itself.
 - **`notes.md`:** what any member needs to know to work here: the environment, ports, commands, conventions and
   traps you found.
 - **`rubric.md`:** a short UX rubric, if the product has a UI.
@@ -93,18 +97,20 @@ In `.e9g/`, write:
   - `gate.sh` (what CI runs; `--quick` for the subset);
   - `after-merge.sh` (rebuild and recheck after a merge).
 
-  Make them executable.
+  Make them executable. `e9g check` runs `bash -n` on each, so a script that doesn't parse fails there, not
+  mid-merge.
 
 Keep facts in one place: limits, lanes and policies live in `team.json` only, and the compiled prompts carry them
 to every agent.
 
 ## 4. Prove it
 
-1. Run `e9g check --run` and fix what it reports until it passes. It validates the rules, runs the guard's
-   self-test, starts and stops the environment, and runs the gate on the base.
-2. Show the operator the summary it prints: what the team may and may not do.
-3. Commit `.e9g/` on the integration branch: `git add .e9g && git commit -m "E9G team: <name>"`. Members' worktrees
-   need the adapters.
+1. Commit `.e9g/` on the integration branch: `git add .e9g && git commit -m "E9G team: <name>"`. Members'
+   worktrees, and the gate's, are made from that branch, so they need the rules and the adapters committed.
+2. Run `e9g check --run` and fix what it reports until it passes, committing each fix. It validates the rules
+   and the adapters, checks that they're committed, runs the guard's self-test, starts and stops the
+   environment, and runs the gate on a fresh worktree of the integration branch.
+3. Show the operator the summary it prints: what the team may and may not do.
 4. Ask whether to start now. If yes, run `e9g register` and then `e9g start <name>`, and tell them how to watch it:
    `e9g status`, the T3 Code window, `e9g metrics`.
 

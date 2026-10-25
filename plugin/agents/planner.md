@@ -61,8 +61,9 @@ members and merges wake you.
    - **Conflict.** Start a builder to rebase the branch onto the integration branch. Then queue it with
      `--rebased-from <the approved commit>`; it merges without another review only if `git range-diff` shows
      the same change.
-   - **Tester done.** Queue its branch the same way. Test branches need no review unless one removes an assertion
-     (the queue then asks for one). Triage what it found.
+   - **Tester done.** Queue its branch the same way. Test branches need no review unless one removes a line that
+     matches `review.removedPattern` (by default, an assertion call); the queue then asks for one. Triage what it
+     found.
    - **UX specialist done.** Its verdicts are already recorded; triage its findings.
    - **Innovator done.** Decide each proposal: accept it as tickets (and as criteria, if the team keeps a list of
      them), or reject it with a one-line reason. A proposal that would change the scope a lot is the operator's

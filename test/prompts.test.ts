@@ -9,7 +9,7 @@ describe("prompts", () => {
   const home = makeRepo(
     baseTeam({
       finish: "e9g pages done",
-      pages: { list: [] },
+      pages: { list: [{ id: "home", path: "/" }] },
       push: { every: "6h" },
       never: [{ rule: "\\bmake\\s+ship\\b", reason: "make ship sends it to customers" }],
     }),

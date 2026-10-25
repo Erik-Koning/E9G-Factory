@@ -20,14 +20,14 @@ Set up and run a team (the operator)
   e9g status [<team>]  ·  e9g teams   planner, members, the watchdog's last lines  ·  every team
   e9g metrics [--team <t>] [--since]  agents, runs, requests, tokens and time per role
   e9g prompt <team> <role>            the text a role works under
-  e9g upgrade <team> [<version>]      move a team to another installed factory version
+  e9g upgrade <team> [<version>] [--force]   move a team to another installed factory version
   e9g unregister <team>               remove its T3 instances and registry entry (keeps its files)
   e9g watchdog install|remove|run     the one launchd job that looks after every team
   e9g self-install [--link] [--force] install this checkout's version into ~/.e9g  ·  e9g versions
 
 Team members (the guard decides who may run which)
   e9g merge <branch> --queue [--closes N…] [--rebased-from <sha>] [--light]   the only way into the integration branch
-  e9g verdict review <branch> approve|changes --note "…"   ·   e9g verdict ux <subject> pass|issues --note "…"
+  e9g verdict review <branch> approve|changes --sha <commit> --note "…"   ·   e9g verdict ux <subject> pass|issues --ref <commit> --note "…"
   e9g log [--label …] "<entry>"   e9g lock <name> [--slots N] [--wait-min M] -- <cmd>   e9g drain <role…>|off
   e9g gate [--quick]   e9g env up|down|restart|reset|status   e9g finish   e9g progress
   e9g pages run|shots|status|done

@@ -159,7 +159,9 @@ When T3 Code updates (`t3 update`), run `e9g doctor`:
   current. An installed release doesn't change under a running team.
 - **Pins:** each team pins one release in `team.json` (`"factory": "0.3.0"`; `e9g init` writes the version that
   drafted it), and its agents run that release. A team without a pin runs whichever version registers it.
-- **Upgrading:** `e9g upgrade <team> [version]` moves the pin and registers the team again.
+- **Upgrading:** `e9g upgrade <team> [version]` registers the team with the target version first, and moves the pin
+  only once that worked (`--force` registers even when T3 Code doesn't meet the contract). A running planner keeps
+  its old prompt until `e9g rotate <team>`.
 - **Development:** `self-install --link` adds `versions/dev`, pointing at this checkout, for teams that should pick
   up changes immediately.
 - **Which code runs:** the installed `e9g` hands a team's commands to the version the team pins. A source checkout

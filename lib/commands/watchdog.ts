@@ -213,25 +213,7 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
   }
   if (quietMembers.length && oncePer("stuck-members", 60)) notify(title, `Members quiet for ${w.stuckAfterMin ?? 45}+ min: ${quietMembers.join("; ")}`);
 
-  // Worktrees of members done with them: each holds a copy of node_modules and build output. Removed only when git
-  // shows nothing in them to lose (no change, no untracked file, no commit on no branch), by git itself, which
-  // refuses one with changes. Kept: any a member still uses, one with a marker in keep/, and those of interrupted,
-  // failed or cancelled members for a week (T3 can resume them). Under launchd a checkout in ~/Documents can't be
-  // read, so its worktrees wait for a run from a terminal (e9g watchdog run <team>).
-  if (entry.worktreesDir && oncePer("prune", 60)) {
-    const pruneAfter = w.pruneAfterMin ?? 60;
-    let freed = 0;
-    const kept: string[] = [];
-    for (const path of t3.finishedWorktrees(entry.project, { completedAfterMin: pruneAfter, stoppedAfterMin: Math.max(pruneAfter, STOPPED_KEEP_MIN) })) {
-      if (!path.startsWith(`${entry.worktreesDir}/`) || !existsSync(path) || existsSync(join(run, "keep", basename(path)))) continue;
-      const work = workIn(path);
-      if (work) kept.push(`${basename(path)}: ${work}`);
-      else if (spawnSync("git", ["-C", entry.home, "worktree", "remove", path], { stdio: "ignore" }).status === 0) freed++;
-      else kept.push(`${basename(path)}: git worktree remove refused`);
-    }
-    if (freed) log(`removed ${freed} finished worktrees`);
-    if (kept.length && oncePer("prune-kept", 1440)) log(`kept ${kept.length} finished worktrees that may hold work: ${kept.join("; ")}`);
-  }
+  pruneWorktrees(entry);
 
   // Email the planner couldn't send.
   for (const draft of readdirSync(join(run, "outbox")).filter((f) => f.endsWith(".md"))) {
@@ -250,6 +232,38 @@ async function watchTeam(entry: RegistryEntry): Promise<void> {
 const STOPPED_KEEP_MIN = 7 * 1440;
 
 // What a finished member's worktree still holds that removing it would lose, or null when there's nothing.
+// Worktrees of members done with them: each holds a copy of node_modules and build output. Removed only when git
+// shows nothing in them to lose (no change, no untracked file, no commit on no branch), by git itself, which refuses
+// one with changes. Kept: any a member still uses, one with a marker in keep/, and those of interrupted, failed or
+// cancelled members for a week (T3 can resume them). At most hourly, from the watchdog and from the merge queue:
+// under launchd a checkout in ~/Documents can't be read, but the merge queue runs where the planner does.
+export function pruneWorktrees(entry: RegistryEntry): void {
+  const { run } = entry;
+  const log = (text: string) => appendFileSync(join(run, "watchdog.log"), `${stamp()} ${text}\n`);
+  const oncePer = (name: string, minutes: number): boolean => {
+    const mark = join(run, `.stamp-${name}`);
+    if (minutesSince(mark) < minutes) return false;
+    writeFileSync(mark, "");
+    return true;
+  };
+  if (!entry.worktreesDir || existsSync(join(run, "paused"))) return;
+  // A process that can't read the checkout (launchd's, for one in ~/Documents) leaves the turn to one that can.
+  if (spawnSync("git", ["-C", entry.home, "rev-parse", "--git-dir"], { stdio: "ignore" }).status !== 0) return;
+  if (!oncePer("prune", 60)) return;
+  const pruneAfter = entry.watchdog?.pruneAfterMin ?? 60;
+  let freed = 0;
+  const kept: string[] = [];
+  for (const path of t3.finishedWorktrees(entry.project, { completedAfterMin: pruneAfter, stoppedAfterMin: Math.max(pruneAfter, STOPPED_KEEP_MIN) })) {
+    if (!path.startsWith(`${entry.worktreesDir}/`) || !existsSync(path) || existsSync(join(run, "keep", basename(path)))) continue;
+    const work = workIn(path);
+    if (work) kept.push(`${basename(path)}: ${work}`);
+    else if (spawnSync("git", ["-C", entry.home, "worktree", "remove", path], { stdio: "ignore" }).status === 0) freed++;
+    else kept.push(`${basename(path)}: git worktree remove refused`);
+  }
+  if (freed) log(`removed ${freed} finished worktrees`);
+  if (kept.length && oncePer("prune-kept", 1440)) log(`kept ${kept.length} finished worktrees that may hold work: ${kept.join("; ")}`);
+}
+
 function workIn(path: string): string | null {
   const status = spawnSync("git", ["-C", path, "status", "--porcelain"], { encoding: "utf8" });
   if (status.status !== 0) return "git couldn't read it";

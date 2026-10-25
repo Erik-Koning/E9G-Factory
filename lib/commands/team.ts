@@ -64,6 +64,9 @@ export function register(argv: string[]): number {
 function registerTeam(home: string, { force, version: target }: { force: boolean; version?: string }): number {
   const team = loadTeam(home);
   for (const warning of team.warnings) console.warn(`  note: ${warning}`);
+  // Register doesn't write team.json (a change there would hold up every merge until it's committed).
+  if (!team.factory && !target)
+    console.warn(`  note: team.json pins no factory version, so the team runs whichever version registers it (e9g upgrade ${team.name} pins one)`);
   const problems = t3.contract();
   if (problems.length && !force) die(`T3 Code isn't ready:\n  - ${problems.join("\n  - ")}\n(e9g doctor explains; --force registers anyway)`);
   if (!existsSync(join(home, ".e9g", ".gitignore")))

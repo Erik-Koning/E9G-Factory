@@ -22,10 +22,11 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync
 import { join, posix } from "node:path";
 import { FACTORY_PATH, factoryWrite, laneAllows, roleForBranch, type Team } from "../config.ts";
 import { acquire, TIMED_OUT, withLock } from "../lock.ts";
-import { entryOf, FACTORY_ROOT, stateDir, workDir } from "../paths.ts";
+import { entryOf, FACTORY_ROOT, readRegistry, stateDir, workDir } from "../paths.ts";
 import { inTeam, teamSession } from "../session.ts";
 import { threadSend } from "../t3.ts";
 import { list, localTime, parseArgs, readJson, text as optionText, writeJson } from "../util.ts";
+import { pruneWorktrees } from "./watchdog.ts";
 
 // What a merge left in .e9g/run/state/merges/<branch>.json, and a reviewer's verdict in state/reviews/.
 export interface MergeRecord {
@@ -224,6 +225,15 @@ export async function run(argv: string[]): Promise<number> {
     }
   }
   wake();
+  // The queue runs where the planner does, which can read a checkout the launchd watchdog can't (~/Documents).
+  if (process.env.E9G_MERGE_QUEUED) {
+    const entry = readRegistry(team.name);
+    try {
+      if (entry && entry.home === home) pruneWorktrees(entry);
+    } catch (error) {
+      console.error(`merge: pruning finished worktrees failed: ${(error as Error).message}`);
+    }
+  }
   return code;
 }
 

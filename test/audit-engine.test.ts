@@ -81,6 +81,23 @@ describe("the engine audit's findings stay fixed", { concurrency: 8 }, () => {
     }
   });
 
+  test("#2 the merge queue clears finished worktrees too, since it runs where the checkout can be read", async () => {
+    const w = await fakeWorld();
+    try {
+      writeFileSync(join(w.run, "planner-thread"), "mcp:planner\n");
+      const done = w.worktree("t3-done", "e9g/b1-done");
+      commit(done, { "src/one.ts": "export const one = 1;\n" }, "b1");
+      w.child({ parent: "mcp:planner", id: "c-done", instance: "e9g-fixture-builder", status: "completed", worktreePath: done });
+      // Whatever the merge's own outcome (this branch doesn't exist), the queue's run ends by pruning.
+      const queued = await e9g(["merge", "e9g/b9-none"], { cwd: w.home, env: { ...w.env, E9G_HOME_DIR: w.home, E9G_MERGE_QUEUED: "1" } });
+      assert.equal(queued.code, 2, queued.out);
+      assert.ok(!existsSync(done), "the clean finished worktree is gone");
+      assert.match(read(join(w.run, "watchdog.log")), /removed 1 finished worktrees/);
+    } finally {
+      await w.close();
+    }
+  });
+
   test("#2 the watchdog restarts T3 Code only after two failed checks a minute apart", async () => {
     const w = await fakeWorld();
     try {

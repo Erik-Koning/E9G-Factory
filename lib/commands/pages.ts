@@ -243,12 +243,13 @@ function outsideChanges(): string[] {
   const allowed = pages.allowedChanges.map((rule) => new RegExp(rule));
   let changed: string;
   try {
-    changed = git("diff", "--name-only", `${base}...HEAD`);
+    // -z: git quotes unusual names otherwise, and a quoted one would match no rule.
+    changed = git("diff", "--name-only", "--no-renames", "-z", `${base}...HEAD`);
   } catch {
     throw new Error(`can't compare with ${base}, which allowedChanges is checked against (pages.base, or the team's base)`);
   }
   return changed
-    .split("\n")
+    .split("\0")
     .filter(Boolean)
     .filter((path) => !allowed.some((rule) => rule.test(path)));
 }

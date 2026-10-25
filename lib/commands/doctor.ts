@@ -53,7 +53,10 @@ export async function doctor(): Promise<number> {
   if (!t3Version) fail("T3 Code (t3) isn't on PATH: https://github.com/pingdotgg/t3code");
   else if (contract.length) for (const problem of contract) fail(problem);
   else ok(`T3 Code ${t3Version}: in range ${t3.SUPPORTED}, and its database, CLI and settings are what this factory reads`);
-  (await t3.serverUp()) ? ok("T3 Code's server answers at 127.0.0.1:3773") : fail("T3 Code's server doesn't answer (t3 service restart)");
+  (await t3.serverUp()) ? ok(`T3 Code's server answers at ${t3.serverUrl()}`) : fail(`T3 Code's server doesn't answer at ${t3.serverUrl()} (t3 service restart)`);
+  // The factory no longer turns this on for you: it's a setting of the whole of T3 Code.
+  if (existsSync(t3.SETTINGS) && t3.readSettings().autoResumeLimitedThreads !== true)
+    warn("T3 Code doesn't resume threads that hit a usage limit (autoResumeLimitedThreads), so a team stops at a limit until you resume it");
 
   // Agents run `e9g …`, so T3 Code's service must have the launcher's folder on its PATH.
   const plist = join(homedir(), "Library", "LaunchAgents", "com.t3tools.t3code.service.plist");

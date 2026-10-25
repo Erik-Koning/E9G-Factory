@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
   "title": "E9G Factory team",
-  "description": "A team's rules: .e9g/team.json. docs/team.md explains every key; lib/config.mjs is what enforces them.",
+  "description": "A team's rules: .e9g/team.json. docs/team.md explains every key; lib/config.ts is what enforces them.",
   "type": "object",
   "required": ["name", "branch"],
   "additionalProperties": false,

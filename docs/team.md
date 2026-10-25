@@ -1,6 +1,6 @@
 # `.e9g/team.json` reference
 
-A team's rules, in its checkout. Every part of the factory reads this file through one loader (`lib/config.mjs`),
+A team's rules, in its checkout. Every part of the factory reads this file through one loader (`lib/config.ts`),
 which fills in the defaults below and refuses a file with problems (`e9g check` lists them). Agents can't change
 it; the guard reads the team checkout's copy, never a branch's. Editors can validate it with
 `schema/team.schema.json` (the `$schema` key).
@@ -71,7 +71,7 @@ it; the guard reads the team checkout's copy, never a branch's. Editors can vali
 
 | Key             | Default                                    | Meaning                                                                                                                                                                                                    |
 | --------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `policies`      | all outward denied; `dependencies` allowed | Unlock (or deny) a policy: `{"deploy": "allow", "dependencies": "deny"}`. The policies: `deploy`, `cloud`, `hosted-data`, `publish`, `github`, `messages`, `payments`, `dependencies` (`lib/policies.mjs`) |
+| `policies`      | all outward denied; `dependencies` allowed | Unlock (or deny) a policy: `{"deploy": "allow", "dependencies": "deny"}`. The policies: `deploy`, `cloud`, `hosted-data`, `publish`, `github`, `messages`, `payments`, `dependencies` (`lib/policies.ts`) |
 | `never`         | `[]`                                       | The team's own command rules: `{"rule": "<regex>", "reason": "<what the agent is told>", "example": "<a command it must refuse>"}`. `e9g check` tests each example                                         |
 | `commandOwners` | `[]`                                       | Commands only some roles run: `{"rule": "<regex>", "roles": ["ux-specialist"], "reason": "…"}`                                                                                                             |
 | `protect`       | `[]`                                       | Regexes over paths (from the checkout's root) written by the team's scripts only, such as a test runner's results                                                                                          |

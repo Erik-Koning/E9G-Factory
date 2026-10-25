@@ -15,7 +15,7 @@ gives each agent its own worktree, and wakes a parent when a child finishes. Cla
 adds the roles, the rules and the operations on top.
 
 T3 Code is a dependency, not a fork. Everything that depends on its internals lives in one adapter
-(`lib/t3.mjs`). Each release of the factory declares the T3 Code versions it supports (`package.json`,
+(`lib/t3.ts`). Each release of the factory declares the T3 Code versions it supports (`package.json`,
 `e9g.t3code`), and `e9g doctor` checks the installed one against that range and against what the adapter reads.
 When T3 Code updates, the adapter follows it.
 

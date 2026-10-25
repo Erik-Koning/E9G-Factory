@@ -1,0 +1,248 @@
+// e9g check [<checkout>] [--run]: prove a team's setup before anything runs.
+// - the rules load (problems and warnings);
+// - the adapters exist and are executable;
+// - the guard behaves as the rules say: a self-test generated from them (the factory's files, lanes, read-only
+//   roles, protected branches, owned commands, every policy's examples, the team's own never rules, email);
+// - each role's prompt compiles;
+// - T3 Code meets the contract;
+// - with --run: the environment starts, answers and stops, the gate passes on the integration branch, and the
+//   finish command runs.
+// Ends with a plain summary of what the team may and may not do.
+import { spawn, spawnSync } from "node:child_process";
+import { accessSync, constants, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { instanceId, type Lane, type LoadedTeam, loadTeam, ROLES, type Team } from "../config.ts";
+import { FACTORY_ROOT, findHome } from "../paths.ts";
+import { ALLOWED_EXAMPLES, policyStates } from "../policies.ts";
+import { compile } from "../prompts.ts";
+import * as t3 from "../t3.ts";
+import { die, parseArgs } from "../util.ts";
+
+// One self-test case: a tool call as a role would make it, and what the guard must do with it.
+export interface GuardCase {
+  role: string;
+  tool: string;
+  input: Record<string, unknown>;
+  expect: "allow" | "refuse";
+  why: string;
+}
+type Level = "ok" | "warn" | "FAIL";
+
+const GUARD = join(FACTORY_ROOT, "plugin", "hooks", "guard.ts");
+
+export function guardCases(team: Team): GuardCase[] {
+  const home = team.home;
+  const roles = Object.keys(team.roles);
+  const builder = roles.includes("builder") ? "builder" : (roles.find((r) => r !== "planner") ?? "planner");
+  const cases: GuardCase[] = [];
+  const add = (role: string, tool: string, input: Record<string, unknown>, expect: GuardCase["expect"], why: string) =>
+    cases.push({ role, tool, input, expect, why });
+  const bash = (role: string, command: string, expect: GuardCase["expect"], why?: string) => add(role, "Bash", { command }, expect, why ?? command);
+  const planner = team.roles["planner"] as Lane;
+
+  for (const role of roles) {
+    add(role, "Write", { file_path: join(home, ".e9g/team.json") }, "refuse", "the team's rules");
+    add(role, "Write", { file_path: join(home, ".claude/settings.json") }, "refuse", "Claude Code's project settings");
+    add(role, "Write", { file_path: join(home, ".e9g/run/state/reviews/x.json") }, "refuse", "recorded state");
+    add(role, "Read", { file_path: join(home, ".env.local") }, "refuse", "a secret file");
+  }
+  if (planner.write.some((rule) => new RegExp(rule).test(".e9g/lessons.md")))
+    add("planner", "Write", { file_path: join(home, ".e9g/lessons.md") }, "allow", "the planner's lessons");
+  for (const role of roles.filter((r) => team.roles[r]?.readOnly)) {
+    add(role, "Write", { file_path: join(home, "README.md") }, "refuse", "a read-only role writing");
+    bash(role, "git commit -am wip", "refuse", "a read-only role committing");
+    add(role, "Write", { file_path: join(home, ".e9g/run/board/f-20260101-0000-check.md") }, "allow", "filing a finding");
+  }
+  const builderLane = team.roles[builder];
+  if (builderLane?.write.includes("*") && !builderLane.deny.some((rule) => new RegExp(rule).test("src/e9g-check.ts")))
+    add(builder, "Write", { file_path: join(home, "src/e9g-check.ts") }, "allow", "a builder writing in its lane");
+  bash(builder, `git push origin ${team.protectedBranches[0]}`, "refuse", "a push to a protected branch");
+  bash(builder, "git push --force origin topic", "refuse", "a force push");
+  bash(builder, "git -C . push origin HEAD:main", "refuse", "a push hidden behind git -C");
+  bash(builder, "cat .env", "refuse", "reading an env file");
+  bash(builder, "e9g register", "refuse", "an operator's command");
+  if (team.environment.script && builder !== "planner") {
+    bash(builder, `${team.environment.script.split(/\s+/)[0] ?? ""} reset`, "refuse", "resetting the environment by its script");
+    bash(builder, "e9g env status", "allow", "reading the environment's status");
+  }
+  if (builder !== "planner") {
+    bash(builder, "e9g merge some/branch", "refuse", "merging, which only the planner does");
+    bash(builder, "e9g verdict review some/branch approve", "refuse", "a reviewer's verdict");
+  }
+  for (const policy of policyStates(team))
+    for (const example of policy.examples)
+      bash(builder, example, policy.state === "deny" ? "refuse" : "allow", `policy ${policy.id} (${policy.state}): ${example}`);
+  for (const example of ALLOWED_EXAMPLES) bash(builder, example, "allow", `ordinary work: ${example}`);
+  for (const rule of team.never) if (rule.example) bash(builder, rule.example, "refuse", `the team's rule: ${rule.reason}`);
+  add(
+    "planner",
+    "mcp__t3-code__delegate_task",
+    { target: { providerInstanceId: "someone-else" } },
+    "refuse",
+    "starting a member on another team's instance"
+  );
+  add("planner", "mcp__t3-code__delegate_task", { target: { providerInstanceId: instanceId(team, "planner") } }, "refuse", "starting a second planner");
+  if (builder !== "planner")
+    add(builder, "mcp__t3-code__delegate_task", { target: { providerInstanceId: instanceId(team, builder) } }, "refuse", "a member starting members");
+  if (planner.mcp.includes("mcp__claude_ai_Gmail__send_message")) {
+    add("planner", "mcp__claude_ai_Gmail__send_message", { to: ["someone@example.com"] }, "refuse", "email to anyone but the operator");
+    if (team.owner) add("planner", "mcp__claude_ai_Gmail__send_message", { to: [team.owner] }, "allow", "email to the operator");
+  }
+  return cases;
+}
+
+// One case, as Claude Code would call the hook: JSON on stdin, the team's environment, exit 2 to refuse.
+export function runGuard(team: Team, { role, tool, input }: GuardCase, run: string): Promise<{ outcome: string; said: string }> {
+  return new Promise((done) => {
+    const child = spawn(process.execPath, [GUARD], {
+      // As the plugin's hooks.json runs it, compile cache included.
+      env: {
+        ...process.env,
+        E9G_TEAM: team.name,
+        E9G_HOME_DIR: team.home,
+        E9G_RUN: run,
+        E9G_ROLE: role,
+        CLAUDE_PROJECT_DIR: team.home,
+        E9G_SETUP: "",
+        NODE_COMPILE_CACHE: join(FACTORY_ROOT, ".cache"),
+        E9G_NODE_CACHE: "1",
+      },
+    });
+    let said = "";
+    child.stderr.on("data", (chunk: Buffer) => (said += chunk));
+    child.on("close", (code) => done({ outcome: code === 2 ? "refuse" : code === 0 ? "allow" : `error ${code}`, said: said.trim() }));
+    child.stdin.end(JSON.stringify({ tool_name: tool, tool_input: input, agent_type: `e9g:${role}`, cwd: team.home, session_id: "e9g-check" }));
+  });
+}
+
+const executable = (path: string): boolean => {
+  try {
+    accessSync(path, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export async function check(argv: string[]): Promise<number> {
+  const { positional, options } = parseArgs(argv, { booleans: ["run"] });
+  const home = positional[0] ? resolve(positional[0]) : findHome();
+  if (!home) die("run this in a team's checkout, or name it: e9g check <checkout>");
+  const team = loadTeam(home, { strict: false });
+  let failures = 0;
+  const line = (level: Level, text: string) => {
+    if (level === "FAIL") failures++;
+    console.info(`${level.padEnd(4)}  ${text}`);
+  };
+
+  console.info(`Checking ${team.title} (${home})\n`);
+  for (const problem of team.problems) line("FAIL", `team.json: ${problem}`);
+  for (const warning of team.warnings) line("warn", `team.json: ${warning}`);
+  if (team.problems.length) return summary(team, failures);
+  line("ok", `team.json loads: ${Object.keys(team.roles).length} roles, integration branch ${team.branch}`);
+
+  const scripts = [team.environment.script, team.gate.full, team.gate.quick, team.afterMerge]
+    .filter((command) => command !== null)
+    .map((command) => command.split(/\s+/)[0] ?? "");
+  for (const script of [...new Set(scripts)])
+    if (/^\.{0,2}\/|^[\w.-]+\/[\w./-]+$/.test(script)) {
+      const path = join(home, script);
+      if (!existsSync(path)) line("FAIL", `${script} doesn't exist`);
+      else if (!executable(path)) line("FAIL", `${script} isn't executable (chmod +x ${script})`);
+      else line("ok", `${script} exists and is executable`);
+    }
+  if (!existsSync(join(home, ".e9g", ".gitignore")) || !/^run\/?$/m.test(readFileSync(join(home, ".e9g", ".gitignore"), "utf8")))
+    line("FAIL", ".e9g/.gitignore must ignore run/");
+  for (const doc of team.docs) if (!existsSync(join(home, doc))) line("warn", `${doc} is listed in docs but doesn't exist`);
+
+  const run = mkdtempSync(join(tmpdir(), "e9g-check-"));
+  const cases = guardCases(team);
+  const wrong: string[] = [];
+  // Eight at a time: each case is a fresh node process, as it is under Claude Code.
+  for (let i = 0; i < cases.length; i += 8) {
+    const batch = cases.slice(i, i + 8);
+    const results = await Promise.all(batch.map((test) => runGuard(team, test, run)));
+    batch.forEach((test, j) => {
+      const { outcome, said } = results[j] ?? { outcome: "not run", said: "" };
+      if (outcome !== test.expect)
+        wrong.push(`${test.role}: ${test.why}: expected ${test.expect}, got ${outcome}${said ? ` (${said.slice(0, 160)})` : ""}`);
+    });
+  }
+  rmSync(run, { recursive: true, force: true });
+  if (wrong.length) for (const text of wrong) line("FAIL", `guard: ${text}`);
+  else line("ok", `guard: all ${cases.length} self-test cases behave as the rules say`);
+
+  for (const role of Object.keys(team.roles)) {
+    const text = compile(team, role);
+    if (/\{\{\w+\}\}/.test(text)) line("FAIL", `the ${role} prompt has an unfilled placeholder`);
+  }
+  line("ok", `prompts compile for ${Object.keys(team.roles).join(", ")}`);
+
+  const contract = t3.contract();
+  if (contract.length) for (const problem of contract) line("warn", `T3 Code: ${problem}`);
+  else line("ok", "T3 Code meets the contract");
+
+  if (options["run"]) await live(team, line);
+  return summary(team, failures);
+}
+
+async function live(team: LoadedTeam, line: (level: Level, text: string) => void): Promise<void> {
+  const home = team.home;
+  const sh = (command: string, cwd: string, timeout = 20 * 60_000) => spawnSync("sh", ["-c", command], { cwd, encoding: "utf8", timeout });
+  if (team.environment.script) {
+    const up = sh(`${team.environment.script} up`, home);
+    line(up.status === 0 ? "ok" : "FAIL", `environment up: ${(up.stdout + up.stderr).trim().split("\n").pop() ?? ""}`);
+    const status = sh(`${team.environment.script} status`, home, 60_000);
+    line(status.status === 0 ? "ok" : "FAIL", `environment status: ${(status.stdout + status.stderr).trim().split("\n").pop() ?? ""}`);
+    for (const target of team.environment.health) {
+      let answered = false;
+      try {
+        const response = await fetch(target.replace(/^any:/, ""), { signal: AbortSignal.timeout(10_000) });
+        answered = target.startsWith("any:") || response.status < 400;
+      } catch {}
+      line(answered ? "ok" : "FAIL", `health ${target} ${answered ? "answers" : "doesn't answer"}`);
+    }
+    const down = sh(`${team.environment.script} down`, home, 120_000);
+    line(down.status === 0 ? "ok" : "warn", "environment down");
+  }
+  if (team.gate.full) {
+    const dir = mkdtempSync(join(tmpdir(), `e9g-gate-${team.name}-`));
+    rmSync(dir, { recursive: true, force: true });
+    if (spawnSync("git", ["worktree", "add", "--detach", dir, team.branch], { cwd: home, stdio: "ignore" }).status !== 0)
+      line("FAIL", `couldn't make a worktree of ${team.branch}`);
+    else {
+      if (team.worktreeSetup) sh(team.worktreeSetup, dir);
+      const gate = sh(team.gate.full, dir, 45 * 60_000);
+      const tail = (gate.stdout + gate.stderr).trim().split("\n").slice(-3).join(" | ");
+      line(gate.status === 0 ? "ok" : "FAIL", `gate on ${team.branch}: ${tail}`);
+      spawnSync("git", ["worktree", "remove", "--force", dir], { cwd: home, stdio: "ignore" });
+    }
+  }
+  if (team.finish) {
+    const finish = sh(team.finish, home, 10 * 60_000);
+    line("ok", `finish runs (exit ${finish.status}${finish.status === 0 ? ": already done" : ": not done yet, as expected before the team starts"})`);
+  }
+}
+
+function summary(team: Team, failures: number): number {
+  const states = policyStates(team);
+  console.info("\nWhat this team may do:");
+  for (const [role, lane] of Object.entries(team.roles)) {
+    const writes = lane.write.length ? lane.write.map((rule) => (rule === "*" ? "anything" : rule)).join(", ") : "nothing (read-only)";
+    console.info(
+      `  - ${role}${role === "planner" ? "" : ` (up to ${lane.limit} at once)`}: ${ROLES[role]?.summary ?? ""}; writes ${writes}${lane.deny.length ? `, never ${lane.deny.join(", ")}` : ""}`
+    );
+  }
+  console.info(
+    `  - pushes: ${team.push ? `only the planner, ${team.push.branch} to ${team.push.remote}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}` : "none"}`
+  );
+  for (const policy of states.filter((p) => p.state === "allow"))
+    console.info(`  - ${policy.summary}${policy.default === "deny" ? " (unlocked by the operator)" : ""}`);
+  console.info("What it may not do:");
+  for (const policy of states.filter((p) => p.state === "deny")) console.info(`  - ${policy.summary}`);
+  for (const rule of team.never) console.info(`  - ${rule.reason}`);
+  console.info("  - touch secrets, the machine's services, rewritten history, protected branches, or the factory's own files");
+  console.info(failures ? `\n${failures} problem(s) to fix.` : "\nReady: e9g register, then e9g start.");
+  return failures ? 1 : 0;
+}

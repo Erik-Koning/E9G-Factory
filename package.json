@@ -1,27 +1,32 @@
 {
   "name": "e9g-factory",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Provision a harness-based software engineering team in any code repo, on T3 Code and Claude Code.",
   "type": "module",
   "license": "UNLICENSED",
   "private": true,
   "repository": "github:Erik-Koning/E9G-Factory",
   "bin": {
-    "e9g": "bin/e9g.mjs"
+    "e9g": "bin/e9g.ts"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "e9g": {
     "t3code": ">=0.1.2 <0.2.0",
     "claudeCode": ">=2.1.300"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc -p .",
+    "test": "tsc -p . && node --test test/*.test.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
   "dependencies": {
     "axe-core": "4.10.3"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "typescript": "7.0.2"
   }
 }

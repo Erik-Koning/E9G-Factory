@@ -15,7 +15,7 @@ the articles every agent works under.
 
 ```bash
 git clone https://github.com/Erik-Koning/E9G-Factory && cd E9G-Factory
-npm install && node bin/e9g.mjs self-install     # installs ~/.e9g and puts `e9g` on PATH
+npm install && node bin/e9g.ts self-install     # installs ~/.e9g and puts `e9g` on PATH
 e9g doctor                                       # tools, T3 Code's version and contract, the watchdog
 
 e9g init ~/code/my-app                           # detect, make the team's checkout, then interview you
@@ -94,7 +94,7 @@ quick gate. **The merge queue** (`e9g merge`) is the only way into the integrati
 
 | Where                                                  | What                                                                                                                                                                                                                                                              |
 | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The factory** (this repository)                      | Everything generic: the [constitution](CONSTITUTION.md), the role prompts (`plugin/agents/`), the hooks (`plugin/hooks/`), the policies (`lib/policies.mjs`), the engine (`lib/`), the setup agent and the starter files (`templates/`)                           |
+| **The factory** (this repository)                      | Everything generic: the [constitution](CONSTITUTION.md), the role prompts (`plugin/agents/`), the hooks (`plugin/hooks/`), the policies (`lib/policies.ts`), the engine (`lib/`), the setup agent and the starter files (`templates/`)                           |
 | **The team's `.e9g/`** (in the repository it works on) | Everything about one repository: `team.json` (the rules, [reference](docs/team.md)), `brief.md`, `notes.md`, an optional rubric and style guide, `roles/<role>.md` additions, the planner's `lessons.md`, and `adapters/` (`env.sh`, `gate.sh`, `after-merge.sh`) |
 
 Everything else is generated from these two, and nothing in it is edited by hand:
@@ -137,7 +137,7 @@ branches, and the factory's own files. A team adds its own rules in `never`, eac
 
 T3 Code is a dependency, not a fork:
 
-- Everything that depends on its internals is in one file, `lib/t3.mjs`: its data paths, the tables and columns
+- Everything that depends on its internals is in one file, `lib/t3.ts`: its data paths, the tables and columns
   the factory reads, the CLI commands it runs, the settings it writes, and the planner's tool names.
 - `package.json` declares the T3 Code versions this release supports (`"e9g": {"t3code": ">=0.1.2 <0.2.0"}`), and
   the Claude Code versions it's tested with.
@@ -147,7 +147,7 @@ T3 Code is a dependency, not a fork:
 When T3 Code updates (`t3 update`), run `e9g doctor`:
 
 - **In range, contract holds:** nothing to do.
-- **Otherwise:** adjust `lib/t3.mjs`, widen the range, and release a new factory version.
+- **Otherwise:** adjust `lib/t3.ts`, widen the range, and release a new factory version.
 
 ## Versions
 
@@ -162,7 +162,7 @@ When T3 Code updates (`t3 update`), run `e9g doctor`:
 
 ```
 CONSTITUTION.md        the purpose, principles and the articles every agent works under
-bin/e9g.mjs            the CLI
+bin/e9g.ts             the CLI
 lib/                   config, policies, prompts, the T3 Code adapter, locks, detection, and the commands
 plugin/                the Claude Code plugin every agent loads: agents/ (roles and setup), hooks/
 templates/team/        the starter .e9g/ that init writes
@@ -172,12 +172,16 @@ examples/              team.json for a page-building team, a journeys team, and 
 test/                  node --test
 ```
 
+The factory is TypeScript, written the way T3 Code's own is: Node (22.18 or newer) runs the `.ts` files as they
+are, so there's no build step, and `tsc` only checks them, with T3 Code's compiler settings (`tsconfig.json`). The
+hooks and the launcher run with Node's compile cache on, so stripping the types costs nothing after the first run.
+
 ## Development
 
 ```bash
-npm test                         # the suite: policies, config, prompts, guard, merge queue, locks, detection
-node bin/e9g.mjs check <dir>     # any team's setup, from this checkout
-node bin/e9g.mjs self-install --link
+npm test                         # type-check, then the suite: policies, config, prompts, guard, merge queue, locks
+node bin/e9g.ts check <dir>     # any team's setup, from this checkout
+node bin/e9g.ts self-install --link
 ```
 
 To make a release:

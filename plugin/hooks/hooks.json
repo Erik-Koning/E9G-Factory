@@ -4,29 +4,29 @@
     "PreToolUse": [
       {
         "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit|Read|Grep|mcp__.*",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.mjs\"" }]
+        "hooks": [{ "type": "command", "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.ts\"" }]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "*",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.mjs\"" }]
+        "hooks": [{ "type": "command", "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.ts\"" }]
       }
     ],
     "Stop": [
       {
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.mjs\"", "timeout": 1800 }]
+        "hooks": [{ "type": "command", "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.ts\"", "timeout": 1800 }]
       }
     ],
     "SessionStart": [
       {
         "matcher": "startup|resume|compact",
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.mjs\"" }]
+        "hooks": [{ "type": "command", "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.ts\"" }]
       }
     ],
     "UserPromptSubmit": [
       {
-        "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.mjs\"" }]
+        "hooks": [{ "type": "command", "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.ts\"" }]
       }
     ]
   }

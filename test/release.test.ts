@@ -1,5 +1,6 @@
 import { e9g, ROOT } from "./helpers.ts";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { accessSync, constants, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
@@ -48,8 +49,14 @@ describe("release", () => {
   });
 
   test("scripts are executable", () => {
-    for (const file of ["bin/e9g.ts", ...readdirSync(join(ROOT, "templates/team/adapters")).map((f) => `templates/team/adapters/${f}`)])
+    for (const file of ["bin/e9g.ts", "bin/e9g.mjs", ...readdirSync(join(ROOT, "templates/team/adapters")).map((f) => `templates/team/adapters/${f}`)])
       assert.doesNotThrow(() => accessSync(join(ROOT, file), constants.X_OK), file);
+  });
+
+  test("bin/e9g.mjs, the name older launchers run, is the CLI", () => {
+    const shim = spawnSync(process.execPath, [join(ROOT, "bin", "e9g.mjs"), "--version"], { encoding: "utf8" });
+    assert.equal(shim.stdout.trim(), json("package.json").version);
+    assert.equal(spawnSync(process.execPath, [join(ROOT, "bin", "e9g.mjs"), "teleport"]).status, 2, "with the CLI's exit codes");
   });
 
   test("the CLI answers help, its version and an unknown command", async () => {

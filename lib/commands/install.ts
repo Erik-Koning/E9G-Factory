@@ -3,7 +3,7 @@
 // --link also points ~/.e9g/versions/dev at this checkout, for teams that pin "dev" while the factory is being
 // worked on (the watchdog never runs from it: launchd can't read ~/Documents). --force replaces an installed
 // version whose files differ; the new copy is made beside it and renamed into place, so a hook never finds it half
-// copied.
+// copied. An older version than the current one is only added, for teams to pin, unless --force makes it current.
 //
 // e9g versions: what's installed, which is current, and which teams pin each.
 import { execFileSync, spawnSync } from "node:child_process";
@@ -24,7 +24,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { binDir, E9G_HOME, entryOf, FACTORY_ROOT, PACKAGE, readRegistry, versionDir, versionsDir } from "../paths.ts";
+import { binDir, E9G_HOME, entryOf, FACTORY_ROOT, type FactoryPackage, PACKAGE, readRegistry, VERSION_NAME, versionDir, versionsDir } from "../paths.ts";
 import { die, hash, parseArgs, readJson, which } from "../util.ts";
 import { teamNames } from "./team.ts";
 
@@ -85,6 +85,41 @@ const real = (path: string): string => (existsSync(path) ? realpathSync(path) : 
 const doubleQuoted = (text: string): string => text.replace(/[\\"$\x60]/g, "\\$&");
 const singleQuoted = (text: string): string => text.replaceAll("'", "'\\''");
 
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+// An install stopped between its steps leaves .<version>.installing-<pid> (a copy being made) or
+// .<version>.replaced-<pid> (the copy it moved aside) in versions/. Once that install's process is gone, a moved-aside
+// copy whose release is missing goes back into place, and anything else left over is removed.
+function sweepInstalls(): void {
+  if (!existsSync(versionsDir)) return;
+  for (const name of readdirSync(versionsDir)) {
+    const match = /^\.(.+)\.(installing|replaced)-(\d+)$/.exec(name);
+    if (!match || alive(Number(match[3]))) continue;
+    const [, version = "", kind] = match;
+    const folder = join(versionsDir, name);
+    if (kind === "replaced" && VERSION_NAME.test(version) && !existsSync(versionDir(version))) {
+      rmSync(versionDir(version), { force: true });
+      renameSync(folder, versionDir(version));
+      console.warn(`e9g: put ${version} back, which an interrupted install had moved aside`);
+    } else rmSync(folder, { recursive: true, force: true });
+  }
+}
+
+// a is an older release than b (major.minor.patch; anything else isn't compared).
+function older(a: string, b: string): boolean {
+  const parse = (version: string) => /^(\d+)\.(\d+)\.(\d+)/.exec(version)?.slice(1).map(Number);
+  const [x, y] = [parse(a), parse(b)];
+  if (!x || !y) return false;
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (x[i] ?? 0) < (y[i] ?? 0);
+  return false;
+}
+
 export function selfInstall(argv: string[]): number {
   const { options } = parseArgs(argv, { booleans: ["link", "force"] });
   const version = PACKAGE.version;
@@ -94,6 +129,7 @@ export function selfInstall(argv: string[]): number {
   if (within(real(FACTORY_ROOT), real(versionsDir)) || existsSync(join(FACTORY_ROOT, ".build.json")))
     die(`${FACTORY_ROOT} is an installed copy of E9G Factory; run self-install from a clone of the factory (node bin/e9g.ts self-install)`);
   const files = sourceFiles().filter((file) => existsSync(join(FACTORY_ROOT, file)));
+  sweepInstalls();
   const contentHash = hash(...files.map((file) => `${file}\0${readFileSync(join(FACTORY_ROOT, file), "utf8")}`));
   const built = readJson<Build>(join(dest, ".build.json"));
   // The same files: nothing to copy, unless --force asks for the release to be made again (to record its commit).
@@ -108,7 +144,7 @@ export function selfInstall(argv: string[]): number {
     const staging = join(versionsDir, `.${version}.installing-${process.pid}`);
     rmSync(staging, { recursive: true, force: true });
     for (const file of files) cpSync(join(FACTORY_ROOT, file), join(staging, file), { recursive: true });
-    for (const script of ["bin/e9g.ts", ...files.filter((f) => f.endsWith(".sh"))])
+    for (const script of ["bin/e9g.ts", "bin/e9g.mjs", ...files.filter((f) => f.endsWith(".sh"))])
       if (existsSync(join(staging, script))) chmodSync(join(staging, script), 0o755);
     const axe = join(FACTORY_ROOT, "node_modules", "axe-core");
     if (existsSync(axe)) cpSync(axe, join(staging, "node_modules", "axe-core"), { recursive: true });
@@ -120,6 +156,9 @@ export function selfInstall(argv: string[]): number {
       join(staging, ".build.json"),
       `${JSON.stringify({ version, commit, dirty, hash: contentHash, source: FACTORY_ROOT, at: new Date().toISOString() }, null, 2)}\n`
     );
+    // Between these two renames the release isn't there. A hook that starts then can't load, and Claude Code refuses
+    // that tool call (the guard's hook is onFailure: block); an install stopped here is put right by the next one
+    // (sweepInstalls).
     let old: string | null = null;
     try {
       lstatSync(dest);
@@ -129,6 +168,17 @@ export function selfInstall(argv: string[]): number {
     renameSync(staging, dest);
     if (old) rmSync(old, { recursive: true, force: true });
     console.info(`e9g: installed ${version} (${commit}${dirty ? ", with uncommitted changes" : ""}) at ${dest}`);
+  }
+  if (options["link"]) {
+    link(FACTORY_ROOT, versionDir("dev"));
+    console.info(`e9g: versions/dev → ${FACTORY_ROOT}`);
+  }
+  // The launcher and current are shared by every version, and an older one doesn't know the newer releases (0.2.0's
+  // launcher runs bin/e9g.mjs only), so installing an older version leaves them as they are.
+  const current = readJson<Partial<FactoryPackage>>(join(E9G_HOME, "current", "package.json"))?.version;
+  if (current && older(version, current) && !options["force"]) {
+    console.info(`e9g: ${current} stays current, since ${version} is older; teams can pin ${version} (self-install --force makes it current)`);
+    return 0;
   }
   link(dest, join(E9G_HOME, "current"));
   // The node the launcher falls back to when PATH has none: the name PATH finds it by (Homebrew's
@@ -148,10 +198,6 @@ export function selfInstall(argv: string[]): number {
   renameSync(temporary, launcher);
   const launcherDir = join(homedir(), ".local", "bin");
   link(launcher, join(launcherDir, "e9g"));
-  if (options["link"]) {
-    link(FACTORY_ROOT, versionDir("dev"));
-    console.info(`e9g: versions/dev → ${FACTORY_ROOT}`);
-  }
   console.info(`e9g: current is ${version}; the launcher is ${join(launcherDir, "e9g")}`);
   if (!(process.env.PATH ?? "").split(":").includes(launcherDir))
     console.warn(`e9g: ${launcherDir} isn't on your PATH: add it in your shell's profile (export PATH="$HOME/.local/bin:$PATH"), or run ${launcher}`);

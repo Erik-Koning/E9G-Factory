@@ -156,7 +156,9 @@ When T3 Code updates (`t3 update`), run `e9g doctor`:
 ## Versions
 
 - **Releases:** `e9g self-install` installs this checkout's version into `~/.e9g/versions/<version>` and makes it
-  current. An installed release doesn't change under a running team.
+  current. An installed release doesn't change under a running team. An older version than the current one is only
+  added, for teams to pin (`--force` makes it current): the launcher is shared, and an older one doesn't know the
+  newer releases. An install that was interrupted is put right by the next one.
 - **Pins:** each team pins one release in `team.json` (`"factory": "0.3.0"`; `e9g init` writes the version that
   drafted it), and its agents run that release. A team without a pin runs whichever version registers it.
 - **Upgrading:** `e9g upgrade <team> [version]` registers the team with the target version first, and moves the pin
@@ -171,7 +173,7 @@ When T3 Code updates (`t3 update`), run `e9g doctor`:
 
 ```
 CONSTITUTION.md        the purpose, principles and the articles every agent works under
-bin/e9g.ts             the CLI
+bin/e9g.ts             the CLI (bin/e9g.mjs runs it, for the launchers of versions before 0.3.0)
 lib/                   config, policies, prompts, the T3 Code adapter, locks, detection, and the commands
 plugin/                the Claude Code plugin every agent loads: agents/ (roles and setup), hooks/
 templates/team/        the starter .e9g/ that init writes

@@ -3,9 +3,10 @@
 // when it updates, this is the one file to adjust. `e9g doctor` runs contract() against the installed T3 and
 // refuses a version outside package.json's "e9g.t3code" range.
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { releaseSlot, takeSlot } from "./lock.ts";
 import { E9G_HOME, PACKAGE } from "./paths.ts";
 import { writeFileAtomic } from "./util.ts";
@@ -325,9 +326,13 @@ function updateSettings(change: (settings: T3Settings) => T3Settings): T3Setting
       const before = readFileSync(SETTINGS, "utf8");
       const next = change(JSON.parse(before) as T3Settings);
       if (readFileSync(SETTINGS, "utf8") !== before) continue;
-      copyFileSync(SETTINGS, `${SETTINGS}.bak-e9g`);
+      writeFileAtomic(`${SETTINGS}.bak-e9g`, before);
       writeFileAtomic(SETTINGS, `${JSON.stringify(next, null, 2)}\n`);
-      return next;
+      // T3 Code reloads the file and may write its own copy at any moment: once it has had a moment, the change must
+      // still be there (change is idempotent: applying it again changes nothing), or it's made again.
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 300);
+      const after = JSON.parse(readFileSync(SETTINGS, "utf8")) as T3Settings;
+      if (isDeepStrictEqual(change(structuredClone(after)), after)) return next;
     }
     throw new Error(`T3 Code kept changing ${SETTINGS} while e9g wrote it; try again`);
   } finally {
@@ -346,14 +351,15 @@ export function writeTeam(options: {
 }
 
 export function removeInstances(team: string): number {
-  let removed = 0;
+  // Counted the first time: updateSettings applies the change again to check it held.
+  let removed: number | null = null;
   updateSettings((settings) => {
     const before = settings.providerInstances ?? {};
     const providerInstances = Object.fromEntries(Object.entries(before).filter(([, entry]) => !ofTeam(entry, team)));
-    removed = Object.keys(before).length - Object.keys(providerInstances).length;
+    removed ??= Object.keys(before).length - Object.keys(providerInstances).length;
     return { ...settings, providerInstances };
   });
-  return removed;
+  return removed ?? 0;
 }
 
 // A provider instance: one per role. T3 tokenises launchArgs with quotes, passes --append-system-prompt-file's

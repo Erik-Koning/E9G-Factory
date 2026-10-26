@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { instanceId, loadTeam, type RawTeam, type Team } from "../config.ts";
 import {
   defaultRunDir,
@@ -21,7 +22,7 @@ import {
 import { compile, promptFile, writePrompt } from "../prompts.ts";
 import * as t3 from "../t3.ts";
 import { die, parseArgs, writeJson } from "../util.ts";
-import { BUSY, ensureWatchdog, watchOnce } from "./watchdog.ts";
+import { BUSY, ensureWatchdog, keptWorktrees, watchOnce } from "./watchdog.ts";
 
 const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : text);
 
@@ -157,7 +158,12 @@ export async function start(argv: string[]): Promise<number> {
   const entry = entryFor(argv[0] ?? die("usage: e9g start <team>"));
   rmSync(join(entry.run, "paused"), { force: true });
   ensureWatchdog();
-  await watchOnce(entry.name);
+  const why = await watchOnce(entry.name);
+  if (why) {
+    console.error(`e9g: ${entry.name} wasn't started: ${why}. When T3 Code doesn't answer, \`t3 service restart\`, then e9g start ${entry.name} again.`);
+    status([entry.name]);
+    return 1;
+  }
   return status([entry.name]);
 }
 
@@ -196,6 +202,9 @@ export async function rotate(argv: string[]): Promise<number> {
     if (!thread && t3.threadExists(old) !== false) return `T3 Code couldn't say what planner ${old} is doing; try again`;
     if (thread && !thread.archived && BUSY.includes(thread.status ?? ""))
       return `the planner is in the middle of a turn (${thread.status}); rotate once it's idle`;
+    // Waiting on a person: an answer would resume the old planner beside the new one.
+    if (thread && !thread.archived && (thread.status === "waiting" || (thread.pendingRequestCount ?? 0) > 0))
+      return "the planner is waiting for an answer in T3 Code; answer it (or dismiss the request), then rotate";
     writeFileSync(join(entry.run, "planner-thread.retired"), `${old}\n`, { flag: "a" });
     rmSync(file);
     return null;
@@ -220,6 +229,11 @@ export function status(argv: string[]): number {
     console.info(`   planner ${planner ?? "none"}${thread ? ` (${thread.status})` : ""}`);
     const counts = planner ? t3.childCounts(planner) : [];
     if (counts.length) console.info(`   members running: ${counts.map((row) => `${row.instance.replace(`e9g-${name}-`, "")} ${row.n}`).join(", ")}`);
+    const kept = keptWorktrees(entry.run);
+    if (kept.length)
+      console.info(
+        `   kept ${kept.length} finished worktrees that may hold work (nothing deletes them; look, then git worktree remove): ${kept.join("; ")}`
+      );
     const log = join(entry.run, "watchdog.log");
     if (existsSync(log)) for (const line of readFileSync(log, "utf8").trim().split("\n").slice(-3)) console.info(`   ${line}`);
   }
@@ -253,10 +267,12 @@ export function pinned(text: string, version: string): string {
   const edited = /"factory"\s*:\s*"[^"\n]*"/.test(text)
     ? text.replace(/"factory"\s*:\s*"[^"\n]*"/, pin)
     : text.replace(/^([ \t]*)"name"\s*:\s*"[^"\n]*",[ \t]*\n/m, (line, indent: string) => `${line}${indent}${pin},\n`);
+  const wanted = { ...(JSON.parse(text) as RawTeam), factory: version };
+  // Only when the edit changed nothing else (a "factory" inside vars, before the top-level one, mustn't be it).
   try {
-    if ((JSON.parse(edited) as RawTeam).factory === version) return edited;
+    if (isDeepStrictEqual(JSON.parse(edited), wanted)) return edited;
   } catch {}
-  return `${JSON.stringify({ ...(JSON.parse(text) as RawTeam), factory: version }, null, 2)}\n`;
+  return `${JSON.stringify(wanted, null, 2)}\n`;
 }
 
 // e9g upgrade <team> [version] [--force]: register the team again on an installed version (this one by default),

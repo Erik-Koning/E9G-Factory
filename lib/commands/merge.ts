@@ -332,17 +332,17 @@ async function mergeLocked({
     if (review.verdict !== "approve") return fail(2, "refused", `the review of ${branch} asks for changes: ${review.note}`);
     if (review.sha !== tip) {
       const approved = review.sha.slice(0, 9);
+      if (rebasedFrom && g("cat-file", "-e", `${review.sha}^{commit}`).status !== 0)
+        return fail(
+          2,
+          "refused",
+          `the approved commit ${approved} is gone from the repository, so the rebase can't be compared; have ${branch} reviewed again`
+        );
       if (!rebasedFrom || commit(rebasedFrom) !== review.sha)
         return fail(
           2,
           "refused",
           `the approval is for ${approved} but ${branch} is at ${tip.slice(0, 9)}: have it reviewed again, or pass --rebased-from ${approved} if it's only a rebase`
-        );
-      if (g("cat-file", "-e", `${review.sha}^{commit}`).status !== 0)
-        return fail(
-          2,
-          "refused",
-          `the approved commit ${approved} is gone from the repository, so the rebase can't be compared; have ${branch} reviewed again`
         );
       // range-diff skips merge commits, so a "rebase" that merged the integration branch in could carry new code in
       // the merge itself. A rebase has none.

@@ -10,7 +10,7 @@ import { promptFile, promptStale } from "../prompts.ts";
 import * as t3 from "../t3.ts";
 import { readJson, which } from "../util.ts";
 import { teamNames } from "./team.ts";
-import { watchdogLoaded } from "./watchdog.ts";
+import { keptWorktrees, watchdogLoaded } from "./watchdog.ts";
 
 const version = (command: string, args = ["--version"]): string | null =>
   /(\d+\.\d+\.\d+)/.exec(spawnSync(command, args, { encoding: "utf8" }).stdout ?? "")?.[1] ?? null;
@@ -119,6 +119,8 @@ export async function doctor(): Promise<number> {
       if (stale === null) warn(`${name}: rules load; its prompts are ${pin}'s, which doctor couldn't compile to compare (e9g prompt ${name} <role>)`);
       else if (stale.length) warn(`${name}: prompts out of date for ${stale.join(", ")} (e9g register ${entry.home})`);
       else ok(`${name}: rules load, prompts current${pin === PACKAGE.version ? "" : ` (judged by ${pin})`}`);
+      const kept = keptWorktrees(entry.run);
+      if (kept.length) warn(`${name}: ${kept.length} finished worktrees are kept because they may hold work (e9g status ${name} lists them)`);
     } catch (error) {
       fail(
         `${name}: ${String((error as Error).message)

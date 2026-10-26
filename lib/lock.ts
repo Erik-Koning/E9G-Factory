@@ -34,9 +34,14 @@ const alive = (pid: number): boolean => {
   }
 };
 
-// When a process started, as ps prints it (in the C locale, so every caller prints it the same way).
+// When a process started, as ps prints it: in the C locale and in UTC, so every caller prints it the same way (a
+// member's TZ, or a TZ in team.json's vars, must not make a live holder look like another process).
 function startOf(pid: number): string | null {
-  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", timeout: 5000, env: { ...process.env, LC_ALL: "C" } });
+  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+    encoding: "utf8",
+    timeout: 5000,
+    env: { ...process.env, LC_ALL: "C", TZ: "UTC0" },
+  });
   return result.status === 0 ? result.stdout.trim() || null : null;
 }
 let ownStart: string | null | undefined;

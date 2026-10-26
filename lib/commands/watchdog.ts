@@ -1,7 +1,8 @@
 // The watchdog: one launchd job (ca.e9g.watchdog) that looks after every registered team every 5 minutes. It uses
 // no model. macOS doesn't let launchd jobs read ~/Documents, so it runs the installed copy in ~/.e9g and never
-// touches a checkout. It reads T3 Code (its CLI and database), Docker, each team's health URLs and its run folder,
-// and sends anything that needs a checkout to the team's planner as a message.
+// touches a checkout (E9G_LAUNCHD tells it it's that job). It reads T3 Code (its CLI and database), Docker, each
+// team's health URLs and its run folder, and sends anything that needs a checkout to the team's planner as a
+// message. Run from a terminal (e9g watchdog run, e9g start) it also clears finished worktrees.
 //
 // Per team, in its run folder: watchdog.log, planner-thread, heartbeat/, outbox/, paused, complete.
 //
@@ -13,7 +14,7 @@ import { basename, dirname, join } from "node:path";
 import { acquireSlot } from "../lock.ts";
 import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
 import * as t3 from "../t3.ts";
-import { die, which } from "../util.ts";
+import { die, which, writeFileAtomic } from "../util.ts";
 
 const LABEL = "ca.e9g.watchdog";
 const PLIST = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
@@ -247,7 +248,10 @@ export function pruneWorktrees(entry: RegistryEntry): void {
     return true;
   };
   if (!entry.worktreesDir || existsSync(join(run, "paused"))) return;
-  // A process that can't read the checkout (launchd's, for one in ~/Documents) leaves the turn to one that can.
+  // The launchd job doesn't reach into a checkout: in ~/Documents that would ask macOS for access to the folder on
+  // node's behalf. The merge queue and the operator's own commands prune instead.
+  if (process.env.E9G_LAUNCHD) return;
+  // Nor does any other process that can't read the checkout; it leaves the turn to one that can.
   if (spawnSync("git", ["-C", entry.home, "rev-parse", "--git-dir"], { stdio: "ignore" }).status !== 0) return;
   if (!oncePer("prune", 60)) return;
   const pruneAfter = entry.watchdog?.pruneAfterMin ?? 60;
@@ -257,15 +261,29 @@ export function pruneWorktrees(entry: RegistryEntry): void {
     if (!path.startsWith(`${entry.worktreesDir}/`) || !existsSync(path) || existsSync(join(run, "keep", basename(path)))) continue;
     const work = workIn(path);
     if (work) kept.push(`${basename(path)}: ${work}`);
-    else if (spawnSync("git", ["-C", entry.home, "worktree", "remove", path], { stdio: "ignore" }).status === 0) freed++;
+    else if (spawnSync("git", ["-C", entry.home, "-c", "status.showUntrackedFiles=all", "worktree", "remove", path], { stdio: "ignore" }).status === 0)
+      freed++;
     else kept.push(`${basename(path)}: git worktree remove refused`);
   }
   if (freed) log(`removed ${freed} finished worktrees`);
   if (kept.length && oncePer("prune-kept", 1440)) log(`kept ${kept.length} finished worktrees that may hold work: ${kept.join("; ")}`);
+  // For e9g status and e9g doctor: nothing deletes these, so the operator has to see them.
+  writeFileAtomic(join(run, "worktrees-kept.json"), `${JSON.stringify({ at: new Date().toISOString(), kept }, null, 2)}\n`);
+}
+
+// The worktrees the last prune kept because they may hold work ("t3-1a2b: uncommitted or untracked files").
+export function keptWorktrees(run: string): string[] {
+  try {
+    const { kept } = JSON.parse(readFileSync(join(run, "worktrees-kept.json"), "utf8")) as { kept?: unknown };
+    return Array.isArray(kept) ? kept.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 function workIn(path: string): string | null {
-  const status = spawnSync("git", ["-C", path, "status", "--porcelain"], { encoding: "utf8" });
+  // Untracked files count whatever the repository's or the user's git settings say (status.showUntrackedFiles=no).
+  const status = spawnSync("git", ["-C", path, "status", "--porcelain", "--untracked-files=all", "--ignore-submodules=none"], { encoding: "utf8" });
   if (status.status !== 0) return "git couldn't read it";
   if (status.stdout.trim()) return "uncommitted or untracked files";
   if (spawnSync("git", ["-C", path, "symbolic-ref", "-q", "HEAD"], { stdio: "ignore" }).status !== 0) {
@@ -320,7 +338,7 @@ function install(): void {
   <array><string>${node}</string><string>${entry}</string><string>watchdog</string><string>run</string></array>
   <key>WorkingDirectory</key><string>${E9G_HOME}</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>${[...new Set(path)].join(":")}</string><key>E9G_HOME</key><string>${E9G_HOME}</string><key>NODE_COMPILE_CACHE</key><string>${join(E9G_HOME, "current", ".cache")}</string><key>E9G_NODE_CACHE</key><string>1</string></dict>
+  <dict><key>PATH</key><string>${[...new Set(path)].join(":")}</string><key>E9G_HOME</key><string>${E9G_HOME}</string><key>NODE_COMPILE_CACHE</key><string>${join(E9G_HOME, "current", ".cache")}</string><key>E9G_NODE_CACHE</key><string>1</string><key>E9G_LAUNCHD</key><string>1</string></dict>
   <key>StartInterval</key><integer>300</integer>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>${join(E9G_HOME, "watchdog.launchd.log")}</string>

@@ -36,8 +36,9 @@ this codebase works, and a reviewer will hold you to it.
    - anything you were unsure of or left out.
 
 When the brief says the reviewer or the UX specialist asked for changes, or that the branch needs a rebase, do
-exactly that on the same branch (`git checkout <branch>`; if git says a missing worktree holds it, run
-`git worktree prune` first). Then look again, rerun the gate and report the same way. For a rebase, report the
+exactly that on the same branch (`git checkout <branch>`). If git says the branch is already used by a worktree at
+another path, that's the earlier member's, finished and committed: free it with `git -C <that path> switch --detach`
+(its files stay), then check it out here. If git says a missing worktree holds it, run `git worktree prune` first. Then look again, rerun the gate and report the same way. For a rebase, report the
 commit you started from: the planner merges a rebase without another review only when nothing else changed.
 
 ## Your lane

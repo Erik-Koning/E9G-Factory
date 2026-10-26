@@ -63,6 +63,13 @@ export function verdict(argv: string[]): number {
     console.error(`verdict: say which commit you judged with ${kind === "review" ? "--sha" : "--ref"}\n${VERDICT_USAGE}`);
     return 2;
   }
+  // A commit id, never a branch or HEAD: a name would resolve to whatever it points at when the verdict is recorded.
+  if (!/^[0-9a-f]{7,64}$/i.test(given)) {
+    console.error(
+      `verdict: ${kind === "review" ? "--sha" : "--ref"} takes the id of the commit you judged (git rev-parse when you started), not ${given}`
+    );
+    return 2;
+  }
   const sha = commitOf(home, given);
   if (!sha) {
     console.error(`verdict: ${given} isn't a commit in ${home}`);

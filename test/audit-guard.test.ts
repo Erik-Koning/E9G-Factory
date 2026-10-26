@@ -59,20 +59,34 @@ describe("the guard audit's findings stay fixed", { concurrency: true }, () => {
     ]);
   });
 
-  test("5: an exception in the guard refuses, except a read that holds no secrets", () => {
+  test("5: an exception in the guard refuses, except a read that holds no secrets", async () => {
     const home = makeRepo();
+    // These teams don't load (strict loading finds their mistakes), so they're refused as teams whose rules don't
+    // load, not by the guard handling the odd value: the refusal says which.
     const owners = makeRepo(baseTeam({ commandOwners: [{ rule: "\\bmake\\s+data\\b", reason: "the data job" } as never] }));
     const branches = makeRepo(baseTeam({ protectedBranches: "main" as never, push: { remote: "origin" } }));
     const script = makeRepo(baseTeam({ environment: { script: ["x"] as never } }));
+    for (const [team, role, command] of [
+      [owners, "builder", "make data"],
+      [branches, "planner", "git push origin main"],
+      [script, "builder", "vercel deploy --prod"],
+    ] as const)
+      assert.match(guard(team, role, "Bash", { command }).said, /the team's rules don't load/, command);
     const broken = makeRepo();
     write(broken, { ".e9g/team.json": "{ broken" });
+    // Teams that load, where the guard itself throws: a lookup on a prototype's key, a command nested too deeply.
+    const deep = `${"echo $(".repeat(10)}echo hi${")".repeat(10)}`;
+    assert.match(guard(home, "builder", "Bash", { command: deep }).said, /the guard itself failed/);
     return holds([
       tool(home, "planner", delegate, { target: { providerInstanceId: "constructor" } }, "refuse"),
+      tool(home, "planner", delegate, { target: { providerInstanceId: "__proto__" } }, "refuse"),
+      bash(home, "builder", deep, "refuse"),
       bash(owners, "builder", "make data", "refuse"),
       bash(branches, "planner", "git push origin main", "refuse"),
       bash(script, "builder", "vercel deploy --prod", "refuse"),
       tool(broken, "builder", "Read", { file_path: join(broken, ".env.local") }, "refuse"),
       tool(broken, "builder", "Read", { file_path: join(broken, "README.md") }, "allow"),
+      tool(broken, "builder", "Grep", { pattern: "x", glob: "*" }, "allow"),
     ]);
   });
 

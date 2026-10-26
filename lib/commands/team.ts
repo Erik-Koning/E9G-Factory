@@ -7,6 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { instanceId, loadTeam, type RawTeam, type Team } from "../config.ts";
 import {
   defaultRunDir,
+  E9G_HOME,
   entryOf,
   FACTORY_ROOT,
   findHome,
@@ -52,7 +53,8 @@ export function memberEnvironment(
   const vars = Object.fromEntries(
     Object.entries(team.vars).map(([key, value]) => [key, String(value).replaceAll("${home}", home).replaceAll("${run}", run)])
   );
-  return { ...vars, E9G_TEAM: team.name, E9G_ROLE: role, E9G_HOME_DIR: home, E9G_RUN: run, E9G_VERSION: version };
+  // E9G_HOME too: a member's hooks guard the factory's folder wherever the operator keeps it.
+  return { ...vars, E9G_TEAM: team.name, E9G_ROLE: role, E9G_HOME: E9G_HOME, E9G_HOME_DIR: home, E9G_RUN: run, E9G_VERSION: version };
 }
 
 export function register(argv: string[]): number {

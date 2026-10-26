@@ -61,3 +61,19 @@ describe("release", () => {
     assert.equal((await e9g(["teleport"])).code, 2);
   });
 });
+
+describe("the guard fails closed", () => {
+  test("Claude Code refuses the call when the guard's hook fails or times out (onFailure: block)", () => {
+    const { hooks } = json<{ hooks: Record<string, { hooks: { command: string; onFailure?: string }[] }[]> }>("plugin/hooks/hooks.json");
+    const guard = (hooks["PreToolUse"] ?? []).flatMap((entry) => entry.hooks).find((hook) => hook.command.includes("hooks/guard.ts"));
+    assert.equal(guard?.onFailure, "block");
+  });
+
+  test("a member's environment names the factory's home, so its hooks guard it wherever it is", async () => {
+    const { memberEnvironment } = await import("../lib/commands/team.ts");
+    const { normalize } = await import("../lib/config.ts");
+    const { E9G_HOME } = await import("../lib/paths.ts");
+    const team = normalize({ name: "app", branch: "e9g/next" }, "/tmp/app").team;
+    assert.equal(memberEnvironment(team, "builder", { home: "/tmp/app", run: "/tmp/run", version: "0.3.0" })["E9G_HOME"], E9G_HOME);
+  });
+});

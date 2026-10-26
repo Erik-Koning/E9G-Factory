@@ -19,7 +19,7 @@
   - **The guard fails closed.** Any error in it refuses the call. It reads shell comments, here-documents fed to a
     shell, input redirects, `sh -c` anywhere, and wrapped commands (`pnpm --filter … exec`, `e9g lock … --`,
     `yarn workspace`, …); it judges each command in the directory it runs in; it keeps free text (commit messages,
-    issue bodies) out of the rules; it guards Monitor; and it covers more secret files and the factory's own
+    issue bodies) out of the factory's command rules, while a team's own rules still read it; it guards Monitor; and it covers more secret files and the factory's own
     folders (`~/.e9g`, `~/.claude`, T3 Code's home). Pausing a team stops new members and merges.
   - **No work is deleted.** Finished worktrees are removed only when git shows nothing in them to lose, by git
     itself; interrupted or failed members' are kept a week. The merge queue clears them too, since the launchd

@@ -7,7 +7,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.ts\""
+            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.ts\"",
+            "onFailure": "block"
           }
         ]
       }

@@ -346,19 +346,17 @@ describe("a team's own rules", () => {
   test("see what echo writes and what a message says, as they always have; the factory's rules don't", async () => {
     const home = makeRepo(
       baseTeam({
-        never: [
-          { rule: "CHECKOUT_PURCHASES_ENABLED\\s*=\\s*[\"']?true", reason: "purchases stay off", example: "CHECKOUT_PURCHASES_ENABLED=true pnpm dev" },
-        ],
+        never: [{ rule: "PAYMENTS_LIVE\\s*=\\s*[\"']?true", reason: "purchases stay off", example: "PAYMENTS_LIVE=true pnpm dev" }],
       })
     );
     // /tmp: anyone may write there, so only the team's rule can refuse these.
     await holds([
-      bash(home, "planner", "echo CHECKOUT_PURCHASES_ENABLED=true >> /tmp/e9g-env.extra", "refuse"),
-      bash(home, "planner", "printf 'CHECKOUT_PURCHASES_ENABLED=true\\n' > /tmp/e9g-env.extra", "refuse"),
-      bash(home, "planner", "CHECKOUT_PURCHASES_ENABLED=true pnpm dev", "refuse"),
-      bash(home, "planner", "echo CHECKOUT_PURCHASES_ENABLED=false >> /tmp/e9g-env.extra", "allow"),
+      bash(home, "planner", "echo PAYMENTS_LIVE=true >> /tmp/e9g-env.extra", "refuse"),
+      bash(home, "planner", "printf 'PAYMENTS_LIVE=true\\n' > /tmp/e9g-env.extra", "refuse"),
+      bash(home, "planner", "PAYMENTS_LIVE=true pnpm dev", "refuse"),
+      bash(home, "planner", "echo PAYMENTS_LIVE=false >> /tmp/e9g-env.extra", "allow"),
       bash(home, "planner", 'git commit -m "Lessons: run vercel deploy by hand" -- .e9g/lessons.md', "allow"),
     ]);
-    assert.match(guard(home, "planner", "Bash", { command: "echo CHECKOUT_PURCHASES_ENABLED=true >> /tmp/e9g-env.extra" }).said, /purchases stay off/);
+    assert.match(guard(home, "planner", "Bash", { command: "echo PAYMENTS_LIVE=true >> /tmp/e9g-env.extra" }).said, /purchases stay off/);
   });
 });

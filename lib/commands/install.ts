@@ -25,6 +25,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { binDir, E9G_HOME, entryOf, FACTORY_ROOT, PACKAGE, readRegistry, versionDir, versionsDir } from "../paths.ts";
+import { operatorOnly } from "../session.ts";
 import { die, hash, parseArgs, readJson, which } from "../util.ts";
 import { teamNames } from "./team.ts";
 
@@ -86,6 +87,7 @@ const doubleQuoted = (text: string): string => text.replace(/[\\"$\x60]/g, "\\$&
 const singleQuoted = (text: string): string => text.replaceAll("'", "'\\''");
 
 export function selfInstall(argv: string[]): number {
+  operatorOnly("self-install");
   const { options } = parseArgs(argv, { booleans: ["link", "force"] });
   const version = PACKAGE.version;
   const dest = versionDir(version);

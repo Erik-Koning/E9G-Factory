@@ -2,17 +2,21 @@
 // - It splits a script into simple commands (on ; & && || |, newlines, parentheses and braces, and if/then/do/else
 //   words), strips the quotes from each word, and skips comments.
 // - It keeps redirect targets apart from the words: the files a command writes, and the files it reads.
-// - It follows each command's directory through cd; a cd inside ( … ) or $( … ) ends with it.
-// - It reads as commands of their own: $( … ), backticks and <( … ); the strings sh -c, bash -c, eval, npx -c and
-//   watch run; and here-documents and echo fed to a shell. Other here-documents are data, apart from the $( … ) in
-//   an unquoted one. $(( … )) is arithmetic.
+// - It follows each command's directory through cd, pushd and popd; a cd inside ( … ) or $( … ) ends with it, and
+//   one to a folder that doesn't exist moves only the commands its && guards.
+// - It reads as commands of their own: $( … ), backticks and <( … ), in a ${ … } too; the strings sh -c, bash -c,
+//   eval, npx -c, watch and the other runners run (concurrently, nodemon --exec, ssh, tmux, git rebase -x, …); the
+//   strings quoted in node -e and python -c code; and here-documents, here-strings and echo or printf fed to a shell.
+//   Other here-documents are data, apart from the $( … ) in an unquoted one. $(( … )), (( … )) and $[ … ] are
+//   arithmetic.
 // Then, for the rules: each command with its wrappers taken off (unwrap), git's global options and the factory's CLI
 // by its path read as the plain command (normalize), and its free text left out (withoutText).
 // It isn't a shell: it's meant to read what an honest agent writes the way a person would.
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
 
-const KEYWORDS = /^(if|then|do|else|elif|while|until|!|time)$/;
+const KEYWORDS = /^(if|then|do|else|elif|while|until|!)$/;
 const SHELLS = /^(ba|z|da|k)?sh$/;
 // Shells inside substitutions inside shells: an honest command never nests this deep, so deeper is refused.
 const MAX_DEPTH = 8;
@@ -20,11 +24,14 @@ const MAX_DEPTH = 8;
 const SUBSTITUTED = "$(…)";
 
 // One simple command: its words with the quotes gone, the files its redirects write and read, and where it runs.
+// inCode: it was read from a string quoted in a program's code (node -e, python -c), so it's a command that code may
+// run, or just text: its > may be prose.
 export interface ShellCommand {
   words: string[];
   redirects: string[];
   reads: string[];
   cwd: string;
+  inCode: boolean;
 }
 
 // While a command is read: the here-strings it's fed, and the command its output is piped to.
@@ -33,18 +40,41 @@ interface Reading extends ShellCommand {
   next: Reading | null;
 }
 
-export function parseShell(source: string, cwd = process.cwd()): ShellCommand[] {
-  const out: Reading[] = [];
-  read(source, resolve(cwd), 0, out);
-  return out.map(({ words, redirects, reads, cwd: dir }) => ({ words, redirects, reads, cwd: dir }));
+// What ends a simple command.
+type Separator = ";" | "&&" | "||" | "|" | "&" | "(" | ")";
+
+// Where the commands run at one level of ( … ): the folder, cd -'s folder, pushd's stack, and the folder to go back
+// to when the and-list ends, after a cd to a folder that doesn't exist (yet).
+interface Place {
+  dir: string;
+  old: string | null;
+  stack: string[];
+  back: { dir: string; old: string | null; stack: string[] } | null;
 }
 
-function read(text: string, start: string, depth: number, out: Reading[]): void {
+export function parseShell(source: string, cwd = process.cwd()): ShellCommand[] {
+  const out: Reading[] = [];
+  read(source, resolve(cwd), 0, out, false);
+  return out.map(({ words, redirects, reads, cwd: dir, inCode }) => ({ words, redirects, reads, cwd: dir, inCode }));
+}
+
+const isDir = (path: string): boolean => {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+};
+
+function read(text: string, start: string, depth: number, out: Reading[], inCode: boolean): void {
   if (depth > MAX_DEPTH) throw new Error("the command nests shells and substitutions too deeply to read");
-  const dirs = [start];
-  const here = (): string => dirs[dirs.length - 1] ?? start;
-  const fresh = (): Reading => ({ words: [], redirects: [], reads: [], cwd: start, stdin: [], next: null });
-  const inner = (script: string, dir = here()) => read(script, dir, depth + 1, out);
+  const places: Place[] = [{ dir: start, old: null, stack: [], back: null }];
+  const place = (): Place => places[places.length - 1] as Place;
+  const here = (): string => place().dir;
+  // Folders earlier commands make (mkdir, git worktree add), which a later cd finds though they don't exist yet.
+  const made = new Set<string>();
+  const fresh = (): Reading => ({ words: [], redirects: [], reads: [], cwd: start, inCode, stdin: [], next: null });
+  const inner = (script: string, dir = here(), code = inCode) => read(script, dir, depth + 1, out, code);
   let command = fresh();
   let piped: Reading | null = null;
   let word = "";
@@ -63,28 +93,72 @@ function read(text: string, start: string, depth: number, out: Reading[]): void 
     word = "";
     quoted = false;
   };
-  const endCommand = (pipe = false) => {
+
+  // cd, pushd and popd move the commands after them. A cd that fails leaves the shell where it was, so one to a folder
+  // that doesn't exist (and that no earlier command made) moves only the commands its && guards. In a pipeline or in
+  // the background a cd runs in a subshell and moves nothing.
+  const move = (words: string[], after: Separator) => {
+    const [verb = "", ...args] = words;
+    const p = place();
+    if (verb === "mkdir") for (const arg of operands(args, ["-m", "--mode"])) addMade(arg, p.dir);
+    if (verb === "git") {
+      const [sub, action, ...more] = gitGlobals(words).args;
+      if (sub === "worktree" && action === "add") addMade(operands(more, ["-b", "-B", "--reason"])[0], p.dir);
+    }
+    if (!/^(cd|pushd|popd)$/.test(verb) || after === "|" || after === "&" || (verb !== "cd" && args.includes("-n"))) return;
+    const [first] = args.filter((arg) => arg !== "--" && !/^-[LPe@]+$/.test(arg));
+    let to: string | null;
+    if (verb === "popd") to = p.stack[p.stack.length - 1] ?? null;
+    else if (first === undefined) to = verb === "cd" ? homedir() : (p.stack[p.stack.length - 1] ?? null);
+    else if (first === "-" && verb === "cd") to = p.old;
+    // pushd +N turns the stack, which isn't followed.
+    else if (/^[+-]\d+$/.test(first)) to = null;
+    else to = expandPath(first, p.dir);
+    if (to === null) return;
+    // To a folder that isn't there (yet): only until the and-list ends, which after ; or || is at once.
+    if (!made.has(to) && !isDir(to) && p.back === null) p.back = { dir: p.dir, old: p.old, stack: [...p.stack] };
+    if (verb === "popd") p.stack.pop();
+    else if (verb === "pushd" && first === undefined) p.stack[p.stack.length - 1] = p.dir;
+    else if (verb === "pushd") p.stack.push(p.dir);
+    p.old = p.dir;
+    p.dir = to;
+  };
+  const addMade = (word: string | undefined, dir: string) => {
+    const path = word === undefined ? null : expandPath(word, dir);
+    if (path) made.add(path);
+  };
+
+  const endCommand = (after: Separator = ";") => {
     endWord();
     pending = null;
     const done = command;
     command = fresh();
     const from = piped;
     piped = null;
-    while (KEYWORDS.test(done.words[0] ?? "")) done.words.shift();
-    if (!done.words.length && !done.redirects.length && !done.reads.length) return;
-    done.cwd = here();
-    out.push(done);
-    if (from) from.next = done;
-    if (pipe) piped = done;
-    if (done.words[0] === "cd" || done.words[0] === "pushd") {
-      const to = done.words.slice(1).find((w) => !/^-[LPe@]+$/.test(w));
-      const dir = to === undefined ? homedir() : expandPath(to, here());
-      if (dir) dirs[dirs.length - 1] = dir;
+    for (;;) {
+      const first = done.words[0] ?? "";
+      if (first === "time") done.words = options(done.words.slice(1), ["-f", "-o", "--format", "--output"]);
+      else if (KEYWORDS.test(first)) done.words.shift();
+      else break;
     }
-    for (const script of scriptsOf(done.words)) inner(script, done.cwd);
-    if (readsCommands(done.words)) {
-      for (const string of done.stdin) inner(string, done.cwd);
-      if (from && /^(echo|printf)$/.test(from.words[0] ?? "")) inner(from.words.slice(1).join(" "), done.cwd);
+    if (done.words.length || done.redirects.length || done.reads.length) {
+      done.cwd = here();
+      out.push(done);
+      if (from) from.next = done;
+      if (after === "|") piped = done;
+      move(done.words, after);
+      for (const script of scriptsOf(done.words)) inner(script, done.cwd);
+      for (const string of codeStrings(done.words)) inner(string, done.cwd, true);
+      if (readsCommands(done.words)) {
+        for (const string of done.stdin) inner(string, done.cwd);
+        if (from && /^(echo|printf)$/.test(basename(from.words[0] ?? ""))) for (const script of printed(from.words)) inner(script, done.cwd);
+      }
+    }
+    // The and-list ends: a cd to a folder that didn't exist held only for the commands its && guarded.
+    const p = place();
+    if (after !== "&&" && after !== "|" && after !== "(" && p.back !== null) {
+      Object.assign(p, p.back);
+      p.back = null;
     }
   };
   // Here-document bodies start on the line after their <<: commands when a shell reads them, else data.
@@ -134,12 +208,21 @@ function read(text: string, start: string, depth: number, out: Reading[]): void 
   // $( … ) at `at`: its commands are read on their own and the word holds their output; $(( … )) is arithmetic.
   const dollar = (at: number): number => {
     const { end, arithmetic } = closeDollar(text, at);
-    if (arithmetic) word += text.slice(at, end + 1);
-    else {
+    if (arithmetic) {
+      for (const script of substitutions(text.slice(at + 3, end - 1))) inner(script);
+      word += text.slice(at, end + 1);
+    } else {
       inner(text.slice(at + 2, end));
       word += SUBSTITUTED;
     }
     return end;
+  };
+  // A part of a word that only expands (${X:-…}, $[ … ], (( … ))): the commands substituted in it are read on their
+  // own, and the word holds an unknown value when there were any.
+  const expansion = (from: number, end: number) => {
+    const found = substitutions(text.slice(from, end + 1));
+    for (const script of found) inner(script);
+    word += found.length ? SUBSTITUTED : text.slice(from, end + 1);
   };
 
   for (let i = 0; i < text.length; i++) {
@@ -160,13 +243,33 @@ function read(text: string, start: string, depth: number, out: Reading[]): void 
       // A comment runs to the end of the line; an apostrophe or a << in it means nothing.
       const end = text.indexOf("\n", i);
       i = (end < 0 ? text.length : end) - 1;
+    } else if (c === "$" && next === "'") {
+      // $'…': \ escapes anything, \' included.
+      let j = i + 2;
+      for (; j < text.length && text[j] !== "'"; j++) {
+        if (text[j] === "\\" && j + 1 < text.length) {
+          const e = text[++j] as string;
+          word += e === "n" ? "\n" : e === "t" ? "\t" : e;
+        } else word += text[j];
+      }
+      quoted = true;
+      i = j;
     } else if (c === "$" && next === "(") {
       i = dollar(i);
     } else if (c === "$" && next === "{") {
-      // ${VAR} is part of a word.
-      const end = text.indexOf("}", i);
-      word += text.slice(i, end < 0 ? text.length : end + 1);
-      i = end < 0 ? text.length : end;
+      const end = closeBrace(text, i + 2);
+      expansion(i, end);
+      i = end;
+    } else if (c === "$" && next === "[") {
+      // $[ … ] is arithmetic, whose << is a shift.
+      const end = closeBracket(text, i + 2);
+      expansion(i, end);
+      i = end;
+    } else if (c === "(" && next === "(" && !word && !quoted && closeArithmetic(text, i) >= 0) {
+      // (( … )) is arithmetic too: a command of one word.
+      const end = closeArithmetic(text, i);
+      expansion(i, end);
+      i = end;
     } else if (c === "`") {
       const end = closeBacktick(text, i + 1);
       inner(text.slice(i + 1, end).replace(/\\`/g, "`"));
@@ -179,34 +282,45 @@ function read(text: string, start: string, depth: number, out: Reading[]): void 
       word += SUBSTITUTED;
       i = end;
     } else if (c === "\n") {
-      endCommand();
+      endCommand(";");
       i = bodies(i + 1) - 1;
-    } else if (c === ";" || c === "(" || c === ")") {
-      endCommand();
-      if (c === "(") dirs.push(here());
-      else if (c === ")" && dirs.length > 1) dirs.pop();
-    } else if ((c === "{" && !word && !quoted && (next === undefined || /\s/.test(next))) || (c === "}" && !word && !quoted)) {
+    } else if (c === ";") {
+      endCommand(";");
+    } else if (c === "(") {
+      endCommand("(");
+      places.push({ ...place(), stack: [...place().stack] });
+    } else if (c === ")") {
+      endCommand(")");
+      if (places.length > 1) places.pop();
+    } else if (c === "{" && !word && !quoted && (next === undefined || /\s/.test(next))) {
       // A { … } group; inside a word ({a,b}, {}) a brace is part of it.
-      endCommand();
+      endCommand("(");
+    } else if (c === "}" && !word && !quoted) {
+      endCommand(";");
     } else if (c === "&" && next === ">") {
       // &> and &>> send both streams to a file.
       endWord();
       i += text[i + 2] === ">" ? 2 : 1;
       pending = "out";
     } else if ((c === "&" || c === "|") && next === c) {
-      endCommand();
+      endCommand(c === "&" ? "&&" : "||");
       i++;
     } else if (c === "|") {
-      endCommand(true);
+      endCommand("|");
       if (next === "&") i++;
     } else if (c === "&") {
-      endCommand();
+      endCommand("&");
     } else if (c === "<" && next === "<" && text[i + 2] === "<") {
       // A here-string: the next word is data the command reads.
       if (/^\d+$/.test(word) && !quoted) word = "";
       else endWord();
       pending = "string";
       i += 2;
+    } else if (c === "<" && next === "<" && command.words[0] === "let") {
+      // let's arguments are arithmetic, whose << is a shift (sh reads a here-document there, whose body never runs:
+      // the guard reads on as commands, the stricter of the two).
+      word += "<<";
+      i++;
     } else if (c === "<" && next === "<") {
       if (/^\d+$/.test(word) && !quoted) word = "";
       else endWord();
@@ -233,7 +347,7 @@ function read(text: string, start: string, depth: number, out: Reading[]): void 
       endWord();
     } else word += c;
   }
-  endCommand();
+  endCommand(";");
 }
 
 // A here-document's delimiter after << or <<-: quoting any of it makes the body literal (no $( … ) runs in it).
@@ -276,20 +390,23 @@ function skipBodies(text: string, from: number, marks: string[]): number {
   return at;
 }
 
+const upTo = (text: string, index: number): number => (index < 0 ? text.length : index);
+
 // The ) that closes a $( or ( whose inside starts at `start`, past quotes, comments, nested parentheses and
 // here-documents (a body may hold a lone ")"). The text's end when it never closes.
 function closeParen(text: string, start: number): number {
   let depth = 1;
   const marks: string[] = [];
-  const upTo = (index: number): number => (index < 0 ? text.length : index);
   for (let i = start; i < text.length; i++) {
     const c = text[i] as string;
     if (c === "\\") i++;
-    else if (c === "'") i = upTo(text.indexOf("'", i + 1));
+    else if (c === "'") i = upTo(text, text.indexOf("'", i + 1));
     else if (c === '"') i = closeDouble(text, i + 1);
     else if (c === "`") i = closeBacktick(text, i + 1);
-    else if (c === "#" && (i === start || /[\s;&|()]/.test(text[i - 1] ?? ""))) i = upTo(text.indexOf("\n", i)) - 1;
+    else if (c === "#" && (i === start || /[\s;&|()]/.test(text[i - 1] ?? ""))) i = upTo(text, text.indexOf("\n", i)) - 1;
     else if (c === "$" && text[i + 1] === "(") i = closeDollar(text, i).end;
+    else if (c === "$" && text[i + 1] === "{") i = closeBrace(text, i + 2);
+    else if (c === "$" && text[i + 1] === "[") i = closeBracket(text, i + 2);
     else if (c === "<" && text[i + 1] === "<") {
       if (text[i + 2] === "<") i += 2;
       else {
@@ -325,6 +442,46 @@ function closeBacktick(text: string, start: number): number {
   return text.length;
 }
 
+// The } that closes a ${ whose inside starts at `start`, past quotes, nested ${ … }, $( … ) and backticks.
+function closeBrace(text: string, start: number): number {
+  let depth = 1;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (c === "\\") i++;
+    else if (c === "'") i = upTo(text, text.indexOf("'", i + 1));
+    else if (c === '"') i = closeDouble(text, i + 1);
+    else if (c === "`") i = closeBacktick(text, i + 1);
+    else if (c === "$" && text[i + 1] === "(") i = closeDollar(text, i).end;
+    else if (c === "$" && text[i + 1] === "{") {
+      depth++;
+      i++;
+    } else if (c === "}" && --depth === 0) return i;
+  }
+  return text.length;
+}
+
+// The ] that closes a $[ whose inside starts at `start`.
+function closeBracket(text: string, start: number): number {
+  let depth = 1;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === "$" && text[i + 1] === "(") i = closeDollar(text, i).end;
+    else if (text[i] === "[") depth++;
+    else if (text[i] === "]" && --depth === 0) return i;
+  }
+  return text.length;
+}
+
+// The last ) of a (( … )) that opens at `at`, or -1 when it's two subshells: ((cd a && ls); pwd).
+function closeArithmetic(text: string, at: number): number {
+  let depth = 0;
+  for (let i = at; i < text.length; i++) {
+    if (text[i] === "$" && text[i + 1] === "(") i = closeDollar(text, i).end;
+    else if (text[i] === "(") depth++;
+    else if (text[i] === ")" && --depth === 0) return text[i - 1] === ")" ? i : -1;
+  }
+  return -1;
+}
+
 // After a $( at `at`: the index of its closing ), and whether it was $(( … )) arithmetic, whose << is a shift.
 function closeDollar(text: string, at: number): { end: number; arithmetic: boolean } {
   if (text[at + 2] === "(") {
@@ -340,7 +497,7 @@ function closeDollar(text: string, at: number): { end: number; arithmetic: boole
   return { end: closeParen(text, at + 2), arithmetic: false };
 }
 
-// The $( … ) and backticks in an unquoted here-document's body, which run.
+// The $( … ) and backticks in a text that only expands (an unquoted here-document's body, a ${ … }), which run.
 function substitutions(text: string): string[] {
   const found: string[] = [];
   for (let i = 0; i < text.length; i++) {
@@ -348,6 +505,7 @@ function substitutions(text: string): string[] {
     else if (text[i] === "$" && text[i + 1] === "(") {
       const { end, arithmetic } = closeDollar(text, i);
       if (!arithmetic) found.push(text.slice(i + 2, end));
+      else found.push(...substitutions(text.slice(i + 3, end - 1)));
       i = end;
     } else if (text[i] === "`") {
       const end = closeBacktick(text, i + 1);
@@ -374,8 +532,24 @@ function readsCommands(words: string[]): boolean {
   return true;
 }
 
+// What echo or printf prints, as the scripts a shell reading it runs: echo's words past its flags (-n, -e), and
+// printf's format and each of its arguments on its own; \n starts a new line.
+function printed(words: string[]): string[] {
+  const [name = "", ...args] = words;
+  const lines = (text: string): string => text.replace(/\\n/g, "\n").replace(/\\t/g, "\t");
+  if (basename(name) === "echo") {
+    let i = 0;
+    while (i < args.length && /^-[neE]+$/.test(args[i] as string)) i++;
+    return [lines(args.slice(i).join(" "))];
+  }
+  const rest = args[0] === "-v" ? args.slice(2) : args;
+  const [format = "", ...values] = rest[0] === "--" ? rest.slice(1) : rest;
+  return [lines(format.replace(/%[-+ #0-9.*]*[a-zA-Z%]/g, " ")), ...values.map(lines)];
+}
+
 // The strings a command runs as shell code: sh -c, bash -c and zsh -c anywhere in it (env sh -c, xargs bash -c,
-// find -exec sh -c, /bin/bash -c), eval, npx -c and npm exec -c/--call, pnpm's shell mode, and watch.
+// find -exec sh -c, /bin/bash -c), eval, npx -c and npm exec -c/--call, pnpm's shell mode, and watch; and the
+// commands runners take as their arguments (runnerScripts).
 function scriptsOf(words: string[]): string[] {
   const scripts: string[] = [];
   words.forEach((word, i) => {
@@ -401,7 +575,165 @@ function scriptsOf(words: string[]): string[] {
       if (at >= 0) scripts.push(rest[at]?.startsWith("--call=") ? (rest[at] ?? "").slice(7) : rest.slice(at + 1).join(" "));
     } else if (name === "watch" && i === 0) scripts.push(options(rest, ["-n", "--interval"]).join(" "));
   });
+  for (const variant of unwrap(words)) scripts.push(...runnerScripts(variant));
   return scripts;
+}
+
+// The value of an option given as -x value, --long value or --long=value: every one of them.
+function valuesOf(args: string[], names: string[]): string[] {
+  const found: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    const [option = "", inline] = arg.startsWith("--") ? arg.split(/=(.*)/s, 2) : [arg, undefined];
+    if (!names.includes(option)) continue;
+    if (inline !== undefined) found.push(inline);
+    else if (args[i + 1] !== undefined) found.push(args[++i] as string);
+  }
+  return found;
+}
+
+// The commands a runner runs through a shell, from its arguments: concurrently's, nodemon --exec, ssh's remote
+// command, tmux's (new, split-window, send-keys, …), git rebase -x, git submodule foreach and git bisect run, flock -c,
+// script -c, su -c, watchexec's and parallel's.
+function runnerScripts(words: string[]): string[] {
+  const [first = "", ...rest] = words;
+  const name = basename(first);
+  switch (name) {
+    case "concurrently":
+      // concurrently "pnpm dev" "npm:test": each argument is a command, npm:<script> a package script.
+      return operands(rest, ["-n", "--names", "-c", "--prefix-colors", "-p", "--prefix", "-s", "--success", "-m", "--max-processes"]).map((arg) =>
+        arg.replace(/^(npm|pnpm|yarn|bun):(\S+)$/, "$1 run $2")
+      );
+    case "nodemon":
+      return valuesOf(rest, ["-x", "--exec"]);
+    case "ssh": {
+      const [, ...command] = operands(rest, [
+        "-B",
+        "-b",
+        "-c",
+        "-D",
+        "-E",
+        "-e",
+        "-F",
+        "-I",
+        "-i",
+        "-J",
+        "-L",
+        "-l",
+        "-m",
+        "-O",
+        "-o",
+        "-p",
+        "-Q",
+        "-R",
+        "-S",
+        "-W",
+        "-w",
+      ]);
+      return command.length ? [command.join(" ")] : [];
+    }
+    case "tmux": {
+      // Each of its arguments on its own: tmux new -d -s web 'pnpm dev', tmux send-keys -t web 'pnpm test' Enter.
+      const at = rest.findIndex((arg, i) => !arg.startsWith("-") && !/^-[LSfT]$/.test(rest[i - 1] ?? ""));
+      const sub = rest[at] ?? "";
+      if (
+        !/^(new|new-session|new-window|neww|split-window|splitw|respawn-pane|respawnp|respawn-window|respawnw|run-shell|run|send-keys|send|display-popup|popup)$/.test(
+          sub
+        )
+      )
+        return [];
+      return operands(rest.slice(at + 1), ["-s", "-n", "-t", "-c", "-e", "-F", "-x", "-y", "-l", "-f", "-N", "-T", "-w", "-h", "-b", "-B", "-S"]);
+    }
+    case "git": {
+      const [sub = "", ...args] = gitGlobals(words).args;
+      if (sub === "rebase") return valuesOf(args, ["-x", "--exec"]);
+      if (sub === "submodule" && args[0] === "foreach") return [options(args.slice(1)).join(" ")];
+      if (sub === "bisect" && args[0] === "run") return [args.slice(1).join(" ")];
+      return [];
+    }
+    case "flock":
+    case "script":
+    case "su":
+      return valuesOf(rest, ["-c", "--command"]);
+    case "parallel":
+      // parallel 'pnpm --filter {} test' ::: web api, or the commands themselves: parallel ::: 'pnpm lint' 'pnpm test'.
+      return operands(rest, ["-j", "--jobs", "-S", "--sshlogin", "--joblog", "--tmpdir", "-a", "--arg-file", "--delay", "--timeout"]).filter(
+        (arg) => !/^:{3,4}\+?$/.test(arg)
+      );
+    case "watchexec": {
+      const dash = rest.indexOf("--");
+      const command =
+        dash >= 0
+          ? rest.slice(dash + 1)
+          : operands(rest, [
+              "-w",
+              "--watch",
+              "-e",
+              "--exts",
+              "-f",
+              "--filter",
+              "-i",
+              "--ignore",
+              "-s",
+              "--signal",
+              "-d",
+              "--debounce",
+              "--shell",
+              "-E",
+              "--env",
+            ]);
+      return command.length ? [command.join(" ")] : [];
+    }
+    default:
+      return [];
+  }
+}
+
+// The code a program runs from its arguments (node -e, python -c, perl -e, …), as the strings quoted in it: a shell
+// command that code may hand to execSync or os.system ('vercel deploy --prod'). Reading every quoted string is a
+// seatbelt, not a parser of each language.
+const CODE: [RegExp, RegExp][] = [
+  [/^(node|nodejs|bun)$/, /^(-[a-zA-Z]*[ep]|--eval|--print)$/],
+  [/^(python[\d.]*|pypy[\d.]*)$/, /^-[a-zA-Z]*c$/],
+  [/^(perl|ruby)$/, /^-[a-zA-Z]*[eE]$/],
+  [/^php$/, /^-r$/],
+];
+function codeStrings(words: string[]): string[] {
+  const strings: string[] = [];
+  for (const variant of unwrap(words)) {
+    const [first = "", ...rest] = variant;
+    const name = basename(first);
+    const code: string[] = [];
+    if (name === "deno" && rest[0] === "eval") code.push(...operands(rest.slice(1)).slice(0, 1));
+    const flags = CODE.find(([program]) => program.test(name))?.[1];
+    if (flags)
+      rest.forEach((arg, i) => {
+        if (flags.test(arg) && rest[i + 1] !== undefined) code.push(rest[i + 1] as string);
+        else if (/^--(eval|print)=/.test(arg) && /^(node|nodejs|bun)$/.test(name)) code.push(arg.slice(arg.indexOf("=") + 1));
+      });
+    for (const text of code) strings.push(...quotedIn(text));
+  }
+  return strings;
+}
+
+// The strings quoted in code ('…', "…", `…`), with their escapes read.
+export function quotedIn(code: string): string[] {
+  const found: string[] = [];
+  for (let i = 0; i < code.length; i++) {
+    const quote = code[i];
+    if (quote !== "'" && quote !== '"' && quote !== "`") continue;
+    let text = "";
+    let j = i + 1;
+    for (; j < code.length && code[j] !== quote; j++) {
+      if (code[j] === "\\" && j + 1 < code.length) {
+        const e = code[++j] as string;
+        text += e === "n" ? "\n" : e === "t" ? "\t" : e;
+      } else text += code[j];
+    }
+    if (text.trim()) found.push(text);
+    i = j;
+  }
+  return found;
 }
 
 // A word as a path from `cwd`: ~ and the variables set in this environment expanded, and a glob's wildcards
@@ -456,6 +788,9 @@ function peel(words: string[]): string[] | null {
     case "builtin":
     case "chronic":
     case "unbuffer":
+    case "source":
+    case ".":
+      // source and . run a script with its arguments: . .e9g/adapters/env.sh reset runs env.sh reset.
       return rest;
     case "time":
       return options(rest, ["-f", "-o", "--format", "--output"]);
@@ -467,6 +802,8 @@ function peel(words: string[]): string[] | null {
       return options(rest, ["-i", "-o", "-e"]);
     case "caffeinate":
       return options(rest, ["-t", "-w"]);
+    case "arch":
+      return options(rest, ["-arch", "-d", "-e"]);
     case "exec":
       return options(rest, ["-a"]);
     case "command":
@@ -541,10 +878,20 @@ function peel(words: string[]): string[] | null {
   }
 }
 
-// The factory's CLI called by its path (~/.e9g/bin/e9g, node …/bin/e9g.ts) reads as e9g.
+// The factory's CLI called by its path (~/.e9g/bin/e9g, node …/bin/e9g.ts) reads as e9g, past the runtime's own
+// options (node --no-warnings --import x …/e9g.ts, deno run -A …/e9g.ts, bun run …/e9g.ts).
+const RUNTIMES = /^(node|nodejs|bun|tsx|ts-node|deno)$/;
 function e9gCli(words: string[]): string[] {
-  const e9g = (word: string | undefined) => /^e9g(\.ts|\.mjs)?$/.test(basename(word ?? ""));
-  if (/^(node|bun|tsx)$/.test(basename(words[0] ?? "")) && e9g(words[1])) return ["e9g", ...words.slice(2)];
+  const e9g = (word: string | undefined) => /^e9g(\.ts|\.mjs|\.js)?$/.test(basename(word ?? ""));
+  if (RUNTIMES.test(basename(words[0] ?? "")))
+    for (let i = 1; i < words.length; i++) {
+      const word = words[i] as string;
+      if (e9g(word)) return ["e9g", ...words.slice(i + 1)];
+      const previous = words[i - 1] as string;
+      // An option, the value of one before it (--import tsx), or deno run / bun run.
+      if (word.startsWith("-") || (i > 1 && /^-/.test(previous) && !previous.includes("=")) || (i === 1 && word === "run")) continue;
+      break;
+    }
   if (e9g(words[0]) && words[0] !== "e9g") return ["e9g", ...words.slice(1)];
   return words;
 }
@@ -590,7 +937,8 @@ export function gitGlobals(words: string[]): { args: string[]; dirs: string[]; t
 export const normalize = (words: string[]): string[] => (basename(words[0] ?? "") === "git" ? ["git", ...gitGlobals(words).args] : words);
 
 // Free text: messages, titles and bodies (git commit -m, gh issue create --body), the e9g log's entry and notes, and
-// what echo and printf print. A rule never matches inside it; a command substitution in it was read on its own.
+// what echo and printf print. A rule never matches inside it, unless it's one that reads free text (a live key); a
+// command substitution in it was read on its own.
 const GIT_TEXT = /^(commit|merge|tag|stash|notes|commit-tree)$/;
 const GH_TEXT = ["-b", "--body", "-t", "--title", "--subject", "--notes", "--description"];
 const E9G_TEXT = ["--note", "--label"];
@@ -616,9 +964,9 @@ export function withoutText(words: string[]): string[] {
 }
 
 // The lines the guard's rules are matched against for one command: as written and with each wrapper off, read as
-// the plain command, without its free text (withText: with it, for a team's own rules, which name data such as a
-// project id or a setting, and so must see it in what echo writes too). Separators inside a word were quoted data,
-// so they're blanked.
+// the plain command, without its free text (withText: with it, for the rules that read free text: a team's own,
+// which name data such as a project id or a setting, and the policies' rules for data such as a live key). Separators
+// inside a word were quoted data, so they're blanked.
 export function lines(command: ShellCommand, { withText = false } = {}): string[] {
   const found = new Set<string>();
   for (const words of unwrap(command.words))
@@ -633,4 +981,33 @@ export function fileWords(command: ShellCommand): string[] {
   const last = variants[variants.length - 1] ?? [];
   const suffix = last.length <= first.length && last.every((word, i) => word === first[first.length - last.length + i]);
   return [...(suffix ? first.slice(0, first.length - last.length) : []), ...withoutText(normalize(last))];
+}
+
+// Commands that name files without reading what's in them: ls .env* lists names.
+export const NAMES_ONLY = /^(ls|stat|test|\[|\[\[)$/;
+
+// A command's words past those that only keep files out: --exclude=.env*, -g '!.env*', a word starting with !, git's
+// ':!.env' pathspecs and zip's -x list. What's left may name a file the command reads.
+export function withoutExcludes(words: string[]): string[] {
+  const kept: string[] = [];
+  const zip = /^(zip|7z|7za)$/.test(basename(words[0] ?? ""));
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i] as string;
+    const [option = "", inline] = word.startsWith("--") ? word.split(/=(.*)/s, 2) : [word, undefined];
+    if (/^(!|:!|:\^|:\([^)]*\bexclude\b)/.test(word)) continue;
+    if (/^--(exclude|exclude-dir|ignore|ignore-pattern)$/.test(option)) {
+      if (inline === undefined) i++;
+      continue;
+    }
+    if (/^(-g|--glob|--iglob)$/.test(option) && (inline ?? words[i + 1] ?? "").startsWith("!")) {
+      if (inline === undefined) i++;
+      continue;
+    }
+    if (zip && /^-x/.test(word)) {
+      while (i + 1 < words.length && !/^-/.test(words[i + 1] as string)) i++;
+      continue;
+    }
+    kept.push(word);
+  }
+  return kept;
 }

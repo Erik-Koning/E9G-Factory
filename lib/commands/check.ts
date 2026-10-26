@@ -20,13 +20,16 @@ import { compile } from "../prompts.ts";
 import * as t3 from "../t3.ts";
 import { die, parseArgs } from "../util.ts";
 
-// One self-test case: a tool call as a role would make it, and what the guard must do with it.
+// One self-test case: a tool call as a role would make it, and what the guard must do with it. `says`: what the
+// refusal must say, where another check would refuse the call too (a push the planner may not make anyway), so the
+// case proves the check it names.
 export interface GuardCase {
   role: string;
   tool: string;
   input: Record<string, unknown>;
   expect: "allow" | "refuse";
   why: string;
+  says?: string;
 }
 type Level = "ok" | "warn" | "FAIL";
 
@@ -37,8 +40,8 @@ export function guardCases(team: Team): GuardCase[] {
   const roles = Object.keys(team.roles);
   const builder = roles.includes("builder") ? "builder" : (roles.find((r) => r !== "planner") ?? "planner");
   const cases: GuardCase[] = [];
-  const add = (role: string, tool: string, input: Record<string, unknown>, expect: GuardCase["expect"], why: string) =>
-    cases.push({ role, tool, input, expect, why });
+  const add = (role: string, tool: string, input: Record<string, unknown>, expect: GuardCase["expect"], why: string, says?: string) =>
+    cases.push({ role, tool, input, expect, why, ...(says === undefined ? {} : { says }) });
   const bash = (role: string, command: string, expect: GuardCase["expect"], why?: string) => add(role, "Bash", { command }, expect, why ?? command);
   const planner = team.roles["planner"] as Lane;
 
@@ -58,9 +61,15 @@ export function guardCases(team: Team): GuardCase[] {
   const builderLane = team.roles[builder];
   if (builderLane?.write.includes("*") && !builderLane.deny.some((rule) => new RegExp(rule).test("src/e9g-check.ts")))
     add(builder, "Write", { file_path: join(home, "src/e9g-check.ts") }, "allow", "a builder writing in its lane");
-  if (team.protectedBranches[0]) bash(builder, `git push origin ${team.protectedBranches[0]}`, "refuse", "a push to a protected branch");
+  // The planner's own: anyone else is refused any push, and the planner any other push, before the branch counts.
+  const guarded = team.protectedBranches[0];
+  if (guarded) {
+    const remote = team.push?.remote ?? "origin";
+    const says = `nothing is pushed to ${guarded}`;
+    add("planner", "Bash", { command: `git push ${remote} ${guarded}` }, "refuse", "a push to a protected branch", says);
+    add("planner", "Bash", { command: `git -C . push ${remote} HEAD:${guarded}` }, "refuse", "a push to a protected branch behind git -C", says);
+  }
   bash(builder, "git push --force origin topic", "refuse", "a force push");
-  bash(builder, "git -C . push origin HEAD:main", "refuse", "a push hidden behind git -C");
   bash(builder, "cat .env", "refuse", "reading an env file");
   bash(builder, "e9g register", "refuse", "an operator's command");
   if (team.environment.script && builder !== "planner") {
@@ -223,8 +232,10 @@ export async function check(argv: string[]): Promise<number> {
     const results = await Promise.all(batch.map((test) => runGuard(team, test, run)));
     batch.forEach((test, j) => {
       const { outcome, said } = results[j] ?? { outcome: "not run", said: "" };
-      if (outcome !== test.expect)
-        wrong.push(`${test.role}: ${test.why}: expected ${test.expect}, got ${outcome}${said ? ` (${said.slice(0, 160)})` : ""}`);
+      if (outcome !== test.expect || (test.says !== undefined && !said.includes(test.says)))
+        wrong.push(
+          `${test.role}: ${test.why}: expected ${test.expect}${test.says ? ` saying "${test.says}"` : ""}, got ${outcome}${said ? ` (${said.slice(0, 160)})` : ""}`
+        );
     });
   }
   rmSync(run, { recursive: true, force: true });

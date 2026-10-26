@@ -294,7 +294,8 @@ export const OPERATOR_COMMANDS = new RegExp(
 
 // An env file named in a command it reads or writes. Not in what only lists names (ls -la .env*), and not in what
 // keeps files out (--exclude=.env*, rg -g '!.env*', git's ':!.env').
-const ENV_FILE = /(^|['"=/<])\.env(?!(?:\.[\w-]+)*\.(?:example|sample|template)(?=$|['";|&)>]))(\.[A-Za-z0-9_.-]+)?(?=$|['";|&)>])/;
+// Any name that starts with .env (.env.local, .envAbout, ".env copy"), except the example, sample and template ones.
+const ENV_FILE = /(^|['"=/<])\.env(?![\w.-]*\.(?:example|sample|template)(?=$|['";|&)>]))[\w.-]*(?=$|['";|&)>])/;
 const namesEnvFile: Matcher = {
   test(line: string): boolean {
     const words = line.split(/\s+/).filter(Boolean);
@@ -327,7 +328,8 @@ export const CORE: [Matcher, string][] = [
 
 // The secret files no agent reads or writes, by the file tools or the shell, as regexes over a path.
 export const SECRET_FILES = [
-  /(^|\/)\.env(\.[^/]*)?$/,
+  // Any file whose name starts with .env: .env.local, .env.SST.ProdCAN, .envAbout, ".env copy".
+  /(^|\/)\.env[^/]*$/,
   /(^|\/)\.envrc$/,
   /(^|\/)\.dev\.vars$/,
   /\.(pem|p12|key)$/,
@@ -342,7 +344,7 @@ export const SECRET_FILES = [
   /(^|\/)\.secrets?(\/|$)/,
   /(^|\/)secrets?\.(json|ya?ml|env|txt)$/,
 ];
-export const SECRET_OK = /(^|\/)\.env(\.[\w-]+)*\.(example|sample|template)$/;
+export const SECRET_OK = /(^|\/)\.env[^/]*\.(example|sample|template)$/;
 export const isSecretFile = (path: string): boolean => SECRET_FILES.some((rule) => rule.test(path)) && !SECRET_OK.test(path);
 // A shell word that names a secret file. A name that's a secret only by its extension (server.key) counts when it
 // has a directory or the file exists: in grep -n item.key src/ it's a property.

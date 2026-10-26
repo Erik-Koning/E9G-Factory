@@ -131,3 +131,19 @@ describe("policies", () => {
       assert.ok(!isSecretFile(path), path);
   });
 });
+
+describe("env files, whatever they're called", () => {
+  test("every name that starts with .env is a secret file, except the example ones", () => {
+    for (const path of [".env", ".env copy", ".env copyCAN", ".envAbout", ".envrc", ".env.SST.ProdCAN", "app/.env.local", ".env.local.bak"])
+      assert.ok(isSecretFile(path), path);
+    for (const path of [".env.example", "docs/canada-staging.env.example", ".env.local.example", "src/env.ts", ".environment-notes.md.template"])
+      assert.ok(!isSecretFile(path), path);
+  });
+
+  test("shell commands that name one are refused, listing names isn't", () => {
+    const t = team();
+    for (const command of ["cat .envAbout", 'cat ".env copy"', "cat .env\\ copyCAN", "cp .env.SST.ProdUSA /tmp/x", "grep KEY .envrc"])
+      assert.ok(refused(t, command), command);
+    for (const command of ["ls -la .env*", "cat .env.example", "cat docs/canada-staging.env.example"]) assert.equal(refused(t, command), null, command);
+  });
+});

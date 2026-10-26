@@ -38,7 +38,8 @@ e9g init ~/code/my-app                           # detect, make the team's check
 To watch a team:
 
 ```bash
-e9g status                 # each team: planner, members, the watchdog's last lines
+e9g teams                  # every team on this Mac, its version, and whether it's active, paused or complete
+e9g status                 # each team: planner, members running, whether its environment answers, what's drained
 e9g metrics --team my-app  # agents, runs, model requests, tokens and time per role
 e9g pause my-app           # and e9g resume my-app; e9g rotate my-app for a fresh planner
 ```

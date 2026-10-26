@@ -155,7 +155,7 @@ export function passReplies(replies: Reply[], run: string, tell: (text: string) 
   }
 }
 
-async function answers(target: string): Promise<boolean> {
+export async function answers(target: string): Promise<boolean> {
   const any = target.startsWith("any:");
   try {
     const response = await fetch(any ? target.slice(4) : target, { signal: AbortSignal.timeout(5000), redirect: "manual" });

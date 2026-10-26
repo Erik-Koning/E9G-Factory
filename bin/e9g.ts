@@ -17,7 +17,7 @@ Set up and run a team (the operator)
   e9g start <team>                    resume it and run the watchdog now (it starts the planner)
   e9g pause | resume <team>           stop or restart the watchdog's ticks for one team
   e9g rotate <team>                   a fresh planner thread (refused while members run)
-  e9g status [<team>]  ·  e9g teams   planner, members, the watchdog's last lines  ·  every team
+  e9g status [<team>]  ·  e9g teams   planner, members, environment, drain, the watchdog's last lines  ·  every team
   e9g metrics [--team <t>] [--since]  agents, runs, requests, tokens and time per role
   e9g prompt <team> <role>            the text a role works under
   e9g upgrade <team> [<version>] [--force]   move a team to another installed factory version

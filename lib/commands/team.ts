@@ -24,7 +24,7 @@ import { compile, promptFile, writePrompt } from "../prompts.ts";
 import { operatorOnly } from "../session.ts";
 import * as t3 from "../t3.ts";
 import { die, parseArgs, writeJson } from "../util.ts";
-import { BUSY, ensureWatchdog, keptWorktrees, watchOnce } from "./watchdog.ts";
+import { answers, BUSY, ensureWatchdog, keptWorktrees, watchOnce } from "./watchdog.ts";
 
 const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : text);
 
@@ -167,7 +167,7 @@ export async function start(argv: string[]): Promise<number> {
   const why = await watchOnce(entry.name);
   if (why) {
     console.error(`e9g: ${entry.name} wasn't started: ${why}. When T3 Code doesn't answer, \`t3 service restart\`, then e9g start ${entry.name} again.`);
-    status([entry.name]);
+    await status([entry.name]);
     return 1;
   }
   return status([entry.name]);
@@ -224,7 +224,9 @@ export async function rotate(argv: string[]): Promise<number> {
   return 0;
 }
 
-export function status(argv: string[]): number {
+// Where each team stands: paused or active, its planner and the members running, whether its environment answers
+// (team.json's health URLs) and what's drained, the worktrees kept for their work, and the watchdog's last lines.
+export async function status(argv: string[]): Promise<number> {
   const names = argv.length ? argv : teamNames();
   if (!names.length) console.info("no teams registered yet: e9g init sets one up");
   for (const name of names) {
@@ -237,7 +239,19 @@ export function status(argv: string[]): number {
     console.info(`== ${name} (${entry.title}) ${flags.length ? flags.join(", ") : "active"} · factory ${entry.version} · ${entry.home}`);
     console.info(`   planner ${planner ?? "none"}${thread ? ` (${thread.status})` : ""}`);
     const counts = planner ? t3.childCounts(planner) : [];
-    if (counts.length) console.info(`   members running: ${counts.map((row) => `${row.instance.replace(`e9g-${name}-`, "")} ${row.n}`).join(", ")}`);
+    console.info(
+      `   members running: ${counts.length ? counts.map((row) => `${row.instance.replace(`e9g-${name}-`, "")} ${row.n}`).join(", ") : planner ? "none" : "-"}`
+    );
+    const health = entry.health ?? [];
+    if (health.length) {
+      const up = await Promise.all(health.map((target) => answers(target)));
+      const state = up.every(Boolean) ? "up" : up.some(Boolean) ? "partly up" : "down";
+      console.info(
+        `   environment: ${state} (${health.map((target, i) => `${target.replace(/^any:/, "")} ${up[i] ? "answers" : "doesn't answer"}`).join(", ")})`
+      );
+    } else console.info("   environment: no health URLs in team.json, so not checked");
+    const drain = join(entry.home, ".e9g", "run", "state", "drain");
+    if (existsSync(drain)) console.info(`   draining: ${readFileSync(drain, "utf8").trim()} (e9g drain off, from the team's checkout)`);
     const kept = keptWorktrees(entry.run);
     if (kept.length)
       console.info(
@@ -249,10 +263,13 @@ export function status(argv: string[]): number {
   return 0;
 }
 
+// Every registered team on a line: its version, whether it runs, and its checkout (e9g status says more).
 export function teams(): number {
   for (const name of teamNames()) {
     const entry = readRegistry(name);
-    if (entry) console.info(`${name.padEnd(20)} ${String(entry.version).padEnd(8)} ${entry.home}`);
+    if (!entry) continue;
+    const state = existsSync(join(entry.run, "paused")) ? "paused" : existsSync(join(entry.run, "complete")) ? "complete" : "active";
+    console.info(`${name.padEnd(20)} ${String(entry.version).padEnd(8)} ${state.padEnd(9)} ${entry.home}`);
   }
   return 0;
 }

@@ -132,3 +132,26 @@ describe("the review of the engine fixes", { concurrency: 4 }, () => {
     assert.deepEqual([moved.vars.factory, moved.factory], ["acme-widgets", "0.4.0"]);
   });
 });
+
+describe("seeing every team at once", () => {
+  test("status shows the environment, the drain and the members; teams shows whether each runs", async () => {
+    const w = await fakeWorld();
+    try {
+      const file = join(w.e9gHome, "teams", "fixture.json");
+      const origin = (JSON.parse(read(join(w.t3Home, "userdata", "server-runtime.json"))) as { origin: string }).origin;
+      writeFileSync(file, JSON.stringify({ ...JSON.parse(read(file)), health: [`${origin}/`, "http://127.0.0.1:9/"] }));
+      write(w.home, { ".e9g/run/state/drain": "builder tester\n" });
+      let result = await w.e9g("status", "fixture");
+      assert.equal(result.code, 0, result.out);
+      assert.match(result.out, /environment: partly up \(.* answers, http:\/\/127\.0\.0\.1:9\/ doesn't answer\)/);
+      assert.match(result.out, /draining: builder tester/);
+      assert.match(result.out, /members running: -/);
+      result = await w.e9g("teams");
+      assert.match(result.out, /^fixture\s+\S+\s+active\s/m);
+      writeFileSync(join(w.run, "paused"), "");
+      assert.match((await w.e9g("teams")).out, /^fixture\s+\S+\s+paused\s/m);
+    } finally {
+      await w.close();
+    }
+  });
+});

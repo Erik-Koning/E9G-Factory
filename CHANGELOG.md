@@ -7,7 +7,7 @@
   with Node's compile cache, so a guard call costs what it did. Versions before this one are `.mjs`; the launcher,
   the hand-over to a pinned version and the watchdog find either.
 - **Three independent audits** (the guard, the engine, setup) found 64 defects, reproduced most of them, and each
-  has a regression test (`test/audit-guard.test.ts`, `audit-engine.test.ts`, `audit-setup.test.ts`; 161 tests).
+  has a regression test (`test/audit-guard.test.ts`, `audit-engine.test.ts`, `audit-setup.test.ts`).
   - **Members start in their own worktree.** The planner was never told to pass `isolation: "worktree"` to
     `delegate_task`, so T3 Code ran some builders in the team's own checkout; one renamed a team's integration
     branch. The prompt says so now, the guard refuses a builder or tester started without it, and nobody on a team
@@ -29,6 +29,18 @@
   - **Setup works for any repository.** Drafted adapters parse (`e9g check` runs `bash -n`), drafts pin their
     version and keep tickets local, `--in-place` makes the integration branch, `e9g upgrade` runs in the version it
     moves to, `self-install` replaces a release by rename, and normalize checks every key the way the schema does.
+- **A review of those fixes** by three more reviewers found 38 more, fixed with tests too (`test/review-*.test.ts`,
+  `test/shell.test.ts`; 239 tests in all). Among them:
+  - the guard's hook blocks when it fails or times out (`onFailure: "block"`);
+  - operator commands refuse inside a team;
+  - live keys and hosted database addresses are caught in free text, and a team's own rules read free text again;
+  - the prune never deletes untracked work, and the launchd watchdog never reaches into a checkout (the merge queue
+    clears finished worktrees instead);
+  - lock takeover is independent of the time zone, and verdicts take commit ids only;
+  - team.json that 0.2.0 loaded loads again (number vars, unknown nested keys as warnings);
+  - an older self-install no longer strands agents on this release (`bin/e9g.mjs`).
+- **What the planner sends is labelled `E9G-Planner`:** the GitHub issues it opens carry the label, and its email
+  subjects start with `[E9G-Planner]`, which the guard and `e9g check` hold it to (`lib/labels.ts`).
 - **Fixed on the way:** `e9g metrics --team`, a dev checkout running its own code, `e9g env` arguments, `e9g lock`
   durations, `pages done` with nothing to check, the launcher and watchdog surviving a Homebrew node upgrade.
 

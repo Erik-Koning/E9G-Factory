@@ -694,7 +694,8 @@ export function check(input: HookInput): void {
   function checkWork(absolute: string): void {
     const rel = relative(work, absolute);
     if (/^(state|locks|merge)(\/|$)/.test(rel)) refuse(`.e9g/run/${rel} is written by the factory's commands only.`);
-    if (/^board\//.test(rel)) {
+    // The board itself (mkdir -p .e9g/run/board) and its tickets are the planner's; anyone may add a finding.
+    if (/^board(\/|$)/.test(rel)) {
       if (role === "planner" || /^board\/f-[\w.-]+\.md$/.test(rel)) return;
       refuse("only the planner edits tickets; file what you found as a new board/f-<yyyymmdd-hhmm>-<slug>.md.");
     }

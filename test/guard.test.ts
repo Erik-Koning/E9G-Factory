@@ -562,3 +562,14 @@ describe("e9g check's self-test", () => {
     assert.match(playwright?.why ?? "", /narrow/);
   });
 });
+
+describe("the board's folder", () => {
+  test("the planner makes it; others file findings in it", () => {
+    const home = makeRepo();
+    return holds([
+      bash(home, "planner", "mkdir -p .e9g/run/board", "allow"),
+      bash(home, "builder", "mkdir -p .e9g/run/board", "refuse"),
+      bash(home, "reviewer", "touch .e9g/run/board/f-20261026-1200-x.md", "allow"),
+    ]);
+  });
+});

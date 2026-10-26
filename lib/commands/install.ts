@@ -25,6 +25,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { binDir, E9G_HOME, entryOf, FACTORY_ROOT, type FactoryPackage, PACKAGE, readRegistry, VERSION_NAME, versionDir, versionsDir } from "../paths.ts";
+import { operatorOnly } from "../session.ts";
 import { die, hash, parseArgs, readJson, which } from "../util.ts";
 import { teamNames } from "./team.ts";
 
@@ -121,6 +122,7 @@ function older(a: string, b: string): boolean {
 }
 
 export function selfInstall(argv: string[]): number {
+  operatorOnly("self-install");
   const { options } = parseArgs(argv, { booleans: ["link", "force"] });
   const version = PACKAGE.version;
   const dest = versionDir(version);

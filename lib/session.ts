@@ -4,6 +4,7 @@
 import { resolve } from "node:path";
 import { type LoadedTeam, loadTeam, roleOfAgent } from "./config.ts";
 import { defaultRunDir, findHome } from "./paths.ts";
+import { die } from "./util.ts";
 
 // What Claude Code sends a hook on stdin (the fields the factory's hooks read).
 export interface HookInput {
@@ -22,6 +23,12 @@ export interface HookInput {
 
 export const inTeam = (): boolean => Boolean(process.env.E9G_TEAM);
 export const inSetup = (): boolean => process.env.E9G_SETUP === "1";
+
+// The operator's own commands (init, register, start, pause, …) refuse an agent on a team, as merge and verdict
+// refuse the wrong role: belt and braces with the guard, which can be got past.
+export function operatorOnly(command: string): void {
+  if (inTeam()) die(`${command} is the operator's; an agent on a team (E9G_TEAM=${process.env.E9G_TEAM}) doesn't run it`);
+}
 
 export interface TeamSession {
   home: string;

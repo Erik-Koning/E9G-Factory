@@ -2,7 +2,7 @@ import "./helpers.ts";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { normalize, type RawTeam, type Team } from "../lib/config.ts";
-import { ALLOWED_EXAMPLES, isSecretFile, POLICIES, policyStates, refusal } from "../lib/policies.ts";
+import { ALLOWED_EXAMPLES, commandRules, isSecretFile, POLICIES, policyStates, refusal } from "../lib/policies.ts";
 
 const team = (raw: RawTeam = {}): Team => normalize({ name: "fixture", branch: "e9g/next", ...raw }, "").team;
 const refused = (t: Team, command: string) => refusal(t, command);
@@ -68,6 +68,57 @@ describe("policies", () => {
     const t = team({ never: [["\\bmake\\s+release\\b", "releases are the operator's"], { rule: "\\bdb:reset\\b", reason: "the shared database" }] });
     assert.equal(refused(t, "make release")?.reason, "releases are the operator's");
     assert.equal(refused(t, "pnpm db:reset")?.source, "team");
+  });
+
+  test("the rules for data that reaches outside read free text; command words don't", () => {
+    const t = team();
+    for (const command of [
+      "echo 'STRIPE_SECRET_KEY=sk_live_abc123' >> src/config.ts",
+      'gh issue comment 3 --body "key is rk_live_abc123"',
+      'git commit -m "use mongodb+srv://u:p@cluster0.x.net"',
+      "printf 'curl https://hooks.slack.com/services/T0/B0/x'",
+    ])
+      assert.ok(refused(t, command), command);
+    for (const command of [
+      'git commit -m "run vercel deploy and supabase db push by hand"',
+      "echo stripe is off",
+      'gh issue create --title "npm publish"',
+    ])
+      assert.equal(refused(t, command), null, command);
+    const rules = commandRules(team({ never: [["\\bmake\\s+release\\b", "the operator's"]] }));
+    assert.ok(rules.filter((rule) => rule.source === "core").every((rule) => !rule.text));
+    assert.ok(rules.filter((rule) => rule.source === "team").every((rule) => rule.text));
+    assert.deepEqual(
+      rules.filter((rule) => rule.source === "policy payments").map((rule) => rule.text),
+      [false, true]
+    );
+  });
+
+  test("a task runner's deploy task, in task positions only", () => {
+    const t = team();
+    for (const command of ["turbo run deploy", "nx deploy web", "nx run web:deploy", "nx run-many -t deploy", "turbo run build web#publish"])
+      assert.ok(refused(t, command), command);
+    for (const command of [
+      "nx test shipping-api",
+      "turbo run dev --filter publisher-web",
+      "pnpm nx g @nx/js:lib release-utils",
+      "turbo prune web --docker",
+    ])
+      assert.equal(refused(t, command), null, command);
+  });
+
+  test("env files: what lists names or keeps them out reads none", () => {
+    const t = team();
+    for (const command of [
+      "ls -la .env.local",
+      "test -f .env",
+      "tar --exclude=.env.local -czf /tmp/x.tgz .",
+      "rg -g '!.env.local' X",
+      "git diff -- . ':!.env'",
+    ])
+      assert.equal(refused(t, command), null, command);
+    for (const command of ["cat .env.local", "source .env", "node --env-file=.env.local x.js", "tar -czf /tmp/x.tgz .env.local"])
+      assert.ok(refused(t, command), command);
   });
 
   test("secret files", () => {

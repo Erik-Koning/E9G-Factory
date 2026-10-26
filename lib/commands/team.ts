@@ -21,6 +21,7 @@ import {
   versionDir,
 } from "../paths.ts";
 import { compile, promptFile, writePrompt } from "../prompts.ts";
+import { operatorOnly } from "../session.ts";
 import * as t3 from "../t3.ts";
 import { die, parseArgs, writeJson } from "../util.ts";
 import { BUSY, ensureWatchdog, keptWorktrees, watchOnce } from "./watchdog.ts";
@@ -58,6 +59,7 @@ export function memberEnvironment(
 }
 
 export function register(argv: string[]): number {
+  operatorOnly("register");
   const { positional, options } = parseArgs(argv, { booleans: ["force"] });
   return registerTeam(homeFrom(positional[0]), { force: Boolean(options["force"]) });
 }
@@ -140,6 +142,7 @@ function registerTeam(home: string, { force, version: target }: { force: boolean
 }
 
 export function unregister(argv: string[]): number {
+  operatorOnly("unregister");
   const name = argv[0] ?? die("usage: e9g unregister <team>");
   const entry = readRegistry(name) ?? die(`no team named ${name}`);
   const removed = t3.removeInstances(name);
@@ -157,6 +160,7 @@ export const teamNames = (): string[] =>
     : [];
 
 export async function start(argv: string[]): Promise<number> {
+  operatorOnly("start");
   const entry = entryFor(argv[0] ?? die("usage: e9g start <team>"));
   rmSync(join(entry.run, "paused"), { force: true });
   ensureWatchdog();
@@ -170,6 +174,7 @@ export async function start(argv: string[]): Promise<number> {
 }
 
 export function pause(argv: string[]): number {
+  operatorOnly("pause");
   const entry = entryFor(argv[0] ?? die("usage: e9g pause <team>"));
   mkdirSync(entry.run, { recursive: true });
   writeFileSync(join(entry.run, "paused"), new Date().toISOString());
@@ -180,6 +185,7 @@ export function pause(argv: string[]): number {
 }
 
 export function resume(argv: string[]): number {
+  operatorOnly("resume");
   const entry = entryFor(argv[0] ?? die("usage: e9g resume <team>"));
   rmSync(join(entry.run, "paused"), { force: true });
   console.info(`e9g: ${entry.name} resumed`);
@@ -191,6 +197,7 @@ export function resume(argv: string[]): number {
 // middle of a turn, and whenever T3 Code can't say which. The old one is retired inside the watchdog's lock for the
 // team, so a watchdog run can't start or adopt a planner halfway through.
 export async function rotate(argv: string[]): Promise<number> {
+  operatorOnly("rotate");
   const entry = entryFor(argv[0] ?? die("usage: e9g rotate <team>"));
   const file = join(entry.run, "planner-thread");
   let old = "";
@@ -281,6 +288,7 @@ export function pinned(text: string, version: string): string {
 // then move its pin there. It runs in the version it moves to, whose code compiles the prompts and writes the
 // instances; the pin moves only once that worked.
 export function upgrade(argv: string[]): number {
+  operatorOnly("upgrade");
   const { positional, options } = parseArgs(argv, { booleans: ["force"] });
   const entry = entryFor(positional[0] ?? die("usage: e9g upgrade <team> [version] [--force]"));
   const version = positional[1] ?? PACKAGE.version;

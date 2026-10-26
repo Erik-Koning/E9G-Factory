@@ -1,12 +1,15 @@
+import { basename } from "node:path";
 import type { Team } from "./config.ts";
-import { lines, parseShell, type ShellCommand } from "./shell.ts";
+import { lines, NAMES_ONLY, parseShell, type ShellCommand, withoutExcludes } from "./shell.ts";
 
 // What a team may not do. Two kinds:
 // - Policies: outward-facing or irreversible actions, denied by default. An operator unlocks one per team in
 //   team.json ("policies": {"deploy": "allow"}); "dependencies" starts allowed and can be denied the same way.
 // - Core rules: never unlocked. Secrets, the machine's services, rewritten history, the factory's own controls.
 // Each rule is a regex over one simple command as the guard reads it (lib/shell.ts lines(): as written and with
-// each wrapper taken off, without its free text) and the reason the agent is told.
+// each wrapper taken off, without its free text) and the reason the agent is told. A few are code where a regex
+// can't say it well, and the rules for data that reaches outside wherever it's written (a live key) read the free
+// text too.
 // These are a seatbelt for agents that follow instructions, not a sandbox: see CONSTITUTION.md, Part IV.
 
 // A command word in command position: at the start, past any VAR=value assignments and wrappers (env, nohup, time,
@@ -24,6 +27,11 @@ const sub = (command: string, subcommands: string): RegExp =>
 const anywhere = (pattern: string): RegExp => new RegExp(pattern);
 const ASK = "If the work needs it, the planner asks the operator.";
 
+// A rule's test over one line: a regex, or code where a regex can't say it well (runsDeployTask, namesEnvFile).
+export interface Matcher {
+  test(line: string): boolean;
+}
+
 export type PolicyState = "allow" | "deny";
 export interface Policy {
   id: string;
@@ -32,14 +40,85 @@ export interface Policy {
   default: PolicyState;
   summary: string;
   reason: string;
-  rules: RegExp[];
+  // Over a command without its free text: mostly a command word in command position.
+  rules: Matcher[];
+  // Over its free text too: data that reaches outside wherever it's written (a live key, a hosted database's address,
+  // a webhook), as much in what echo writes or a message says as in a command.
+  text?: Matcher[];
 }
-// A rule in force: the regex over the guard's reading of a command, what the agent is told, and where it came from.
+// A rule in force: its test over the guard's reading of a command, what the agent is told, where it came from, and
+// whether it reads free text too (the policies' text rules and a team's own rules do).
 export interface CommandRule {
-  rule: RegExp;
+  rule: Matcher;
   reason: string;
   source: string;
+  text: boolean;
 }
+
+// A deploy task in a monorepo's task runner: turbo run deploy, turbo web#deploy, turbo deploy:prod, nx deploy web,
+// nx run web:deploy, nx run-many -t deploy, nx release. Only task positions count, and a name only when it ends
+// there or at a separator, so a project, a filter or an option's value that starts with one doesn't (nx test
+// shipping-api, turbo run dev --filter publisher-web, turbo run build -- --mode release).
+const TASK = /^(?:deploy|release|publish|ship)(?:$|[:#-])/;
+const TURBO_VALUED =
+  /^(?:-F|--filter|--concurrency|--cache-dir|--cwd|--env-mode|--log-order|--log-prefix|--output-logs|--heap|--profile|--anon-profile|--cache|--api|--team|--token|--login|--remote-cache-timeout|--root-turbo-json|--cache-workers|--global-deps|--env|--pass-through-env|--ui|--scope|--since|--ignore)$/;
+const TURBO_COMMANDS =
+  /^(?:prune|gen|generate|login|logout|link|unlink|daemon|ls|info|query|telemetry|bin|completion|docs|boundaries|scan|devtools|config|clean|help)$/;
+const NX_VALUED = /^(?:-c|--configuration|--base|--head|--files|--output-style|--runner|--parallel|--maxParallel|--max-parallel|--batch)$/;
+const NX_COMMANDS =
+  /^(?:g|generate|run-many|affected|graph|dep-graph|show|list|add|init|migrate|report|reset|repair|format|format:check|format:write|sync|sync:check|watch|exec|daemon|connect|connect-to-nx-cloud|login|logout|view-logs|import|print-affected|workspace-lint|mcp|configure-ai-agents|register|activate-powerpack|record|start-ci-run|fix-ci)$/;
+
+function turboTasks(args: string[]): string[] {
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    if (!arg.startsWith("-")) positional.push(arg);
+    else if (!arg.includes("=") && TURBO_VALUED.test(arg)) i++;
+  }
+  const [first, ...rest] = positional;
+  const tasks = first === "run" || first === "watch" ? rest : first === undefined || TURBO_COMMANDS.test(first) ? [] : positional;
+  return tasks.map((task) => task.slice(task.lastIndexOf("#") + 1));
+}
+
+function nxTargets(args: string[]): string[] {
+  const targets: string[] = [];
+  const positional: string[] = [];
+  // Until the next option: nx run-many -t build test -p web api.
+  const values = (i: number, into: string[]): number => {
+    while (args[i + 1] !== undefined && !(args[i + 1] as string).startsWith("-")) into.push(...(args[++i] as string).split(","));
+    return i;
+  };
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] as string;
+    const [option = "", inline] = arg.split(/=(.*)/s, 2);
+    if (/^(?:-t|--targets?)$/.test(option)) {
+      if (inline === undefined) i = values(i, targets);
+      else targets.push(...inline.split(","));
+    } else if (/^(?:-p|--projects?|--exclude)$/.test(option)) {
+      if (inline === undefined) i = values(i, []);
+    } else if (arg.startsWith("-")) {
+      if (inline === undefined && NX_VALUED.test(arg)) i++;
+    } else positional.push(arg);
+  }
+  // A target as nx names it: deploy, or web:deploy[:production].
+  const target = (spec: string): string => spec.split(":")[spec.includes(":") ? 1 : 0] ?? "";
+  const [first = "", second] = positional;
+  if (first === "release") return ["release"];
+  if (first === "run") return second === undefined ? [] : [target(second)];
+  if (first === "" || NX_COMMANDS.test(first)) return targets;
+  return [target(first)];
+}
+
+const RUNNER = new RegExp(String.raw`${START}${VIA}(turbo|nx)${AT}(?=\s|$)(.*)$`);
+export const runsDeployTask: Matcher = {
+  test(line: string): boolean {
+    const match = RUNNER.exec(line);
+    if (!match) return false;
+    const args = (match[2] ?? "").split(/\s+/).filter(Boolean);
+    const own = args.includes("--") ? args.slice(0, args.indexOf("--")) : args;
+    return (match[1] === "turbo" ? turboTasks(own) : nxTargets(own)).some((task) => TASK.test(task));
+  },
+};
 
 export const POLICIES: Policy[] = [
   {
@@ -60,6 +139,7 @@ export const POLICIES: Policy[] = [
       "pnpm -r run deploy",
       "yarn workspace web deploy",
       "turbo run deploy",
+      "nx run web:deploy",
       "sam deploy",
       "/bin/bash -c 'vercel deploy'",
     ],
@@ -77,9 +157,9 @@ export const POLICIES: Policy[] = [
       sub("expo", "publish"),
       sub("cdk", "deploy|destroy"),
       sub("sam", "deploy|delete|sync"),
-      anywhere(String.raw`${START}(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:deploy|release|publish|ship)[\w:-]*${END}`),
-      // A monorepo's task runner running a deploy task: turbo run deploy, turbo run web#deploy, nx run app:deploy.
-      anywhere(String.raw`${START}${VIA}(?:turbo|nx)\s+(?:\S+\s+)*?(?:[\w@/.-]+[#:])?(?:deploy|release|publish|ship)[\w:-]*${END}`),
+      // A package script named for one, ending there or at a separator: deploy, deploy:prod, release-notes; not shipping.
+      anywhere(String.raw`${START}(?:pnpm|npm|yarn|bun)\s+(?:run\s+)?(?:deploy|release|publish|ship)(?:[:#-][\w:#-]*)?${END}`),
+      runsDeployTask,
     ],
   },
   {
@@ -113,12 +193,12 @@ export const POLICIES: Policy[] = [
         "supabase",
         "link|unlink|projects|secrets|branches|orgs|functions\\s+deploy|db\\s+(?:push|pull|dump)|config\\s+push|migration\\s+repair|storage"
       ),
-      anywhere(String.raw`(?:^|\s)--(?:project-ref|linked)(?=$|[\s=])`),
+      anywhere(String.raw`(?:^|\s)--linked(?=$|[\s=])`),
       sub("prisma", "migrate\\s+deploy|db\\s+push"),
       sub("drizzle-kit", "push"),
       word("pscale|neonctl|turso|atlas|planetscale"),
-      anywhere(String.raw`\bmongodb\+srv://`),
     ],
+    text: [anywhere(String.raw`(?:^|\s)--project-ref(?=$|[\s=])`), anywhere(String.raw`\bmongodb\+srv://`)],
   },
   {
     id: "publish",
@@ -170,8 +250,8 @@ export const POLICIES: Policy[] = [
     default: "deny",
     summary: "messaging people from the shell (mail, Slack/Discord webhooks, SMS and email APIs)",
     reason: "the team messages nobody but the operator, and only the planner does, with its email tool.",
-    rules: [
-      word("sendmail|mail|mailx|mutt|msmtp|swaks"),
+    rules: [word("sendmail|mail|mailx|mutt|msmtp|swaks")],
+    text: [
       anywhere(
         String.raw`\b(?:hooks\.slack\.com|slack\.com/api|discord(?:app)?\.com/api/webhooks|api\.telegram\.org|api\.twilio\.com|api\.sendgrid\.com|api\.postmarkapp\.com|api\.resend\.com|api\.mailgun\.net)`
       ),
@@ -179,11 +259,12 @@ export const POLICIES: Policy[] = [
   },
   {
     id: "payments",
-    examples: ["stripe charges create --amount 100"],
+    examples: ["stripe charges create --amount 100", "echo 'STRIPE_SECRET_KEY=sk_live_abc123' >> /tmp/e9g-check.txt"],
     default: "deny",
     summary: "payments: the Stripe CLI and live payment keys",
     reason: `nothing the team does moves money. ${ASK}`,
-    rules: [word("stripe"), anywhere(String.raw`\b[rs]k_live_[A-Za-z0-9]`)],
+    rules: [word("stripe")],
+    text: [anywhere(String.raw`\b[rs]k_live_[A-Za-z0-9]`)],
   },
   {
     id: "dependencies",
@@ -206,9 +287,23 @@ export const OPERATOR_COMMANDS = new RegExp(
   `${START}e9g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|rotate|stop|unregister)${END}`
 );
 
+// An env file named in a command it reads or writes. Not in what only lists names (ls -la .env*), and not in what
+// keeps files out (--exclude=.env*, rg -g '!.env*', git's ':!.env').
+const ENV_FILE = /(^|['"=/<])\.env(?!(?:\.[\w-]+)*\.(?:example|sample|template)(?=$|['";|&)>]))(\.[A-Za-z0-9_.-]+)?(?=$|['";|&)>])/;
+const namesEnvFile: Matcher = {
+  test(line: string): boolean {
+    const words = line.split(/\s+/).filter(Boolean);
+    return !NAMES_ONLY.test(basename(words[0] ?? "")) && withoutExcludes(words).some((word) => ENV_FILE.test(word));
+  },
+};
+
 // Never unlocked.
-export const CORE: [RegExp, string][] = [
-  [/\bgit\s+push\b[^;&|]*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S|\s--mirror\b|\s--delete\b|\s-d\b)/, "no force pushes, mirrors or remote deletes."],
+export const CORE: [Matcher, string][] = [
+  // git takes an unambiguous start of an option for the whole of it (--mir is --mirror, --del is --delete).
+  [
+    /\bgit\s+push\b[^;&|]*(\s--force(-with-lease)?\b|\s-f\b|\s\+\S|\s--mi(r(r(or?)?)?)?\b|\s--de(l(e(te?)?)?)?\b|\s-d\b)/,
+    "no force pushes, mirrors or remote deletes.",
+  ],
   [/\bgit\s+(filter-branch|filter-repo|replace)\b|\bgit\s+config\s+--(global|system)\b/, "that rewrites history or changes git for everyone."],
   [
     word("launchctl|crontab|t3|sudo|osascript|shutdown|reboot|systemctl"),
@@ -217,10 +312,7 @@ export const CORE: [RegExp, string][] = [
   [/\bbrew\s+(install|uninstall|upgrade|services)\b|\bdefaults\s+write\b/, "the team doesn't change the machine."],
   [/\b(npm|pnpm|yarn|bun)\s+[^;&|]*\s(-g|--global)\b|\bpnpm\s+add\s+-g\b/, "the team installs nothing globally."],
   [/\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-[a-zA-Z]+\s+)*(\/|~|\$HOME|\/Users\/[^/\s]+)\/?(\s|$)/, "that would delete far too much."],
-  [
-    /(^|[\s'"=/<])\.env(?!(?:\.[\w-]+)*\.(?:example|sample|template)(?=$|[\s'";|&)>]))(\.[A-Za-z0-9_.-]+)?(?=$|[\s'";|&)>])/,
-    "env files hold secrets; agents never read or write them. The team's environment has what it needs.",
-  ],
+  [namesEnvFile, "env files hold secrets; agents never read or write them. The team's environment has what it needs."],
   [/\bsecurity\s+(find|dump|export)-|\bgh\s+auth\s+token\b|\.ssh\/id_|\baws\s+configure\s+get\b/, "credentials are never read by the team."],
   [OPERATOR_COMMANDS, "the operator runs the factory's own commands; the team uses merge, verdict, log, lock, gate, env, finish and pages."],
 ];
@@ -274,21 +366,23 @@ export function refusal(team: Team, command: string): CommandRule | null {
   return null;
 }
 
-// The first rule one command breaks. The factory's rules read it without its free text (a commit message that
-// mentions vercel deploy deploys nothing); a team's own rules read that text too, as they always have.
+// The first rule one command breaks. Most of the factory's rules read it without its free text (a commit message
+// that mentions vercel deploy deploys nothing); the rules for data that reaches outside (a live key) and a team's own
+// rules read that text too.
 export function brokenRule(rules: CommandRule[], command: ShellCommand): CommandRule | null {
   const plain = lines(command);
   const all = [...new Set([...plain, ...lines(command, { withText: true })])];
-  return rules.find((rule) => (rule.source === "team" ? all : plain).some((line) => rule.rule.test(line))) ?? null;
+  return rules.find((rule) => (rule.text ? all : plain).some((line) => rule.rule.test(line))) ?? null;
 }
 
 // Every command rule in force for a team: core, the policies it denies, and its own `never` list.
 export function commandRules(team: Team): CommandRule[] {
-  const rules: CommandRule[] = CORE.map(([rule, reason]) => ({ rule, reason, source: "core" }));
+  const rules: CommandRule[] = CORE.map(([rule, reason]) => ({ rule, reason, source: "core", text: false }));
   for (const policy of policyStates(team)) {
     if (policy.state !== "deny") continue;
-    for (const rule of policy.rules) rules.push({ rule, reason: policy.reason, source: `policy ${policy.id}` });
+    for (const rule of policy.rules) rules.push({ rule, reason: policy.reason, source: `policy ${policy.id}`, text: false });
+    for (const rule of policy.text ?? []) rules.push({ rule, reason: policy.reason, source: `policy ${policy.id}`, text: true });
   }
-  for (const { rule, reason } of team.never) rules.push({ rule: new RegExp(rule), reason, source: "team" });
+  for (const { rule, reason } of team.never) rules.push({ rule: new RegExp(rule), reason, source: "team", text: true });
   return rules;
 }

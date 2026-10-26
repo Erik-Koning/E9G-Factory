@@ -17,6 +17,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { normalize, TEAM_NAME } from "../config.ts";
 import { detect, draftTeam } from "../detect.ts";
 import { FACTORY_ROOT, PACKAGE, versionDir } from "../paths.ts";
+import { operatorOnly } from "../session.ts";
 import * as t3 from "../t3.ts";
 import { die, git, gitOk, hash, parseArgs, text as optionText, which, writeJson } from "../util.ts";
 
@@ -40,6 +41,7 @@ export function teamName(folder: string): string {
 const shellWord = (text: string): string => (/^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replaceAll("'", "'\\''")}'`);
 
 export function init(argv: string[]): number {
+  operatorOnly("init");
   const { positional, options } = parseArgs(argv, { booleans: ["in-place", "no-interview"] });
   // Only the interview needs Claude Code; --no-interview writes the draft without it.
   if (!options["no-interview"] && !which("claude")) die("Claude Code (claude) isn't on PATH (or pass --no-interview to write the draft only)");

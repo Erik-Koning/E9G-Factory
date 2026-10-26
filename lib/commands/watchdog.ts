@@ -13,6 +13,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { acquireSlot } from "../lock.ts";
 import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
+import { operatorOnly } from "../session.ts";
 import * as t3 from "../t3.ts";
 import { die, which, writeFileAtomic } from "../util.ts";
 
@@ -364,9 +365,11 @@ export const watchdogLoaded = (): boolean => spawnSync("launchctl", ["print", `g
 export async function watchdog(argv: string[]): Promise<number> {
   switch (argv[0] ?? "run") {
     case "install":
+      operatorOnly("watchdog install");
       install();
       return 0;
     case "remove":
+      operatorOnly("watchdog remove");
       spawnSync("launchctl", ["bootout", `gui/${process.getuid?.()}/${LABEL}`], { stdio: "ignore" });
       rmSync(PLIST, { force: true });
       console.info("e9g: watchdog removed");

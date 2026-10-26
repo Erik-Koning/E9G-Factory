@@ -1,7 +1,8 @@
 // e9g check [<checkout>] [--run]: prove a team's setup before anything runs.
 // - the rules load (problems and warnings);
 // - the adapters exist, are executable, and (shell scripts) parse;
-// - the checkout is on the integration branch, and .e9g/ is committed there: members' worktrees are made from it;
+// - the checkout is on the integration branch, and .e9g/ is committed there, even where git ignores it: members'
+//   worktrees are made from it;
 // - the guard behaves as the rules say: a self-test generated from them (the factory's files, lanes, read-only
 //   roles, protected branches, owned commands, every policy's examples, the team's own never rules, email);
 // - each role's prompt compiles;
@@ -10,9 +11,9 @@
 //   finish command runs.
 // Ends with a plain summary of what the team may and may not do.
 import { spawn, spawnSync } from "node:child_process";
-import { accessSync, constants, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { instanceId, type Lane, type LoadedTeam, loadTeam, ROLES, type Team } from "../config.ts";
 import { FACTORY_ROOT, findHome, versionDir } from "../paths.ts";
 import { ALLOWED_EXAMPLES, policyStates } from "../policies.ts";
@@ -153,15 +154,40 @@ const executable = (path: string): boolean => {
   }
 };
 
-// The shell a script runs under, from its #! line (a .sh file without one runs under sh); null for anything else.
-const SHELLS = ["bash", "sh", "dash", "zsh", "ksh"];
-export function shellOf(path: string): string | null {
-  const first = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
-  const bang = /^#!\s*(\S+)(?:\s+(\S+))?/.exec(first);
-  if (!bang) return path.endsWith(".sh") ? "sh" : null;
-  const shell = basename(bang[1] ?? "") === "env" ? (bang[2] ?? "") : basename(bang[1] ?? "");
-  return SHELLS.includes(shell) ? shell : null;
+// The program a #! line runs, past env and its options (env -S bash -eu, env -i, env -u NAME, env VAR=x); null when
+// it doesn't name one.
+export function interpreterOf(line: string): string | null {
+  const words = (/^#!(.*)$/.exec(line)?.[1] ?? "").trim().split(/\s+/).filter(Boolean);
+  if (basename(words[0] ?? "") !== "env") return words[0] ? basename(words[0]) : null;
+  for (let i = 1; i < words.length; i++) {
+    let word = words[i] ?? "";
+    // Options that take the next word as their value.
+    if (/^-[uPC]$/.test(word)) {
+      i++;
+      continue;
+    }
+    // A value attached to -S or --split-string= is the program and its arguments.
+    const split = /^(?:-S|--split-string=)(.+)$/.exec(word);
+    if (split) word = split[1] ?? "";
+    else if (word.startsWith("-") || /^\w+=/.test(word)) continue;
+    return basename(word);
+  }
+  return null;
 }
+
+// The shell a script runs under, from its #! line (a .sh file without one runs under sh). null: not a shell script
+// (no #! line and not .sh, or another program such as node). undefined: a #! line that doesn't say which program.
+const SHELLS = ["bash", "sh", "dash", "zsh", "ksh"];
+export function shellOf(path: string): string | null | undefined {
+  const first = readFileSync(path, "utf8").split("\n", 1)[0] ?? "";
+  if (!first.startsWith("#!")) return path.endsWith(".sh") ? "sh" : null;
+  const program = interpreterOf(first);
+  if (program === null) return undefined;
+  return SHELLS.includes(program) ? program : null;
+}
+
+// What an editor or a merge leaves beside a file: gate.sh~, gate.sh.orig, #gate.sh#.
+const BACKUP = /(~|\.(bak|orig|rej|swp|swo|tmp))$|^#.*#$/;
 
 const gitRun = (home: string, ...args: string[]) => spawnSync("git", args, { cwd: home, encoding: "utf8" });
 
@@ -192,14 +218,29 @@ export async function check(argv: string[]): Promise<number> {
     else if (!executable(path)) line("FAIL", `${script} isn't executable (chmod +x ${script})`);
     else line("ok", `${script} exists and is executable`);
   }
-  // A script that doesn't parse fails on its first run, in the middle of a merge.
-  const adapters = existsSync(join(home, ".e9g", "adapters")) ? readdirSync(join(home, ".e9g", "adapters")).map((name) => `.e9g/adapters/${name}`) : [];
-  const files = [...new Set([...scripts, ...adapters].map((path) => path.replace(/^\.\//, "")))].filter(
-    (path) => !path.startsWith("/") && !path.startsWith("../") && existsSync(join(home, path)) && statSync(join(home, path)).isFile()
+  // A script that doesn't parse fails on its first run, in the middle of a merge. The scripts team.json names, and the
+  // shell scripts in .e9g/adapters/; not what else is there: a .DS_Store, an editor's backup, a node script.
+  const isFile = (path: string) => existsSync(join(home, path)) && statSync(join(home, path)).isFile();
+  const named = [...new Set(scripts.map((path) => path.replace(/^\.\//, "")))].filter(
+    (path) => !path.startsWith("/") && !path.startsWith("../") && isFile(path)
   );
+  const adapters: string[] = [];
+  for (const name of existsSync(join(home, ".e9g", "adapters")) ? readdirSync(join(home, ".e9g", "adapters")).sort() : []) {
+    const path = `.e9g/adapters/${name}`;
+    if (name.startsWith(".") || named.includes(path) || !isFile(path)) continue;
+    if (BACKUP.test(name)) {
+      if (gitRun(home, "check-ignore", "-q", "--", path).status !== 0)
+        line("warn", `${path} looks like an editor's backup: check skips it, and git add .e9g would commit it (delete it)`);
+    } else if (shellOf(join(home, path)) !== null) adapters.push(path);
+  }
+  const files = [...named, ...adapters];
   for (const script of files) {
     const path = join(home, script);
     const shell = shellOf(path);
+    if (shell === undefined) {
+      line("warn", `${script}: its #! line doesn't say which shell runs it, so it isn't checked (${readFileSync(path, "utf8").split("\n", 1)[0]})`);
+      continue;
+    }
     if (!shell) continue;
     const parsed = spawnSync(shell, ["-n", path], { encoding: "utf8" });
     if (parsed.error) line("warn", `${script}: couldn't run ${shell} -n to check it`);
@@ -212,7 +253,7 @@ export async function check(argv: string[]): Promise<number> {
   if (!team.factory) line("warn", `factory: no pin, so the team runs whichever E9G Factory version registers it (add "factory": "<version>")`);
   else if (!existsSync(versionDir(team.factory)))
     line("warn", `factory: the team pins ${team.factory}, which isn't installed here (e9g versions); register refuses until it is`);
-  committed(team, [".e9g/team.json", ".e9g/.gitignore", ...files], line);
+  committed(team, [".e9g/team.json", ".e9g/.gitignore", ...named], adapters, line);
 
   const run = mkdtempSync(join(tmpdir(), "e9g-check-"));
   const cases = guardCases(team);
@@ -246,8 +287,10 @@ export async function check(argv: string[]): Promise<number> {
 }
 
 // The team runs from its integration branch: the checkout stays on it, and members' worktrees are made from it, so
-// the rules and the adapters must be committed there, as they are in the checkout.
-function committed(team: Team, paths: string[], line: (level: Level, text: string) => void): void {
+// the rules and the adapters must be committed there, as they are in the checkout. required (team.json, its
+// .gitignore and the scripts team.json names) must be committed even when git ignores them; others (the adapters'
+// shell scripts) only when it doesn't.
+function committed(team: Team, required: string[], others: string[], line: (level: Level, text: string) => void): void {
   const home = team.home;
   if (gitRun(home, "rev-parse", "--verify", "--quiet", `refs/heads/${team.branch}`).status !== 0) {
     line("FAIL", `the integration branch ${team.branch} doesn't exist (git -C ${home} checkout -b ${team.branch} ${team.base})`);
@@ -257,27 +300,65 @@ function committed(team: Team, paths: string[], line: (level: Level, text: strin
   if (head !== team.branch)
     line("FAIL", `the team's checkout is on ${head || "a detached HEAD"}, not its integration branch ${team.branch} (git checkout ${team.branch})`);
   else line("ok", `the team's checkout is on ${team.branch}`);
-  // What git ignores isn't meant to be committed.
-  const ignored = new Set(gitRun(home, "check-ignore", "--", ...paths).stdout.split("\n"));
-  const inside = [...new Set(paths)].filter((path) => existsSync(join(home, path)) && !ignored.has(path));
+  // A link is committed as a link; what it points at, inside the checkout, must be committed too.
+  const root = realpathSync(home);
+  const withTargets = (paths: string[]): string[] => {
+    const found = [...new Set(paths)].filter((path) => existsSync(join(home, path)));
+    for (const path of [...found]) {
+      if (!lstatSync(join(home, path)).isSymbolicLink()) continue;
+      const target = relative(root, realpathSync(join(home, path)));
+      if (target && !target.startsWith("..") && !isAbsolute(target) && !found.includes(target)) found.push(target);
+    }
+    return found;
+  };
+  const must = withTargets(required);
+  const all = [...new Set([...must, ...withTargets(others)])];
+  // What git ignores (untracked and matched by an ignore rule), with the rule; -v lists a negated (!) rule too, which
+  // doesn't ignore.
+  const ignored = new Map<string, string>();
+  const listed = spawnSync("git", ["check-ignore", "--stdin", "-z", "-v"], {
+    cwd: home,
+    encoding: "utf8",
+    input: all.map((path) => `${path}\0`).join(""),
+  });
+  const fields = (listed.stdout ?? "").split("\0");
+  for (let i = 0; i + 3 < fields.length; i += 4) {
+    const [source = "", number, pattern, path] = fields.slice(i, i + 4);
+    const where = isAbsolute(source) && !relative(root, source).startsWith("..") ? relative(root, source) : source;
+    if (path && pattern && !pattern.startsWith("!")) ignored.set(path, `${where}:${number}: ${pattern}`);
+  }
+  // The rules and the scripts they name are the team: git ignoring them leaves members' worktrees without them.
+  const hidden = must.filter((path) => ignored.has(path));
+  for (const rule of new Set(hidden.map((path) => ignored.get(path)))) {
+    const paths = hidden.filter((path) => ignored.get(path) === rule);
+    const include = [...new Set(paths.map((path) => (path.startsWith(".e9g/") ? ".e9g/" : path)))].map((path) => `"!${path}"`).join(" and ");
+    line(
+      "FAIL",
+      `ignored by git (${rule}), so not committed on ${team.branch} and missing from members' worktrees: ${paths.join(", ")}. Add ${include} to .gitignore after that rule, or git add -f ${paths.join(" ")}`
+    );
+  }
+  // Whatever else git ignores isn't meant to be committed.
+  const inside = all.filter((path) => !ignored.has(path));
   const modes = new Map<string, string>();
   for (const entry of gitRun(home, "ls-tree", "-r", "-z", team.branch, "--", ...inside).stdout.split("\0")) {
     const match = /^(\d+) \w+ \w+\t(.+)$/s.exec(entry);
     if (match?.[1] && match[2]) modes.set(match[2], match[1]);
   }
   const missing = inside.filter((path) => !modes.has(path));
+  const add = [...new Set(missing.map((path) => (path.startsWith(".e9g/") ? ".e9g" : path)))].join(" ");
   if (missing.length)
     line(
       "FAIL",
-      `not committed on ${team.branch}: ${missing.join(", ")}. Members' worktrees are made from it: git add .e9g && git commit -m "E9G team: ${team.name}"`
+      `not committed on ${team.branch}: ${missing.join(", ")}. Members' worktrees are made from it: git add ${add} && git commit -m "E9G team: ${team.name}"`
     );
   for (const path of inside.filter((path) => modes.has(path))) {
-    if (executable(join(home, path)) && modes.get(path) !== "100755")
+    // A link (120000) has no executable bit of its own; its target is checked in its place.
+    if (modes.get(path) !== "120000" && executable(join(home, path)) && modes.get(path) !== "100755")
       line("FAIL", `${path} is committed without its executable bit (git add --chmod=+x ${path})`);
     else if (gitRun(home, "diff", "--quiet", team.branch, "--", path).status !== 0)
       line("warn", `${path} has changes not committed on ${team.branch}; members' worktrees get the committed copy`);
   }
-  if (!missing.length) line("ok", `the rules and adapters are committed on ${team.branch}`);
+  if (!missing.length && !hidden.length) line("ok", `the rules and adapters are committed on ${team.branch}`);
 }
 
 async function live(team: LoadedTeam, line: (level: Level, text: string) => void): Promise<void> {

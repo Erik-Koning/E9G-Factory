@@ -84,7 +84,13 @@ export function guardCases(team: Team): GuardCase[] {
   for (const policy of policyStates(team))
     for (const example of policy.examples)
       bash(builder, example, policy.state === "deny" ? "refuse" : "allow", `policy ${policy.id} (${policy.state}): ${example}`);
-  for (const example of ALLOWED_EXAMPLES) bash(builder, example, "allow", `ordinary work: ${example}`);
+  // Ordinary work, unless the team's own rules keep this role from it (a team may narrow e2e runs to its testers).
+  const narrowed = (command: string) =>
+    team.never.some(({ rule }) => new RegExp(rule).test(command)) ||
+    team.commandOwners.some(({ rule, roles }) => new RegExp(rule).test(command) && !roles.includes(builder));
+  for (const example of ALLOWED_EXAMPLES)
+    if (narrowed(example)) bash(builder, example, "refuse", `ordinary work the team's own rules narrow: ${example}`);
+    else bash(builder, example, "allow", `ordinary work: ${example}`);
   for (const rule of team.never) if (rule.example) bash(builder, rule.example, "refuse", `the team's rule: ${rule.reason}`);
   add(
     "planner",

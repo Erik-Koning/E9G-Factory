@@ -551,3 +551,14 @@ describe("what the planner sends is labelled E9G-Planner", () => {
     assert.doesNotMatch(compile(team, "builder"), /E9G-Planner/);
   });
 });
+
+describe("e9g check's self-test", () => {
+  test("ordinary work that the team's own rules narrow is expected to be refused, not allowed", () => {
+    const team = loadTeam(
+      makeRepo(baseTeam({ commandOwners: [{ rule: "\\bplaywright\\s+test\\b", roles: ["planner", "tester"], reason: "testers run e2e" }] }))
+    );
+    const playwright = guardCases(team).find((c) => c.tool === "Bash" && /playwright test/.test(String(c.input["command"])));
+    assert.equal(playwright?.expect, "refuse");
+    assert.match(playwright?.why ?? "", /narrow/);
+  });
+});

@@ -4,7 +4,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadTeam } from "../config.ts";
+import { loadTeam, TeamError } from "../config.ts";
 import { E9G_HOME, entryOf, type FactoryPackage, PACKAGE, readRegistry, versionDir } from "../paths.ts";
 import { promptFile, promptStale } from "../prompts.ts";
 import * as t3 from "../t3.ts";
@@ -16,9 +16,11 @@ const version = (command: string, args = ["--version"]): string | null =>
   /(\d+\.\d+\.\d+)/.exec(spawnSync(command, args, { encoding: "utf8" }).stdout ?? "")?.[1] ?? null;
 
 const SOURCES = /sources ([0-9a-f]{16}) -->/;
-// A prompt's sources hash includes the factory version that compiled it, so a team pinned to another version is
-// judged by that version's own code: its e9g prompt, compiled now, against the registered copy.
-function pinnedStale(pin: string, name: string, run: string, roles: string[]): string[] | null {
+// A team pinned to another version is judged by that version's own code: its e9g prompt loads the rules with its
+// loader (which may read what this one refuses, or the other way round) and compiles each prompt now, to compare with
+// the registered copy (a prompt's sources hash includes the version that compiled it). stale is null when that version
+// writes no sources hash to compare; error is what its e9g prompt said when it failed.
+function pinnedStale(pin: string, name: string, run: string, roles: string[]): { stale: string[] | null } | { error: string } {
   const root = versionDir(pin);
   const stale: string[] = [];
   for (const role of roles) {
@@ -27,12 +29,14 @@ function pinnedStale(pin: string, name: string, run: string, roles: string[]): s
       timeout: 60_000,
       env: { ...process.env, E9G_HANDED_OVER: "1", NODE_COMPILE_CACHE: join(root, ".cache"), E9G_NODE_CACHE: "1" },
     });
+    if (compiled.status !== 0)
+      return { error: `${compiled.stderr ?? ""}`.trim().split("\n").slice(0, 3).join(" ") || `e9g prompt ${name} ${role} exited ${compiled.status}` };
     const now = SOURCES.exec(compiled.stdout ?? "")?.[1];
-    if (!now) return null;
+    if (!now) return { stale: null };
     const file = promptFile(run, role);
     if (SOURCES.exec(existsSync(file) ? readFileSync(file, "utf8").slice(0, 400) : "")?.[1] !== now) stale.push(role);
   }
-  return stale;
+  return { stale };
 }
 
 export async function doctor(): Promise<number> {
@@ -58,7 +62,15 @@ export async function doctor(): Promise<number> {
     ? ok(`T3 Code's server answers at ${t3.serverUrl()}`)
     : fail(`T3 Code's server doesn't answer at ${t3.serverUrl()} (t3 service restart)`);
   // The factory no longer turns this on for you: it's a setting of the whole of T3 Code.
-  if (existsSync(t3.SETTINGS) && t3.readSettings().autoResumeLimitedThreads !== true)
+  let settings: t3.T3Settings | null = null;
+  try {
+    if (existsSync(t3.SETTINGS)) settings = t3.readSettings();
+  } catch (error) {
+    warn(
+      `T3 Code's settings (${t3.SETTINGS}) can't be read: ${(error as Error).message}. e9g register can't write them until T3 Code or you fix the file`
+    );
+  }
+  if (settings && settings.autoResumeLimitedThreads !== true)
     warn("T3 Code doesn't resume threads that hit a usage limit (autoResumeLimitedThreads), so a team stops at a limit until you resume it");
 
   // Agents run `e9g …`, so T3 Code's service must have the launcher's folder on its PATH.
@@ -100,22 +112,35 @@ export async function doctor(): Promise<number> {
   if (freeGb !== null) (freeGb >= 20 ? ok : warn)(`${freeGb} GB free (each member's worktree holds a copy of dependencies and build output)`);
 
   for (const name of teamNames()) {
-    const entry = readRegistry(name);
-    if (!entry) continue;
     try {
-      const team = loadTeam(entry.home);
-      if (team.environment.needsDocker && spawnSync("docker", ["info"], { stdio: "ignore" }).status !== 0)
-        warn(`${name}: needs Docker, which isn't running`);
+      const entry = readRegistry(name);
+      if (!entry) continue;
+      // Whether the rules load is the pinned version's to say (below); this version's loader only reads the pin.
+      const team = loadTeam(entry.home, { strict: false });
       // Its agents run the registered version; e9g register would compile with the pinned one.
       const pin = team.factory ?? PACKAGE.version;
+      if (pin === PACKAGE.version && team.problems.length) throw new TeamError(team.file, team.problems);
+      if (team.environment.needsDocker && spawnSync("docker", ["info"], { stdio: "ignore" }).status !== 0)
+        warn(`${name}: needs Docker, which isn't running`);
       if (!existsSync(versionDir(entry.version))) fail(`${name}: its agents run E9G Factory ${entry.version}, which isn't installed`);
       if (pin !== entry.version) warn(`${name}: pins E9G Factory ${pin} but is registered with ${entry.version} (e9g register ${entry.home})`);
-      const roles = Object.keys(team.roles);
       if (pin !== PACKAGE.version && !existsSync(versionDir(pin))) {
         fail(`${name}: pins E9G Factory ${pin}, which isn't installed`);
         continue;
       }
-      const stale = pin === PACKAGE.version ? roles.filter((role) => promptStale(team, role, entry.run)) : pinnedStale(pin, name, entry.run, roles);
+      let stale: string[] | null;
+      if (pin === PACKAGE.version) stale = Object.keys(team.roles).filter((role) => promptStale(team, role, entry.run));
+      else {
+        // The roles as written: the pinned version may have one this version doesn't.
+        const written: unknown = team.raw?.roles;
+        const roles = written && typeof written === "object" && !Array.isArray(written) ? Object.keys(written) : Object.keys(team.roles);
+        const judged = pinnedStale(pin, name, entry.run, roles);
+        if ("error" in judged) {
+          fail(`${name}: E9G Factory ${pin}, which it pins, can't load its rules or compile its prompts: ${judged.error}`);
+          continue;
+        }
+        stale = judged.stale;
+      }
       if (stale === null) warn(`${name}: rules load; its prompts are ${pin}'s, which doctor couldn't compile to compare (e9g prompt ${name} <role>)`);
       else if (stale.length) warn(`${name}: prompts out of date for ${stale.join(", ")} (e9g register ${entry.home})`);
       else ok(`${name}: rules load, prompts current${pin === PACKAGE.version ? "" : ` (judged by ${pin})`}`);

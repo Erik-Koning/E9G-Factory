@@ -1,12 +1,12 @@
 // Regressions from the audit of setup and distribution: installing and pinning releases, e9g init and its drafts,
 // doctor, check, pages, metrics, team.json and its schema, and the docs. Each test names the finding it holds.
 //
-// Anything that installs, runs the launcher or runs doctor does it on a machine of its own (machine() below): HOME,
-// E9G_HOME and T3CODE_HOME in a temporary folder, and a PATH whose t3, launchctl, claude and gh are stand-ins.
-import { baseTeam, commit, e9g, git, makeRepo, ROOT, tmp, write } from "./helpers.ts";
+// Anything that installs, runs the launcher or runs doctor does it on a machine of its own (machine() in helpers.ts):
+// HOME, E9G_HOME and T3CODE_HOME in a temporary folder, and a PATH whose t3, launchctl, claude and gh are stand-ins.
+import { baseTeam, commit, e9g, git, gitRepo, machine, makeRepo, ROOT, sourceCopy, tmp, write } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { describe, test } from "node:test";
 import { teamName } from "../lib/commands/init.ts";
@@ -31,65 +31,6 @@ function run(command: string[], { cwd, env = {} }: { cwd?: string; env?: NodeJS.
   });
 }
 const node = (entry: string, args: string[], options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) => run([process.execPath, entry, ...args], options);
-
-// A machine of its own. Its PATH has the system's tools and stand-ins for the ones that reach T3 Code, launchd,
-// Claude Code and GitHub; node is there under a name of its own (like Homebrew's /opt/homebrew/bin/node).
-function machine({ e9gHome }: { e9gHome?: string } = {}) {
-  const root = tmp("e9g-machine-");
-  const home = join(root, "home");
-  const bin = join(root, "bin");
-  mkdirSync(home, { recursive: true });
-  mkdirSync(bin);
-  const stub = (name: string, script: string) => {
-    writeFileSync(join(bin, name), `#!/bin/sh\n${script}\n`);
-    chmodSync(join(bin, name), 0o755);
-  };
-  stub("t3", 'case "$1 $2" in "--version "*) echo 0.1.5 ;; "thread --help") echo "start send show" ;; *) exit 1 ;; esac');
-  stub("launchctl", "exit 1");
-  stub("claude", 'echo "2.1.300 (Claude Code)"');
-  stub("gh", "exit 1");
-  symlinkSync(process.execPath, join(bin, "node"));
-  const env: NodeJS.ProcessEnv = {
-    HOME: home,
-    E9G_HOME: e9gHome ?? join(home, ".e9g"),
-    T3CODE_HOME: join(home, ".t3"),
-    PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
-  };
-  return { root, home, bin, env, e9gHome: env.E9G_HOME as string, launcher: join(home, ".local", "bin", "e9g") };
-}
-
-// A clone of this checkout (its files as they are now), optionally as another version, to install from.
-function sourceCopy(version?: string): string {
-  const dir = join(tmp("e9g-source-"), "E9G-Factory");
-  for (const file of git(ROOT, "ls-files", "-co", "--exclude-standard").split("\n").filter(Boolean)) {
-    const from = join(ROOT, file);
-    if (!existsSync(from) || !lstatSync(from).isFile()) continue;
-    mkdirSync(dirname(join(dir, file)), { recursive: true });
-    cpSync(from, join(dir, file));
-  }
-  // As in a worktree whose dependencies are linked in: a symlink self-install must skip.
-  symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"));
-  if (version)
-    for (const file of ["package.json", "plugin/.claude-plugin/plugin.json"]) {
-      const json = JSON.parse(readFileSync(join(dir, file), "utf8")) as { version: string };
-      json.version = version;
-      writeFileSync(join(dir, file), `${JSON.stringify(json, null, 2)}\n`);
-    }
-  gitRepo(dir);
-  return dir;
-}
-
-// A repository with one commit on main, and an identity of its own (a test HOME has no ~/.gitconfig).
-function gitRepo(dir: string, files: Record<string, unknown> = {}): string {
-  write(dir, files);
-  git(dir, "init", "-q", "-b", "main");
-  git(dir, "config", "user.email", "test@example.com");
-  git(dir, "config", "user.name", "Test");
-  git(dir, "config", "commit.gpgsign", "false");
-  git(dir, "add", "-A");
-  git(dir, "commit", "-qm", "init");
-  return dir;
-}
 
 const plist = (m: ReturnType<typeof machine>, path: string | null) => {
   const file = join(m.home, "Library", "LaunchAgents", "com.t3tools.t3code.service.plist");
@@ -402,12 +343,15 @@ describe("pages and metrics", { concurrency: true }, () => {
     );
     assert.match(problemsOf({ pages: { list: [{ id: "a", path: "/" }], schemes: ["sepia"] } }), /pages\.schemes\[0\]/);
     assert.match(problemsOf({ pages: { list: [{ id: "a", path: "/" }], viewports: [] } }), /pages\.viewports/);
-    assert.match(problemsOf({ pages: { list: [{ id: "a", path: "/" }], extra: 1 } }), /pages\.extra: no such setting/);
+    assert.match(norm({ pages: { list: [{ id: "a", path: "/" }], extra: 1 } }).warnings.join("\n"), /unknown key "pages\.extra"/);
     assert.deepEqual(norm({ finish: "e9g pages done", pages: { list: [{ id: "landing", path: "/", title: "Landing" }] } }).problems, []);
+    // These teams don't load, so pages done never runs; the pages command's own refusal, for a team that loads, is in
+    // review-setup.test.ts (#10 of that review).
     for (const pages of [undefined, {}, { list: [] }]) {
       const home = makeRepo(baseTeam({ finish: "e9g pages done", ...(pages ? { pages } : {}) }));
       const done = await e9g(["pages", "done"], planner(home));
       assert.notEqual(done.code, 0, `pages ${JSON.stringify(pages)}: ${done.out}`);
+      assert.match(done.out, /team\.json:\n {2}- pages(\.list)?: /, `pages ${JSON.stringify(pages)}: refused as rules that don't load`);
     }
   });
 
@@ -478,7 +422,6 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       [{ docs: ".e9g/brief.md" }, /docs: a list/],
       [{ never: [{ reason: "r" }] }, /never\[0\]\.rule: a regular expression/],
       [{ never: [{ rule: "", reason: "r" }] }, /never\[0\]\.rule/],
-      [{ roles: { planner: {}, reviewer: { worktree: true } } }, /roles\.reviewer\.worktree: no such setting/],
       [{ roles: { planner: {}, builder: { limit: -1 } } }, /roles\.builder\.limit/],
       [{ roles: "planner" }, /roles: an object/],
       [{ watchdog: { tickEvery: "soon" } }, /watchdog\.tickEvery: a duration/],
@@ -490,7 +433,7 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       [{ commandOwners: [{ rule: "x", roles: "planner" }] }, /commandOwners\[0\]\.roles: a list/],
       [{ commandOwners: [{ rule: "x", roles: ["ux"] }] }, /commandOwners\[0\]\.roles\[0\]: a role/],
       [{ legacyInstances: { old: 5 } }, /legacyInstances\.old: a role/],
-      [{ vars: { A: 1 } }, /vars\.A: text/],
+      [{ vars: { A: [1] } }, /vars\.A: text/],
       [{ vars: { E9G_ROLE: "planner" } }, /vars\.E9G_ROLE: a variable name/],
       [{ vars: { CLAUDE_CONFIG_DIR: "/tmp" } }, /vars\.CLAUDE_CONFIG_DIR/],
       [{ factory: "../../elsewhere" }, /factory:/],
@@ -507,6 +450,7 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       assert.match(result, problem, JSON.stringify(raw));
     }
     assert.deepEqual(norm({ board: { github: {} } }).team.board, { type: "github", label: "e9g" }, "the label the docs name");
+    assert.match(norm({ roles: { planner: {}, reviewer: { worktree: true } } }).warnings.join("\n"), /unknown key "roles\.reviewer\.worktree"/);
     assert.deepEqual(normalize(null as unknown as RawTeam, "").problems.slice(0, 1), ["team.json: an object with the team's settings"]);
   });
 
@@ -549,6 +493,12 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       { ...base, isolation: "user", watchdog: { tickEvery: "1.5h", stuckAfter: 0 } },
       { ...base, factory: "dev" },
       { ...base, factory: "0.3.0" },
+      { ...base, title: "" },
+      { ...base, watchdog: { tickEvery: " 5m" } },
+      { ...base, push: false },
+      { ...base, finish: "" },
+      { ...base, vars: { A: 1 } },
+      { ...base, vars: { CLAUDE_X: "y" } },
     ];
     const rejected: Record<string, unknown>[] = [
       { name: "t" },
@@ -557,16 +507,13 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       { ...base, name: "Bad" },
       { ...base, branch: "" },
       { ...base, owner: "a@b" },
-      { ...base, title: "" },
       { ...base, model: "" },
       { ...base, factory: "../x" },
       { ...base, gate: { full: "x", concurrency: 0 } },
-      { ...base, gate: { fast: "x" } },
       { ...base, polishRounds: -1 },
       { ...base, roles: { planner: {}, builder: { limit: -1 } } },
       { ...base, roles: { planner: {}, builder: { limit: 1.5 } } },
       { ...base, roles: { planner: { compactAt: 0 } } },
-      { ...base, roles: { planner: {}, reviewer: { worktree: true } } },
       { ...base, roles: { planner: {}, wizard: {} } },
       { ...base, roles: { builder: {} } },
       { ...base, roles: "x" },
@@ -585,20 +532,15 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       { ...base, never: [{ rule: "", reason: "r" }] },
       { ...base, never: [{ rule: "(", reason: "r" }] },
       { ...base, never: [{ rule: "x" }] },
-      { ...base, never: [{ rule: "x", reason: "r", extra: 1 }] },
       { ...base, never: [["x"]] },
       { ...base, never: [["x", "r", "e"]] },
       { ...base, never: [["(", "r"]] },
       { ...base, watchdog: { tickEvery: "soon" } },
       { ...base, watchdog: { tickEvery: "" } },
-      { ...base, watchdog: { tickEvery: " 5m" } },
       { ...base, watchdog: { tickEvery: -5 } },
-      { ...base, watchdog: { every: "5m" } },
       { ...base, push: { every: "6 hours" } },
-      { ...base, push: false },
       { ...base, push: { remote: "" } },
       { ...base, context: [{ title: "x" }] },
-      { ...base, context: [{ title: "x", command: "y", extra: 1 }] },
       { ...base, context: [["x"]] },
       { ...base, commandOwners: [{ rule: "x", roles: "planner" }] },
       { ...base, commandOwners: [{ rule: "x", roles: ["wizard"] }] },
@@ -608,15 +550,11 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       { ...base, board: "github" },
       { ...base, board: { github: { label: "" } } },
       { ...base, board: { gitlab: {} } },
-      { ...base, board: { github: {}, extra: 1 } },
-      { ...base, board: { github: { label: "x", color: "red" } } },
       { ...base, review: { required: ["wizard"] } },
       { ...base, review: { removedPattern: "(" } },
-      { ...base, review: { other: 1 } },
       { ...base, pages: {} },
       { ...base, pages: { list: [] } },
       { ...base, finish: "e9g pages done" },
-      { ...base, finish: "" },
       { ...base, pages: { list: [{ id: "a b", path: "/" }] } },
       { ...base, pages: { list: [{ id: "a", path: "x" }] } },
       { ...base, pages: { list: [{ id: "a" }] } },
@@ -628,11 +566,8 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       { ...base, pages: { list: [page], settleMs: -1 } },
       { ...base, pages: { list: [page], appUrl: "localhost:3000" } },
       { ...base, pages: { list: [page], ignoreConsole: ["("] } },
-      { ...base, pages: { list: [page], extra: 1 } },
       { ...base, isolation: "loose" },
-      { ...base, vars: { A: 1 } },
       { ...base, vars: { E9G_ROLE: "x" } },
-      { ...base, vars: { CLAUDE_X: "y" } },
       { ...base, vars: { "1A": "x" } },
       { ...base, legacyInstances: { x: "wizard" } },
       { ...base, protect: [1] },
@@ -656,14 +591,24 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
       assert.notDeepEqual(validate(raw), [], `the schema rejects ${JSON.stringify(raw)}`);
       assert.ok(!loads(raw), `normalize rejects ${JSON.stringify(raw)}`);
     }
-    // Where they differ, on purpose: a rule that needs two keys at once, which a schema can't say, and an unknown key,
-    // which normalize only warns about (an older factory reading a newer file keeps working).
+    // Where they differ, on purpose: a rule that needs two keys at once, which a schema can't say, and an unknown key at
+    // any level, which the schema flags for editors and normalize only warns about (a typo mustn't stop a running team,
+    // and an older factory reading a newer file keeps working).
     const differ: [Record<string, unknown>, boolean, boolean][] = [
       [{ ...base, branch: "main" }, true, false],
       [{ ...base, branch: "next", protectedBranches: ["next"] }, true, false],
       [{ ...base, push: { branch: "main" } }, true, false],
       [{ ...base, pages: { list: [page, page] } }, true, false],
       [{ ...base, flavour: 1 }, false, true],
+      [{ ...base, gate: { fast: "x" } }, false, true],
+      [{ ...base, roles: { planner: {}, reviewer: { worktree: true } } }, false, true],
+      [{ ...base, never: [{ rule: "x", reason: "r", extra: 1 }] }, false, true],
+      [{ ...base, watchdog: { every: "5m" } }, false, true],
+      [{ ...base, context: [{ title: "x", command: "y", extra: 1 }] }, false, true],
+      [{ ...base, board: { github: {}, extra: 1 } }, false, true],
+      [{ ...base, board: { github: { label: "x", color: "red" } } }, false, true],
+      [{ ...base, review: { other: 1 } }, false, true],
+      [{ ...base, pages: { list: [page], extra: 1 } }, false, true],
     ];
     for (const [raw, schemaAccepts, normalizeAccepts] of differ) {
       assert.equal(!validate(raw).length, schemaAccepts, `schema: ${JSON.stringify(raw)}`);
@@ -674,13 +619,20 @@ describe("team.json: what normalize checks", { concurrency: true }, () => {
 });
 
 describe("the public repository (#19)", () => {
-  test("no traces of the projects the factory was first used on", () => {
-    const files = git(ROOT, "ls-files", "examples", "docs", "templates", "README.md", "CONSTITUTION.md", "schema", "plugin/agents")
+  // The traces, in base64, so that this file, which the test reads too, doesn't name them.
+  const traces = new RegExp(
+    Buffer.from("XGIoOTEwMXw5MjAxfDU1MzIxKVxifENIRUNLT1VUX1BVUkNIQVNFU3xkYjptaWdyYXRlfGdpdmVuZXR8cmlkZW5ldHxDb21tdW5pdHlTdXBwb3J0", "base64").toString(),
+    "i"
+  );
+  test("no traces of the projects the factory was first used on, tests included", () => {
+    assert.match("app-" + "ride" + "net", traces, "the pattern still finds them");
+    const files = git(ROOT, "ls-files", "examples", "docs", "templates", "README.md", "CONSTITUTION.md", "schema", "plugin/agents", "test")
       .split("\n")
       .filter(Boolean);
+    assert.ok(files.includes("test/audit-setup.test.ts"));
     for (const file of files) {
       const text = readFileSync(join(ROOT, file), "utf8");
-      assert.doesNotMatch(text, /\b(9101|9201|55321)\b|CHECKOUT_PURCHASES|db:migrate|givenet|ridenet|CommunitySupport/i, file);
+      assert.doesNotMatch(text, traces, file);
     }
   });
 });

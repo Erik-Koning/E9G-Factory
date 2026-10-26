@@ -2,17 +2,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
   "title": "E9G Factory team",
-  "description": "A team's rules: .e9g/team.json. docs/team.md explains every key; lib/config.ts is what enforces them, and a test keeps the two in step.",
+  "description": "A team's rules: .e9g/team.json. docs/team.md explains every key; lib/config.ts is what enforces them, and a test keeps the two in step. An unknown key is flagged here, but the loader only warns about it and ignores it.",
   "type": "object",
   "required": ["name", "branch"],
   "additionalProperties": false,
   "$defs": {
     "text": { "type": "string", "minLength": 1 },
-    "textOrNull": { "type": ["string", "null"], "minLength": 1 },
+    "textOrNull": { "type": ["string", "null"], "description": "null or \"\" for none." },
     "regex": { "type": "string", "minLength": 1, "format": "regex", "description": "A JavaScript regular expression." },
     "duration": {
       "type": ["string", "number"],
-      "pattern": "^\\d+(\\.\\d+)?\\s*(m|min|h|d)?$",
+      "pattern": "^\\s*\\d+(\\.\\d+)?\\s*(m|min|h|d)?\\s*$",
       "minimum": 0,
       "description": "45m, 6h, 2d, or minutes."
     },
@@ -62,7 +62,7 @@
   "properties": {
     "$schema": { "$ref": "#/$defs/text" },
     "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,30}$" },
-    "title": { "$ref": "#/$defs/text" },
+    "title": { "type": "string", "description": "Shown in T3 Code, emails and prompts; the name when left out or \"\"." },
     "owner": { "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", "description": "The operator's email address." },
     "factory": {
       "type": "string",
@@ -73,8 +73,10 @@
     "base": { "$ref": "#/$defs/text" },
     "protectedBranches": { "type": "array", "items": { "$ref": "#/$defs/text" } },
     "push": {
+      "description": "null or false: nothing leaves the machine.",
       "oneOf": [
         { "type": "null" },
+        { "const": false },
         {
           "type": "object",
           "additionalProperties": false,
@@ -126,8 +128,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "full": { "$ref": "#/$defs/text" },
-        "quick": { "$ref": "#/$defs/text" },
+        "full": { "$ref": "#/$defs/textOrNull" },
+        "quick": { "type": ["string", "null"], "description": "null or left out: the full gate. \"\": none." },
         "concurrency": { "type": "integer", "minimum": 1 }
       }
     },
@@ -142,8 +144,8 @@
     },
     "vars": {
       "type": "object",
-      "propertyNames": { "pattern": "^(?!E9G_|CLAUDE_)[A-Za-z_][A-Za-z0-9_]*$" },
-      "additionalProperties": { "type": "string" }
+      "propertyNames": { "pattern": "^(?!E9G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)[A-Za-z_][A-Za-z0-9_]*$" },
+      "additionalProperties": { "type": ["string", "number", "boolean"], "description": "Passed as text; a number or true/false is turned into text." }
     },
     "afterMerge": { "$ref": "#/$defs/textOrNull" },
     "finish": { "$ref": "#/$defs/textOrNull" },
@@ -178,7 +180,11 @@
             "type": "object",
             "required": ["rule", "reason"],
             "additionalProperties": false,
-            "properties": { "rule": { "$ref": "#/$defs/regex" }, "reason": { "$ref": "#/$defs/text" }, "example": { "$ref": "#/$defs/text" } }
+            "properties": {
+              "rule": { "$ref": "#/$defs/regex" },
+              "reason": { "$ref": "#/$defs/text" },
+              "example": { "type": ["string", "null"], "description": "A command the rule must refuse; null or \"\" for none." }
+            }
           },
           { "type": "array", "prefixItems": [{ "$ref": "#/$defs/regex" }, { "$ref": "#/$defs/text" }], "minItems": 2, "maxItems": 2 }
         ]
@@ -237,7 +243,7 @@
     "protect": { "type": "array", "items": { "$ref": "#/$defs/regex" } },
     "isolation": { "enum": ["strict", "user"] },
     "startPrompt": { "$ref": "#/$defs/textOrNull" },
-    "t3ProjectId": { "$ref": "#/$defs/text" },
+    "t3ProjectId": { "type": ["string", "null"], "minLength": 1, "description": "null until register assigns one." },
     "legacyInstances": { "type": "object", "additionalProperties": { "$ref": "#/$defs/roleName" } }
   },
   "if": { "required": ["finish"], "properties": { "finish": { "type": "string", "pattern": "\\be9g\\s+pages\\s+done\\b" } } },

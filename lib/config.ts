@@ -69,15 +69,15 @@ export interface RawTeam {
   branch?: string;
   base?: string;
   protectedBranches?: string[];
-  push?: { remote?: string; branch?: string; every?: string | number } | null;
+  push?: { remote?: string; branch?: string; every?: string | number } | null | false;
   board?: "files" | { github?: { label?: string } };
   branchPrefix?: string;
   model?: string;
   roles?: Record<string, RoleSettings>;
   review?: { required?: string[]; removedPattern?: string | null };
-  gate?: { full?: string; quick?: string; concurrency?: number };
+  gate?: { full?: string | null; quick?: string | null; concurrency?: number };
   environment?: { script?: string | null; health?: string[]; needsDocker?: boolean };
-  vars?: Record<string, string>;
+  vars?: Record<string, string | number | boolean>;
   afterMerge?: string | null;
   finish?: string | null;
   progress?: string | null;
@@ -94,7 +94,7 @@ export interface RawTeam {
   isolation?: string;
   startPrompt?: string | null;
   legacyInstances?: Record<string, string>;
-  t3ProjectId?: string;
+  t3ProjectId?: string | null;
 }
 
 // What the factory knows about a role (ROLES), and a team's role with its settings and the defaults merged.
@@ -241,11 +241,14 @@ const isObject = (value: unknown): value is Record<string, unknown> => typeof va
 // The shapes schema/team.schema.json gives these values; normalize checks the same ones.
 export const TEAM_NAME = /^[a-z][a-z0-9-]{0,30}$/;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-const DURATION = /^\d+(\.\d+)?\s*(m|min|h|d)?$/;
+// Spaces around it are allowed ("10m "), as minutes() reads it.
+const DURATION = /^\s*\d+(\.\d+)?\s*(m|min|h|d)?\s*$/;
 const HEALTH = /^(any:)?https?:\/\/\S+$/;
 const URL_START = /^https?:\/\/\S+$/;
-// The factory sets E9G_* and Claude Code reads CLAUDE_*; a team's vars must not change either.
-const VAR_NAME = /^(?!E9G_|CLAUDE_)[A-Za-z_][A-Za-z0-9_]*$/;
+const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+// What a team's vars can't set: the factory's own (E9G_*), and the ones that tell Claude Code where a member's project,
+// settings and plugin are. Claude Code's tuning vars (CLAUDE_CODE_MAX_OUTPUT_TOKENS) are the team's to set.
+const RESERVED_VAR = /^(E9G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)/;
 // Page and viewport ids name files (results, screenshots, verdicts).
 const ID = /^[\w-]+$/;
 const PAGES_DONE = /\be9g\s+pages\s+done\b/;
@@ -253,9 +256,24 @@ const SCHEMES = ["light", "dark", "no-preference"];
 // Matches nothing: what an invalid pattern becomes, so a team with problems never matches more than it said.
 const NOTHING = "(?!)";
 
-// review.removedPattern's default when the team has a tester: a removed line that calls an assertion (expect(…),
-// assert…(…), should…(…), a matcher such as .toBe(…)), so a test branch that drops one needs a review.
-export const ASSERTION_PATTERN = String.raw`\b(expect|assert\w*|should)(\.\w+)*!?\s*\(|\.to[A-Z]\w*\s*\(`;
+// review.removedPattern's default when the team has a tester: a removed line with an assertion in it, so a test branch
+// that drops one needs a review. Real assertions only: not .toString(…), nor a helper such as assertMainBranch(…).
+export const ASSERTION_PATTERN = [
+  // expect(…), expect.soft(…)
+  String.raw`\bexpect(\.\w+)*\s*\(`,
+  // Node's and Chai's assert(…), assert.equal(…)
+  String.raw`\bassert\s*[.(]`,
+  // Python's assert statement
+  String.raw`^\s*assert\s`,
+  // Rust's assert!(…), assert_eq!(…), debug_assert!(…)
+  String.raw`\b(debug_)?assert(_\w+)?!`,
+  // xUnit's: self.assertEqual(…), assertTrue(…), assertThat(…)
+  String.raw`\bassert(Not)?(\w*Equals?|True|False|Null|None|Same|That|Throws|DoesNotThrow|Raises\w*|In|Is(Not)?(None|Instance)?|Greater(Equal)?|Less(Equal)?|Regex|Warns\w*|Logs|All|InstanceOf)\s*\(`,
+  // should.js and Chai's x.should.equal(…)
+  String.raw`\bshould\.`,
+  // Jest, Vitest and Playwright matchers: .toBe(…), .toEqual(…), .toHaveURL(…)
+  String.raw`\.(toBe\w*|toEqual|toStrictEqual|toMatch\w*|toContain\w*|toHave\w*|toThrow\w*)\s*\(`,
+].join("|");
 
 export function normalize(raw: RawTeam, home: string): { team: Team; problems: string[]; warnings: string[] } {
   const problems: string[] = [];
@@ -281,7 +299,8 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   };
   const text = (value: unknown, where: string): string | undefined =>
     value === undefined || (typeof value === "string" && value !== "") ? value : bad(where, "text (a non-empty string)");
-  const textOrNull = (value: unknown, where: string): string | null | undefined => (value === null ? null : text(value, where));
+  // A command the team may leave out: null or "" means none, as 0.2.0 read it.
+  const textOrNull = (value: unknown, where: string): string | null | undefined => (value === null || value === "" ? null : text(value, where));
   const whole = (value: unknown, where: string, min: number): number | undefined =>
     value === undefined || (Number.isInteger(value) && (value as number) >= min)
       ? (value as number | undefined)
@@ -297,11 +316,13 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     if (!Array.isArray(value)) return bad(where, "a list");
     return value.map((entry, i) => item(entry, `${where}[${i}]`)).filter((entry): entry is T => entry !== undefined);
   };
-  // An object with only these keys (null: any keys).
+  // An object with these keys (null: any keys). Any other key is ignored with a warning, as at the top level: a typo
+  // or a note ($comment) mustn't stop a running team. Nothing below copies a key it doesn't name.
   const object = (value: unknown, where: string, keys: string[] | null): Record<string, unknown> | undefined => {
     if (value === undefined) return undefined;
     if (!isObject(value)) return bad(where, "an object");
-    for (const key of Object.keys(value)) if (keys && !keys.includes(key)) problems.push(`${where}.${key}: no such setting (${keys.join(", ")})`);
+    for (const key of Object.keys(value))
+      if (keys && !keys.includes(key)) warnings.push(`unknown key "${where}.${key}" (ignored; ${where} takes ${keys.join(", ")})`);
     return value;
   };
   // An object, or the older array form that lists the same values in order ([rule, reason], [title, command]).
@@ -346,7 +367,8 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
       continue;
     }
     const where = `roles.${id}`;
-    // Only the settings a role has: anything else (such as "worktree") would change what the factory gives it.
+    // The lane is the factory's defaults plus only these settings, so any other key (such as "worktree") is ignored and
+    // can't change what the factory gives the role.
     const settings = object(value, where, ["limit", "write", "deny", "branch", "mcp", "readOnly", "compactAt"]) ?? {};
     const lane: Lane = {
       ...base,
@@ -382,7 +404,8 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
       const rule = entry(value, where, ["rule", "reason", "example"], ["rule", "reason"]);
       if (!rule) return undefined;
       const reason = typeof rule.reason === "string" && rule.reason ? rule.reason : bad(`${where}.reason`, "say why, the agent reads it");
-      const example = text(rule.example, `${where}.example`);
+      // "" is no example, as 0.2.0 read it.
+      const example = textOrNull(rule.example, `${where}.example`) ?? undefined;
       return { rule: regex(rule.rule, `${where}.rule`), reason: reason ?? "", ...(example === undefined ? {} : { example }) };
     }) ?? [];
   const commandOwners =
@@ -405,8 +428,9 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
       return title === undefined || run === undefined ? undefined : { title, command: run };
     }) ?? [];
 
+  // null or false: nothing leaves the machine.
   let push: Team["push"] = null;
-  if (input.push !== undefined && input.push !== null) {
+  if (input.push !== undefined && input.push !== null && input.push !== false) {
     const value = object(input.push, "push", ["remote", "branch", "every"]);
     if (value)
       push = {
@@ -417,9 +441,10 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   }
   let board: Team["board"] = { type: "files" };
   if (input.board !== undefined && input.board !== "files") {
-    const github = isObject(input.board) && Object.keys(input.board).length === 1 && isObject(input.board.github) ? input.board.github : null;
+    const value = isObject(input.board) ? object(input.board, "board", ["github"]) : undefined;
+    const github = value && isObject(value.github) ? object(value.github, "board.github", ["label"]) : undefined;
     if (!github) problems.push('board: "files", or {"github": {"label": "e9g"}}');
-    else board = { type: "github", label: text(object(github, "board.github", ["label"])?.label, "board.github.label") ?? "e9g" };
+    else board = { type: "github", label: text(github.label, "board.github.label") ?? "e9g" };
   }
 
   const review = object(input.review, "review", ["required", "removedPattern"]) ?? {};
@@ -427,13 +452,23 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   let removedPattern: string | null = roles["tester"] ? ASSERTION_PATTERN : null;
   if (review.removedPattern !== undefined) removedPattern = review.removedPattern === null ? null : regex(review.removedPattern, "review.removedPattern");
   const gate = object(input.gate, "gate", ["full", "quick", "concurrency"]) ?? {};
-  const full = text(gate.full, "gate.full") ?? null;
+  const full = textOrNull(gate.full, "gate.full") ?? null;
+  // quick: null (or left out) is the full gate; "" is none, as 0.2.0 read it.
+  const quick = gate.quick === "" ? null : (textOrNull(gate.quick, "gate.quick") ?? full);
   const environment = object(input.environment, "environment", ["script", "health", "needsDocker"]) ?? {};
   const vars: Record<string, string> = {};
   for (const [key, value] of Object.entries(object(input.vars, "vars", null) ?? {})) {
-    if (!VAR_NAME.test(key)) problems.push(`vars.${key}: a variable name (letters, digits and _), and not E9G_… or CLAUDE_…, which the factory sets`);
-    else if (typeof value !== "string") problems.push(`vars.${key}: text (put a number in quotes)`);
-    else vars[key] = value;
+    if (!VAR_NAME.test(key)) problems.push(`vars.${key}: a variable name (letters, digits and _)`);
+    else if (RESERVED_VAR.test(key))
+      problems.push(
+        `vars.${key}: a variable name of the team's own; the factory sets E9G_…, and CLAUDE_PROJECT_DIR, CLAUDE_CONFIG_DIR, CLAUDE_PLUGIN_ROOT and CLAUDE_ENV_FILE say where a member runs`
+      );
+    else if (typeof value === "string") vars[key] = value;
+    // An environment variable is text either way, as 0.2.0 passed it.
+    else if (typeof value === "number" || typeof value === "boolean") {
+      vars[key] = String(value);
+      warnings.push(`vars.${key}: ${value} is passed as the text "${value}" (put it in quotes to say so)`);
+    } else problems.push(`vars.${key}: text, a number or true/false`);
   }
   const legacyInstances: Record<string, string> = {};
   for (const [id, value] of Object.entries(object(input.legacyInstances, "legacyInstances", null) ?? {})) {
@@ -444,7 +479,8 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   const watchdog = object(input.watchdog, "watchdog", ["tickEvery", "stuckAfter", "pruneAfter", "doneTickEvery"]) ?? {};
   const isolation = input.isolation ?? "strict";
   if (isolation !== "strict" && isolation !== "user") problems.push('isolation: "strict" (no personal skills, plugins or connectors) or "user"');
-  text(input.t3ProjectId, "t3ProjectId");
+  // null: none yet, which register assigns (it reads the value as written, so "" isn't none).
+  if (input.t3ProjectId !== null) text(input.t3ProjectId, "t3ProjectId");
 
   // pages: the finish line for teams that build pages (lib/commands/pages.ts).
   let pages: PagesSettings | null = null;
@@ -532,7 +568,8 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     raw,
     home,
     name,
-    title: text(input.title, "title") ?? name,
+    // "" is the name, like leaving it out.
+    title: input.title === "" ? name : (text(input.title, "title") ?? name),
     owner: typeof input.owner === "string" ? input.owner : null,
     factory,
     branch,
@@ -544,7 +581,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     model: text(input.model, "model") ?? "claude-opus-5-5",
     roles,
     review: { required: list(review.required, "review.required", role) ?? ["builder"], removedPattern },
-    gate: { full, quick: text(gate.quick, "gate.quick") ?? full, concurrency: whole(gate.concurrency, "gate.concurrency", 1) ?? 2 },
+    gate: { full, quick, concurrency: whole(gate.concurrency, "gate.concurrency", 1) ?? 2 },
     environment: {
       script: textOrNull(environment.script, "environment.script") ?? null,
       health:
@@ -556,7 +593,8 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     vars,
     afterMerge: textOrNull(input.afterMerge, "afterMerge") ?? null,
     finish,
-    progress: textOrNull(input.progress, "progress") ?? (finish ? finish.replace(/\bdone$/, "status") : null),
+    // Left out or null: the finish command with done→status. "": none, as 0.2.0 read it.
+    progress: input.progress === "" ? null : (textOrNull(input.progress, "progress") ?? (finish ? finish.replace(/\bdone$/, "status") : null)),
     pages,
     policies,
     never,

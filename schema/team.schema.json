@@ -240,6 +240,14 @@
         "doneTickEvery": { "$ref": "#/$defs/duration" }
       }
     },
+    "contact": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["digest", "priority"] },
+        "every": { "$ref": "#/$defs/duration" }
+      }
+    },
     "protect": { "type": "array", "items": { "$ref": "#/$defs/regex" } },
     "isolation": { "enum": ["strict", "user"] },
     "startPrompt": { "$ref": "#/$defs/textOrNull" },

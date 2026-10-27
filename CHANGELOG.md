@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **The planner decides from the operator's direction, and asks for direction when it must ask.** A team's
+  `.e9g/direction.md` (new, the operator's, with a starter from `e9g init` and a draft from setup) holds the
+  standing direction: what the product is for, who it serves, what wins when goals conflict, what to decide without
+  asking and what always to ask. The planner turns it into feature-by-feature decisions (Article 3). It looks a
+  product question up, derives what the operator would choose, decides whatever a revert could undo before
+  promotion, and records each decision with the direction it follows in `.e9g/decisions.md` (in its lane now).
+  A question it does ask also asks for the principle behind the answer, with candidate principles, so the next
+  question like it is settled without asking. Questions open together go in one message, not one each
+  (Article 10). The operator's answers go in `decisions.md` in their words, and the planner re-checks its open
+  questions against each. Both files are compiled into every member's prompt (the starter's comments aren't), and
+  the Done report lists the calls the planner made so the operator can overturn any before promoting.
+- **How often the planner writes: digest or priority.** `team.json` `contact` sets it. `"digest"` (the default):
+  at most one message per `every` (default `4h`), with every open question in it. A subject starting `Urgent:` goes
+  at once, one per window, and `Done` always goes. `"priority"`: each message goes as soon as the planner sends it.
+  The guard refuses the planner's own Gmail before the window opens, and a new hook (`sent.ts`) records only the
+  sends that went. The watchdog holds outbox drafts until the window opens, then sends them as one message (one Mac
+  notification for them all). The planner's context says when the next message can go, its rules carry the mode,
+  and `e9g check` shows it. The watchdog reads the setting from the registry, so `e9g register` passes on a change; a team registered
+  on an older version keeps getting each message as it goes until it is upgraded.
 - **Email from the factory, both ways.** `e9g connect email` keeps the operator's own Resend API key in the macOS
   Keychain, once a test email has gone through. The watchdog then emails its alerts (a planner waiting, stuck or
   unable to start; T3 Code down) and the planner's outbox, so they reach the operator away from the Mac. With a

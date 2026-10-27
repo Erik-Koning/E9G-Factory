@@ -15,6 +15,7 @@ import { accessSync, constants, existsSync, lstatSync, mkdtempSync, readdirSync,
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { instanceId, type Lane, type LoadedTeam, loadTeam, ROLES, type Team } from "../config.ts";
+import { contactRule } from "../contact.ts";
 import { FACTORY_ROOT, findHome, versionDir } from "../paths.ts";
 import { ALLOWED_EXAMPLES, policyStates } from "../policies.ts";
 import { compile } from "../prompts.ts";
@@ -54,6 +55,9 @@ export function guardCases(team: Team): GuardCase[] {
   }
   if (planner.write.some((rule) => new RegExp(rule).test(".e9g/lessons.md")))
     add("planner", "Write", { file_path: join(home, ".e9g/lessons.md") }, "allow", "the planner's lessons");
+  if (planner.write.some((rule) => new RegExp(rule).test(".e9g/decisions.md")))
+    add("planner", "Write", { file_path: join(home, ".e9g/decisions.md") }, "allow", "the planner's decisions");
+  for (const role of roles) add(role, "Write", { file_path: join(home, ".e9g/direction.md") }, "refuse", "the operator's direction");
   for (const role of roles.filter((r) => team.roles[r]?.readOnly)) {
     add(role, "Write", { file_path: join(home, "README.md") }, "refuse", "a read-only role writing");
     bash(role, "git commit -am wip", "refuse", "a read-only role committing");
@@ -428,6 +432,7 @@ function summary(team: Team, failures: number): number {
   console.info(
     `  - pushes: ${team.push ? `only the planner, ${team.push.branch} to ${team.push.remote}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}` : "none"}`
   );
+  console.info(`  - messages to the operator, ${contactRule(team.contact)}`);
   for (const policy of states.filter((p) => p.state === "allow"))
     console.info(`  - ${policy.summary}${policy.default === "deny" ? " (unlocked by the operator)" : ""}`);
   console.info("What it may not do:");

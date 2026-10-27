@@ -278,7 +278,7 @@ describe("the watchdog's channels", () => {
   });
 
   test("each settled draft goes once through each channel, a failed one again, and old or fresh ones not yet", async () => {
-    const outbox = tmp("e9g-outbox-");
+    const outbox = join(tmp("e9g-run-"), "outbox");
     const connectedAt = new Date(Date.now() - 60 * 60_000).toISOString();
     write(outbox, {
       "2026-10-25-old.md": "Subject: before connecting\n",
@@ -301,6 +301,82 @@ describe("the watchdog's channels", () => {
     const once = [{ subject: "[E9G-Planner] [My app] Which database?", text: "Postgres?\n", team: "my-app", id: "my-app/2026-10-25-new.md" }];
     assert.deepEqual(email.sent, once);
     assert.deepEqual(whatsapp.sent, once);
+  });
+
+  test("digest: settled drafts wait for the window and go as one message; Urgent once per window; Done always", async () => {
+    const run = tmp("e9g-run-");
+    const outbox = join(run, "outbox");
+    const connectedAt = new Date(Date.now() - 60 * 60_000).toISOString();
+    const settle = (...names: string[]) => {
+      for (const name of names) utimesSync(join(outbox, name), new Date(Date.now() - 2 * 60_000), new Date(Date.now() - 2 * 60_000));
+    };
+    const shown: string[] = [];
+    const deliver = (email: Channel, contact = DIGEST) =>
+      sendOutbox(
+        [email],
+        outbox,
+        "My app",
+        "my-app",
+        () => {},
+        contact,
+        (text) => shown.push(text)
+      );
+    const DIGEST = { mode: "digest" as const, everyMin: 240 };
+
+    write(outbox, { "2026-10-26-db.md": "Subject: Which database?\n\nPostgres?\n", "2026-10-26-auth.md": "Subject: Which sign-in?\n\nEmail links?\n" });
+    settle("2026-10-26-db.md", "2026-10-26-auth.md");
+    const email = channel("email", connectedAt);
+    await deliver(email);
+    assert.equal(email.sent.length, 1, "one message for both");
+    assert.equal(email.sent[0]?.subject, "[E9G-Planner] [My app] 2 messages: Which sign-in?; Which database?");
+    assert.match(email.sent[0]?.text ?? "", /^1\. Which sign-in\?\n\nEmail links\?\n\n---\n\n2\. Which database\?\n\nPostgres\?\n$/);
+    assert.deepEqual(shown, [`The team has 2 messages for you. They're in ${outbox}.`]);
+
+    write(outbox, {
+      "2026-10-26-0900-cache.md": "Subject: Which cache?\n",
+      "2026-10-26-1000-down.md": "Subject: Urgent: nobody can sign in\n",
+      "2026-10-26-1100-down.md": "Subject: Urgent: still down\n",
+    });
+    settle("2026-10-26-0900-cache.md", "2026-10-26-1000-down.md", "2026-10-26-1100-down.md");
+    await deliver(email);
+    assert.deepEqual(
+      email.sent.slice(1).map(({ subject }) => subject),
+      ["[E9G-Planner] [My app] Urgent: nobody can sign in"],
+      "the first urgent draft goes; the second waits with the ordinary one"
+    );
+    write(outbox, { "2026-10-26-1200-down.md": "Subject: Urgent: down a third time\n", "2026-10-26-1300-done.md": "Subject: Done\n\nAll green.\n" });
+    settle("2026-10-26-1200-down.md", "2026-10-26-1300-done.md");
+    await deliver(email);
+    assert.deepEqual(
+      email.sent.slice(2).map(({ subject }) => subject),
+      ["[E9G-Planner] [My app] Done"],
+      "the third urgent waits; Done goes"
+    );
+
+    // The window opens: everything held goes together, in one notification.
+    write(run, { "contact.json": { normalAt: new Date(Date.now() - 5 * 3_600_000).toISOString(), urgentAt: new Date().toISOString() } });
+    shown.length = 0;
+    await deliver(email);
+    assert.equal(email.sent.length, 4);
+    assert.equal(email.sent[3]?.subject, "[E9G-Planner] [My app] 3 messages: Which cache?; Urgent: still down; Urgent: down a third time");
+    assert.deepEqual(shown, [`The team has 3 messages for you. They're in ${outbox}.`]);
+    await deliver(email);
+    assert.equal(email.sent.length, 4, "nothing twice");
+  });
+
+  test("priority: each settled draft goes as it comes", async () => {
+    const run = tmp("e9g-run-");
+    const outbox = join(run, "outbox");
+    write(outbox, { "2026-10-26-a.md": "Subject: A?\n", "2026-10-26-b.md": "Subject: B?\n" });
+    for (const name of ["2026-10-26-a.md", "2026-10-26-b.md"])
+      utimesSync(join(outbox, name), new Date(Date.now() - 2 * 60_000), new Date(Date.now() - 2 * 60_000));
+    write(run, { "contact.json": { normalAt: new Date().toISOString() } });
+    const email = channel("email", new Date(Date.now() - 60 * 60_000).toISOString());
+    await sendOutbox([email], outbox, "My app", "my-app", () => {}, { mode: "priority", everyMin: 240 });
+    assert.deepEqual(
+      email.sent.map(({ subject }) => subject),
+      ["[E9G-Planner] [My app] A?", "[E9G-Planner] [My app] B?"]
+    );
   });
 
   test("an alert goes through each channel at most every 6 hours, and a failed one is tried again", async () => {

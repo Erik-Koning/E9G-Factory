@@ -129,6 +129,7 @@ export function init(argv: string[]): number {
       BUDGET: "(None given.)",
     })
   );
+  write("direction.md", readFileSync(join(TEMPLATES, "direction.md"), "utf8"));
   write(
     "notes.md",
     fill("notes.md", {

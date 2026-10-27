@@ -14,6 +14,8 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realp
 import { homedir, hostname } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { type Channel, channels, failingSend, outboxMessage, recordSend, type Replies, type Reply } from "../channels.ts";
+import { type Contact, DEFAULT_CONTACT, type MessageKind, messageKind, nextAllowed, recordSent, registeredContact } from "../contact.ts";
+import { PLANNER_TAG } from "../labels.ts";
 import { acquireSlot } from "../lock.ts";
 import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
@@ -64,27 +66,111 @@ export async function alertChannels(reach: Channel[], dir: string, kind: string,
   return said;
 }
 
-// Drafts in the planner's outbox, through each connected channel, once a draft has been left alone for a minute (so
-// one written in steps goes whole). One written before the channel was connected isn't sent; a failed send is tried
-// again on later runs, for a day, under an id that keeps a retry from arriving twice.
-export async function sendOutbox(reach: Channel[], outbox: string, title: string, team: string, log: (text: string) => void): Promise<void> {
-  for (const draft of readdirSync(outbox).filter((f) => f.endsWith(".md"))) {
+// Drafts in the planner's outbox: a notification on this Mac, and the message through each connected channel, once a
+// draft has been left alone for a minute (so one written in steps goes whole). The team's contact setting says when
+// (lib/contact.ts): in digest mode, ordinary drafts wait for the window and go as one message; "Urgent:" goes at once,
+// one per window (another waits with the rest); "Done" always goes. A draft is released when it's due, which the Mac
+// notification marks (with how it went), and only a release's first delivery counts against the window: a channel
+// that failed sends it on its next run. One written before a channel was connected isn't sent by it; a failed send
+// is tried again on later runs, for a day past its window, under an id that keeps a retry from arriving twice.
+export async function sendOutbox(
+  reach: Channel[],
+  outbox: string,
+  title: string,
+  team: string,
+  log: (text: string) => void,
+  contact: Contact = DEFAULT_CONTACT,
+  notifyMac: (text: string) => void = () => {}
+): Promise<void> {
+  const run = dirname(outbox);
+  const now = Date.now();
+  const digest = contact.mode === "digest" && contact.everyMin > 0;
+  const open = (kind: MessageKind): boolean => nextAllowed(contact, run, kind, now) <= now;
+  // A channel still owes this draft a send.
+  const owes = (channel: Channel, path: string): boolean =>
+    !existsSync(`${path}.sent-${channel.name}`) && statSync(path).mtimeMs >= Date.parse(channel.connectedAt);
+  // The first urgent draft takes the window's one urgent message; any other goes with the ordinary ones.
+  let urgentFree = open("urgent");
+  const due: { draft: string; path: string; subject: string; text: string; as: MessageKind; delivered: boolean }[] = [];
+  const unnotified: typeof due = [];
+  for (const draft of readdirSync(outbox)
+    .filter((f) => f.endsWith(".md"))
+    .sort()) {
     const path = join(outbox, draft);
     const age = minutesSince(path);
-    if (age < 1 || age > 1440) continue;
-    for (const channel of reach) {
-      const sent = `${path}.sent-${channel.name}`;
-      if (existsSync(sent) || statSync(path).mtimeMs < Date.parse(channel.connectedAt)) continue;
-      const { subject, text } = outboxMessage(title, draft, readFileSync(path, "utf8"));
-      const problem = await sendThrough(channel, subject, text, team, `${team}/${draft}`);
-      if (problem) log(`couldn't send ${draft} by ${channel.name}: ${problem}`);
+    if (age < 1 || age > 1440 + (digest ? contact.everyMin : 0)) continue;
+    const released = existsSync(`${path}.notified`);
+    if (released && !reach.some((channel) => owes(channel, path))) continue;
+    const { subject, text } = outboxMessage(title, draft, readFileSync(path, "utf8"));
+    const kind = messageKind(subject);
+    // Released: as it went (a marker from before this setting is empty, so its own kind). Otherwise, if it's due now.
+    const marked = released ? readFileSync(`${path}.notified`, "utf8").trim() : "";
+    const as: MessageKind | null = released
+      ? marked === "done" || marked === "urgent" || marked === "normal"
+        ? marked
+        : kind
+      : kind === "done"
+        ? "done"
+        : kind === "urgent" && urgentFree
+          ? "urgent"
+          : open("normal")
+            ? "normal"
+            : null;
+    if (!as) continue;
+    if (!released && as === "urgent") urgentFree = false;
+    const item = { draft, path, subject, text, as, delivered: reach.some((channel) => existsSync(`${path}.sent-${channel.name}`)) };
+    due.push(item);
+    if (!released) unnotified.push(item);
+  }
+
+  // On this Mac, once for what's newly due: the only delivery when no channel is connected.
+  if (unnotified.length) {
+    notifyMac(
+      unnotified.length === 1
+        ? `The team has a message for you: ${basename(unnotified[0]?.draft ?? "", ".md")}. It's in ${outbox}.`
+        : `The team has ${unnotified.length} messages for you. They're in ${outbox}.`
+    );
+    for (const { path, draft, as } of unnotified) {
+      writeFileSync(`${path}.notified`, as);
+      log(`notified about ${draft}`);
+    }
+  }
+
+  const went = new Set<MessageKind>(reach.length ? [] : unnotified.map(({ as }) => as));
+  for (const channel of reach) {
+    const pending = due.filter(({ path }) => owes(channel, path));
+    const together = digest ? pending.filter(({ as }) => as === "normal") : [];
+    const sends = pending.filter((item) => !together.includes(item)).map((item) => [item]);
+    if (together.length) sends.push(together);
+    for (const items of sends) {
+      const [first] = items;
+      if (!first) continue;
+      const one = items.length === 1;
+      const subject = one
+        ? first.subject
+        : `${PLANNER_TAG} [${title}] ${items.length} messages: ${items.map((item) => strip(item.subject, title)).join("; ")}`;
+      const text = one ? first.text : items.map((item, i) => `${i + 1}. ${strip(item.subject, title)}\n\n${item.text.trim()}`).join("\n\n---\n\n") + "\n";
+      const names = items.map(({ draft }) => draft).join(", ");
+      const problem = await sendThrough(
+        channel,
+        subject,
+        text,
+        team,
+        one ? `${team}/${first.draft}` : `${team}/digest/${items.map(({ draft }) => draft).join("+")}`
+      );
+      if (problem) log(`couldn't send ${names} by ${channel.name}: ${problem}`);
       else {
-        writeFileSync(sent, "");
-        log(`sent ${draft} by ${channel.name}`);
+        for (const { path } of items) writeFileSync(`${path}.sent-${channel.name}`, "");
+        for (const { as, delivered } of items) if (!delivered) went.add(as);
+        log(`sent ${names} by ${channel.name}`);
       }
     }
   }
+  for (const kind of went) recordSent(run, kind);
 }
+
+// A subject without the labels the planner's messages carry.
+const strip = (subject: string, title: string): string => subject.replace(PLANNER_TAG, "").replace(`[${title}]`, "").trim();
 
 // A Mac notification, at most hourly, for each connected channel whose last send failed: otherwise the operator
 // learns only from a log that the factory can't reach them.
@@ -376,15 +462,9 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
 
   pruneWorktrees(entry);
 
-  // The planner's outbox: a notification on this Mac, and the message itself through each connected channel.
-  for (const draft of readdirSync(join(run, "outbox")).filter((f) => f.endsWith(".md"))) {
-    const marker = join(run, "outbox", `${draft}.notified`);
-    if (existsSync(marker)) continue;
-    notify(title, `The team has a message for you: ${basename(draft, ".md")}. It's in ${join(run, "outbox")}.`);
-    writeFileSync(marker, "");
-    log(`notified about ${draft}`);
-  }
-  await sendOutbox(reach, join(run, "outbox"), title, entry.name, log);
+  // The planner's outbox: a notification on this Mac, and the message itself through each connected channel, as often
+  // as the team's contact setting allows.
+  await sendOutbox(reach, join(run, "outbox"), title, entry.name, log, registeredContact(entry.contact), (text) => notify(title, text));
   const logFile = join(run, "watchdog.log");
   const lines = readFileSync(logFile, "utf8").split("\n");
   if (lines.length > 5000) writeFileSync(logFile, lines.slice(-2000).join("\n"));

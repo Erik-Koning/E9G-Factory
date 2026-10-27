@@ -20,4 +20,5 @@ limit the factory enforces. The operator watches what the team costs and pauses 
 
 ## What the team decides itself
 
-Anything this brief leaves open, within the team's rules: it picks what fits the brief best and logs why.
+Anything this brief leaves open, within the team's rules: the planner works out what fits the brief and the
+direction (`direction.md`) best, decides, and records why in `decisions.md`.

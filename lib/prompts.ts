@@ -1,5 +1,6 @@
 // The text each agent works under, besides its role prompt (plugin/agents/<role>.md): the constitution's articles,
-// the team's rules rendered from team.json, the operator's notes for the role and the planner's lessons. Compiled
+// the team's rules rendered from team.json, the operator's direction, the operator's notes for the role, and the
+// planner's decisions and lessons. Compiled
 // into ~/.e9g/runs/<team>/prompts/<role>.md, which T3 Code appends to the agent's system prompt
 // (--append-system-prompt-file). Nothing here is written by hand, so the prose can't disagree with the rules the
 // guard enforces. A prompt records the hash of its sources; the session-start hook recompiles a stale one.
@@ -8,11 +9,20 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { instanceId, type Lane, type LoadedTeam, ROLES, type Team } from "./config.ts";
 import { FACTORY_ROOT, PACKAGE } from "./paths.ts";
+import { contactRule } from "./contact.ts";
 import { PLANNER_LABEL } from "./labels.ts";
 import { policyStates } from "./policies.ts";
 import { hash, localTime, writeFileAtomic } from "./util.ts";
 
 const read = (path: string): string => (existsSync(path) ? readFileSync(path, "utf8").trim() : "");
+// A file the operator fills in from a starter, without its HTML comments; empty while nothing but headings is left.
+const readFilled = (path: string): string => {
+  const text = read(path)
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text.split("\n").some((line) => line.trim() && !line.startsWith("#")) ? text : "";
+};
 
 export function articles(): string {
   const text = read(join(FACTORY_ROOT, "CONSTITUTION.md"));
@@ -23,6 +33,9 @@ export function articles(): string {
 
 const roleNotesFile = (team: Team, role: string): string => join(team.home, ".e9g", "roles", `${role}.md`);
 const lessonsFile = (team: Team): string => join(team.home, ".e9g", "lessons.md");
+// The operator's standing direction, and the planner's decisions derived from it (Article 3).
+const directionFile = (team: Team): string => join(team.home, ".e9g", "direction.md");
+const decisionsFile = (team: Team): string => join(team.home, ".e9g", "decisions.md");
 
 // The documents a prompt lists are the ones that exist when it's compiled.
 const existingDocs = (team: Team): string[] => team.docs.filter((doc) => existsSync(join(team.home, doc)));
@@ -36,6 +49,8 @@ export function sourcesHash(team: LoadedTeam, role: string): string {
     read(team.file),
     read(roleNotesFile(team, role)),
     read(lessonsFile(team)),
+    read(directionFile(team)),
+    read(decisionsFile(team)),
     existingDocs(team).join("\n")
   );
 }
@@ -146,6 +161,7 @@ export function compile(team: LoadedTeam, role: string): string {
         pushText(team),
         `Protected branches, never pushed or merged into by the team: ${team.protectedBranches.map(code).join(", ")}.`,
         role === "planner" && team.owner ? `The operator: ${team.owner} (Article 10).` : null,
+        role === "planner" ? `Messages to the operator (team.json contact), ${contactRule(team.contact)}` : null,
       ].filter((line) => line !== null)
     ),
     role === "planner"
@@ -169,6 +185,10 @@ export function compile(team: LoadedTeam, role: string): string {
         : ""
     }`,
     `## Read first\n\n${list(["`CLAUDE.md` (the repository's own rules; already in your context)", ...existingDocs(team).map(code)])}`,
+    readFilled(directionFile(team)) ? `## The operator's direction (.e9g/direction.md)\n\n${readFilled(directionFile(team))}` : null,
+    readFilled(decisionsFile(team))
+      ? `## Decisions made from it (.e9g/decisions.md)\n\nThe planner's rulings and the operator's answers, each with the direction it follows. Treat them as settled; a member who thinks one is wrong says so in its report.\n\n${readFilled(decisionsFile(team))}`
+      : null,
     read(roleNotesFile(team, role)) ? `## The operator's notes for the ${role}\n\n${read(roleNotesFile(team, role))}` : null,
     read(lessonsFile(team)) ? `## Lessons the team has learned (.e9g/lessons.md)\n\n${read(lessonsFile(team))}` : null,
   ];

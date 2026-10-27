@@ -96,6 +96,8 @@ describe("config", () => {
     assert.ok(!laneAllows(team, "reviewer", "README.md"));
     assert.ok(!laneAllows(team, "Explore", "README.md"), "a role the team doesn't have writes nothing");
     assert.ok(laneAllows(team, "planner", ".e9g/lessons.md"));
+    assert.ok(laneAllows(team, "planner", ".e9g/decisions.md"));
+    assert.ok(!laneAllows(team, "planner", ".e9g/direction.md"), "the direction is the operator's");
     assert.equal(roleForBranch(team, "e9g/b12-thing"), "builder");
     assert.equal(roleForBranch(team, "e9g/t-specs"), "tester");
     assert.equal(roleForBranch(team, "feature/x"), null);
@@ -128,6 +130,9 @@ describe("config", () => {
   test("only a lane rule that names a factory file opens it", () => {
     const { team } = norm({ roles: { planner: {}, builder: { limit: 1, write: ["^src/", "\\.json$", "\\.md$", "^\\.claude/agents/notes\\.md$"] } } });
     assert.ok(!factoryWrite(team, "planner", ".e9g/lessons.md"), "the planner's default lane names its lessons");
+    assert.ok(!factoryWrite(team, "planner", ".e9g/decisions.md"), "and its decisions");
+    assert.ok(factoryWrite(team, "planner", ".e9g/direction.md"), "but not the operator's direction");
+    assert.ok(factoryWrite(team, "builder", ".e9g/decisions.md"), "nor does a broad rule open the planner's decisions");
     assert.ok(factoryWrite(team, "planner", ".e9g/team.json"));
     for (const path of [".e9g/team.json", ".e9g/brief.md", ".claude/settings.json", ".mcp.json"]) assert.ok(factoryWrite(team, "builder", path), path);
     assert.ok(!factoryWrite(team, "builder", ".claude/agents/notes.md"), "named by the rule itself");

@@ -2,6 +2,7 @@
 // factory reads the team through loadTeam, so a default or a check lives in one place. schema/team.schema.json
 // describes the same file for editors, and test/audit-setup.test.ts keeps the two in step.
 import { existsSync, readFileSync } from "node:fs";
+import { type Contact, DEFAULT_CONTACT } from "./contact.ts";
 import { teamFile, VERSION_NAME } from "./paths.ts";
 import { POLICIES, type PolicyState } from "./policies.ts";
 import { minutes } from "./util.ts";
@@ -90,6 +91,7 @@ export interface RawTeam {
   polishRounds?: number;
   worktreeSetup?: string | null;
   watchdog?: { tickEvery?: string | number; stuckAfter?: string | number; pruneAfter?: string | number; doneTickEvery?: string | number };
+  contact?: { mode?: string; every?: string | number };
   protect?: string[];
   isolation?: string;
   startPrompt?: string | null;
@@ -145,6 +147,7 @@ export interface Team {
   polishRounds: number;
   worktreeSetup: string | null;
   watchdog: { tickEveryMin: number; stuckAfterMin: number; pruneAfterMin: number; doneTickEveryMin: number };
+  contact: Contact;
   protect: string[];
   isolation: string;
   startPrompt: string | null;
@@ -169,7 +172,12 @@ export const GMAIL = [
 
 // The roles the factory has prompts for (plugin/agents/<role>.md), and what each is by default.
 export const ROLES: Record<string, RoleDefaults> = {
-  planner: { summary: "runs the team: plans, briefs, checks, merges, reports", readOnly: false, write: ["^\\.e9g/lessons\\.md$"], mcp: GMAIL },
+  planner: {
+    summary: "runs the team: plans, briefs, checks, merges, reports",
+    readOnly: false,
+    write: ["^\\.e9g/lessons\\.md$", "^\\.e9g/decisions\\.md$"],
+    mcp: GMAIL,
+  },
   builder: { summary: "builds one ticket on its own branch", limit: 2, readOnly: false, write: ["*"], worktree: true },
   tester: { summary: "writes and fixes end-to-end tests on its own branch", limit: 1, readOnly: false, write: [], worktree: true },
   reviewer: { summary: "reviews one finished branch before it merges", limit: 1, readOnly: true, write: [] },
@@ -207,6 +215,7 @@ const KNOWN_KEYS = new Set([
   "polishRounds",
   "worktreeSetup",
   "watchdog",
+  "contact",
   "protect",
   "isolation",
   "startPrompt",
@@ -477,6 +486,10 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   }
   const finish = textOrNull(input.finish, "finish") ?? null;
   const watchdog = object(input.watchdog, "watchdog", ["tickEvery", "stuckAfter", "pruneAfter", "doneTickEvery"]) ?? {};
+  const contact = object(input.contact, "contact", ["mode", "every"]) ?? {};
+  const contactMode = contact.mode ?? DEFAULT_CONTACT.mode;
+  if (contactMode !== "digest" && contactMode !== "priority")
+    problems.push('contact.mode: "digest" (at most one message per contact.every, everything open together) or "priority" (each as soon as it\'s needed)');
   const isolation = input.isolation ?? "strict";
   if (isolation !== "strict" && isolation !== "user") problems.push('isolation: "strict" (no personal skills, plugins or connectors) or "user"');
   // null: none yet, which register assigns (it reads the value as written, so "" isn't none).
@@ -608,6 +621,10 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
       stuckAfterMin: duration(watchdog.stuckAfter, "watchdog.stuckAfter", 45),
       pruneAfterMin: duration(watchdog.pruneAfter, "watchdog.pruneAfter", 60),
       doneTickEveryMin: duration(watchdog.doneTickEvery, "watchdog.doneTickEvery", 1440),
+    },
+    contact: {
+      mode: contactMode === "priority" ? "priority" : "digest",
+      everyMin: duration(contact.every, "contact.every", DEFAULT_CONTACT.everyMin),
     },
     protect: list(input.protect, "protect", regex) ?? [],
     isolation: isolation === "user" ? "user" : "strict",

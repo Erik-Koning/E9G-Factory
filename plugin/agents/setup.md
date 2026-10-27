@@ -50,6 +50,11 @@ Ask about the direction in plain chat first: "What should exist when the team is
 sentence, a document, a spec or a list of issues. Take as little or as much as they give. Whatever they leave
 open, the team decides; say so.
 
+Then ask for the standing direction, also in plain chat: what the product is for and who it serves, what wins when
+goals conflict, and which kinds of question they want to decide themselves. The planner derives its product
+decisions from this, so every principle they give here is a question it won't need to ask. Offer a draft from the
+repository's docs and the goal for them to correct, rather than a blank page.
+
 Then ask the rest with the AskUserQuestion tool:
 
 - up to four questions per call;
@@ -69,7 +74,7 @@ about ten questions at most, in this order:
 | Branch       | The integration branch (never a protected one), its base, and whether and how often it's pushed                                          | A local branch, never pushed                                                                             |
 | Board        | Files in `.e9g/run/board/`, or GitHub issues with a label (posted where people read them; needs `gh`)                                    | Files; offer GitHub when the repository is on GitHub                                                     |
 | Data         | What data the team may use, and whether it may reach outside APIs                                                                        | Seed or made-up data only, no real keys                                                                  |
-| Contact      | Who hears from the team, and what's worth an interruption                                                                                | The operator's email: done, and decisions that change the outcome a lot                                  |
+| Contact      | Who hears from the team, and what's worth an interruption                                                                                | The operator's email: done, and the questions the direction doesn't settle, together in one message      |
 | Taste        | A style guide, a rubric or reference pages                                                                                               | The repository's design docs                                                                             |
 | Dependencies | May the team add packages?                                                                                                               | Allowed                                                                                                  |
 | Policies     | Show the deny list, with what you detected marked, and ask what to unlock                                                                | Everything outward stays denied                                                                          |
@@ -88,6 +93,9 @@ In `.e9g/`, write:
 - **`team.json`:** the rules. Use `docs/team.md`'s shape exactly, and keep the `factory` pin the draft wrote.
 - **`brief.md`:** the operator's direction in their words, then what "done" means, the budget if they gave one,
   then what the team decides itself.
+- **`direction.md`:** the standing direction from the interview, in the starter file's sections: principles, not
+  features, each settling a family of questions. Don't tell the planner in the brief or its notes to send product
+  questions to the operator as a rule; Article 3 and the direction already say which ones go.
 - **`notes.md`:** what any member needs to know to work here: the environment, ports, commands, conventions and
   traps you found.
 - **`rubric.md`:** a short UX rubric, if the product has a UI.

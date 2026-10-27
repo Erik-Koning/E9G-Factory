@@ -76,6 +76,8 @@ export interface RegistryEntry {
   needsDocker: boolean;
   worktreesDir: string;
   watchdog: Team["watchdog"];
+  // Missing in entries registered before the setting existed: priority (registeredContact).
+  contact?: Team["contact"];
   startPrompt: string;
   registeredAt: string;
 }

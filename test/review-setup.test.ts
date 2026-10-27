@@ -234,7 +234,13 @@ describe("the teams on this machine load as they did before this review", () => 
           );
           if (baseline && loadedAtBaseline) {
             const then = baseline.normalize(structuredClone(raw), home);
-            // The default removedPattern changed on purpose (#8); the rest is as it was.
+            // The default removedPattern changed on purpose (#8), and so did the planner's default lane, which now
+            // names its decisions, and contact is new; the rest is as it was.
+            const plannerWrite = (team: Record<string, unknown>) => {
+              const roles = team["roles"] as Record<string, { write: string[] }>;
+              const planner = roles["planner"];
+              return planner ? { ...roles, planner: { ...planner, write: planner.write.filter((rule) => rule !== "^\\.e9g/decisions\\.md$") } } : roles;
+            };
             const comparable = (team: Record<string, unknown>) => ({
               ...team,
               raw: null,
@@ -242,6 +248,8 @@ describe("the teams on this machine load as they did before this review", () => 
               warnings: null,
               problems: null,
               review: raw.review?.removedPattern === undefined ? { ...(team["review"] as object), removedPattern: "the default" } : team["review"],
+              roles: plannerWrite(team),
+              contact: null,
             });
             assert.deepEqual(differences(comparable({ ...now }), comparable(then.team)), [], which);
             assert.deepEqual(differences(now.warnings, then.warnings), [], `${which}: its warnings`);

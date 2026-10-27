@@ -5,12 +5,14 @@
 //   session) and says so. The planner also gets how the operator is connected (e9g connect), the members running
 //   against the limits, the team's context commands (team.json "context") and its latest log entries.
 // - UserPromptSubmit, planner only (every wake): the real time, members running, merge results it hasn't seen,
-//   whether the environment is draining, and whether the operator paused the team.
+//   whether the environment is draining, when it may next write to the operator (team.json contact), and whether the
+//   operator paused the team.
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { reachSummary } from "../../lib/channels.ts";
 import { instanceId } from "../../lib/config.ts";
+import { contactStatus } from "../../lib/contact.ts";
 import { stateDir } from "../../lib/paths.ts";
 import { promptFile, promptStale, writePrompt } from "../../lib/prompts.ts";
 import { type HookInput, inTeam, teamSession } from "../../lib/session.ts";
@@ -66,6 +68,7 @@ if (event === "UserPromptSubmit") {
     slots(),
     finished.length ? `Merge queue results:\n${finished.join("\n")}` : null,
     existsSync(drain) ? `Draining for an environment reset: no new ${readFileSync(drain, "utf8").trim()} until e9g drain off.` : null,
+    contactStatus(team.contact, run),
     paused,
   ]
     .filter(Boolean)
@@ -89,6 +92,8 @@ if (event === "UserPromptSubmit") {
       parts.push(
         `Not reaching the operator now: ${failing.join("; ")}. The watchdog has told them on their Mac.${working.length ? "" : " Until it works, use Gmail if you have it."}`
       );
+    const contact = contactStatus(team.contact, run);
+    if (contact) parts.push(contact);
     parts.push(slots());
     for (const { title, command } of team.context) parts.push(`${title}:\n${clip(runCommand(command), 2000)}`);
     const logFile = join(state, "log.md");

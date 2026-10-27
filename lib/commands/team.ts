@@ -123,6 +123,7 @@ function registerTeam(home: string, { force, version: target }: { force: boolean
     needsDocker: team.environment.needsDocker,
     worktreesDir: t3.worktreesDir(home),
     watchdog: team.watchdog,
+    contact: team.contact,
     startPrompt:
       team.startPrompt ??
       'Start the team, or pick it up where your log leaves off: read the documents your rules list, then work through "Each time you wake".',

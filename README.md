@@ -99,8 +99,9 @@ The appended prompt is **compiled**, never written by hand. It combines:
 
 - the constitution's articles;
 - the team's rules, rendered from `team.json`: lanes, limits, commands, board, policies and documents;
+- the operator's direction (`direction.md`), which the planner derives product decisions from;
 - the operator's notes for the role;
-- the planner's lessons.
+- the planner's decisions (`decisions.md`) and lessons.
 
 The prose therefore can't disagree with what the guard enforces. When a source changes, the next session
 recompiles it.
@@ -119,10 +120,10 @@ quick gate. **The merge queue** (`e9g merge`) is the only way into the integrati
 
 ## The two places you edit
 
-| Where                                                  | What                                                                                                                                                                                                                                                              |
-| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The factory** (this repository)                      | Everything generic: the [constitution](CONSTITUTION.md), the role prompts (`plugin/agents/`), the hooks (`plugin/hooks/`), the policies (`lib/policies.ts`), the engine (`lib/`), the setup agent and the starter files (`templates/`)                            |
-| **The team's `.e9g/`** (in the repository it works on) | Everything about one repository: `team.json` (the rules, [reference](docs/team.md)), `brief.md`, `notes.md`, an optional rubric and style guide, `roles/<role>.md` additions, the planner's `lessons.md`, and `adapters/` (`env.sh`, `gate.sh`, `after-merge.sh`) |
+| Where                                                  | What                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The factory** (this repository)                      | Everything generic: the [constitution](CONSTITUTION.md), the role prompts (`plugin/agents/`), the hooks (`plugin/hooks/`), the policies (`lib/policies.ts`), the engine (`lib/`), the setup agent and the starter files (`templates/`)                                                               |
+| **The team's `.e9g/`** (in the repository it works on) | Everything about one repository: `team.json` (the rules, [reference](docs/team.md)), `brief.md`, `direction.md`, `notes.md`, an optional rubric and style guide, `roles/<role>.md` additions, the planner's `decisions.md` and `lessons.md`, and `adapters/` (`env.sh`, `gate.sh`, `after-merge.sh`) |
 
 Everything else is generated from these two, and nothing in it is edited by hand:
 

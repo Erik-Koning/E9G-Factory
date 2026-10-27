@@ -17,6 +17,8 @@ describe("prompts", () => {
       ".e9g/brief.md": "Build it.\n",
       ".e9g/roles/builder.md": "Builders here use the blue components.\n",
       ".e9g/lessons.md": "- The dev server needs a restart after schema changes.\n",
+      ".e9g/direction.md": "# Direction\n\n<!-- starter guidance -->\n\n## When goals conflict\n\n1. The shopper's trust over speed.\n",
+      ".e9g/decisions.md": "- Show stock left on the cart? → Yes. Because trust over speed. (planner, ticket 4)\n",
     }
   );
   const team = loadTeam(home);
@@ -61,6 +63,21 @@ describe("prompts", () => {
     assert.doesNotMatch(compile(team, "builder"), /`\.e9g\/notes\.md`/, "missing docs aren't");
   });
 
+  test("the direction and the decisions made from it go to everyone, without the starter's comments", () => {
+    for (const role of Object.keys(team.roles)) {
+      const prompt = compile(team, role);
+      assert.match(prompt, /## The operator's direction \(\.e9g\/direction\.md\)[\s\S]*trust over speed/, `${role}: direction`);
+      assert.match(prompt, /## Decisions made from it[\s\S]*Show stock left on the cart\? → Yes/, `${role}: decisions`);
+      assert.doesNotMatch(prompt, /starter guidance/, `${role}: no HTML comments`);
+    }
+  });
+
+  test("a starter direction no one has filled in stays out of the prompts", () => {
+    const starter = readFileSync(new URL("../templates/team/direction.md", import.meta.url), "utf8");
+    const bare = makeRepo(baseTeam(), { ".e9g/direction.md": starter });
+    assert.doesNotMatch(compile(loadTeam(bare), "planner"), /## The operator's direction/);
+  });
+
   test("a prompt goes stale when its sources change", () => {
     const run = tmp("e9g-run-");
     assert.ok(promptStale(team, "builder", run), "missing");
@@ -70,6 +87,15 @@ describe("prompts", () => {
     write(home, { ".e9g/roles/builder.md": "Changed notes.\n" });
     assert.ok(promptStale(team, "builder", run), "role notes changed");
     writePrompt(team, "builder", run);
+    for (const files of [
+      { ".e9g/direction.md": "# Direction\n\nSpeed first.\n" },
+      { ".e9g/decisions.md": "- A → B. Because speed first. (operator, 2026-10-26, ticket 9)\n" },
+    ]) {
+      const file = Object.keys(files)[0];
+      write(home, files);
+      assert.ok(promptStale(team, "builder", run), `${file} changed`);
+      writePrompt(team, "builder", run);
+    }
     write(home, { ".e9g/team.json": baseTeam({ title: "Renamed" }) });
     assert.ok(promptStale(loadTeam(home), "builder", run), "team.json changed");
   });

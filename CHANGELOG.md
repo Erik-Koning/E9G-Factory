@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1: The planner decides from direction, and writes less often
 
 - **The planner decides from the operator's direction, and asks for direction when it must ask.** A team's
   `.e9g/direction.md` (new, the operator's, with a starter from `e9g init` and a draft from setup) holds the

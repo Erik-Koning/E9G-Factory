@@ -75,7 +75,7 @@ describe("detect", () => {
     assert.deepEqual(team.roles.tester?.write, ["^e2e/"]);
     assert.deepEqual(team.roles.builder?.deny, ["^e2e/"]);
     assert.ok(team.roles["ux-specialist"], "a UI gets a UX specialist");
-    assert.deepEqual(team.board, { type: "files" }, "no GitHub remote, so a files board");
+    assert.deepEqual(team.board, { type: "tasks" }, "no GitHub remote, so the task graph");
     assert.equal(team.environment.needsDocker, true, "Supabase runs in Docker");
     assert.equal(team.worktreeSetup, "pnpm install --frozen-lockfile --prefer-offline");
   });

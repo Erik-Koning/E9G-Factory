@@ -1,5 +1,71 @@
 # Changelog
 
+## 0.4.0: The task graph, feature requests, cycles and machines
+
+- **The board is a task graph.** Every piece of work is a task, one document each (`board: "tasks"`; `"files"` means
+  the same), with a status, who holds it on which machine, and its history. `e9g task` adds, shows, edits, scores,
+  moves, approves, claims, submits and graphs them, each verb checked against the caller's role and the task's status
+  in code (the guard holds the roles too), and every write is refused if the task changed since it was read. Tasks
+  live in the run folder (`~/.e9g/runs/<team>/tasks/`), where the launchd watchdog can read them and agents can't
+  write. A 0.3 files board is imported ticket by ticket the first time a command opens the graph, keeping its numbers.
+  `e9g task graph` writes a BetterDiagrams document: a band per journey, columns by dependency.
+- **Proposals are scored and approved.** The planner passes new work through a gate (who asked and why, what could be
+  deleted or simplified instead, the simplest version) and scores it 0–3 on pain, reach, revenue, wow, distribution,
+  leverage, urgency and risk, with a confidence and a size; the command computes the priority from `priorities`
+  weights. A new role, the **approver**, approves, rejects, sends back for research or escalates proposals, within
+  `approval`: `"thresholds"` (the default, up to `maxSize`, no new journeys), `"operator"` or `"full"`. The planner
+  never approves its own.
+- **Members claim their work.** Builders and testers run `e9g task claim`: the next approved task their role builds,
+  blockers then majors then priority, never two on the same files, with dependencies (`--after`) done first. A lease
+  (`watchdog.stuckAfter`) is renewed by the heartbeat hook and expired by the watchdog. `e9g task submit` hands it in
+  for review; the Stop hook won't let a member finish holding a claim. The merge queue marks what it merges done, and a
+  journey whose tasks are all done moves to `verify` for its polish cycle. A task edited in what it is (its title,
+  body or kind) or scored again is approved again before it's built, and a journey's tasks wait for the journey's
+  approval.
+- **Review persists.** A review skill ships in the plugin (`e9g:review`): blast radius first, then goals, edge cases,
+  tangential code, tests that fail without the change, and a before-and-after look at every affected page. `e9g
+blast` computes the blast radius: importers (two levels, relative imports and tsconfig paths), files that usually
+  change together, their tests, UI and `critical` paths. A UI change beyond `review.viewCheckMinLines` (10) is
+  approved only with `--shots` (screenshots taken since the commit); a changes verdict sends a task in review back for
+  rework, and blocks it after `review.maxRounds` (3) rounds.
+- **Feature requests.** `e9g request` keeps stakeholders' requests; the planner researches each and promotes it into
+  tasks (`e9g task add --request`) or rejects it. Stakeholders' names and addresses stay with the operator: agents see
+  an id and a role (Article 8). `e9g serve` is the operator's page: the request form, proposals to approve, the board
+  and the graph, on 127.0.0.1 or behind a token.
+- **Cycles.** `mode: "cycles"` takes away the finish line: the planner builds, verifies journeys, sweeps for
+  regressions and closes each cycle with `e9g cycle close`, whose report goes to the operator; an idle team is woken by
+  new requests and tasks.
+- **Several machines.** `tasks.store: "mongo"` keeps the graph in MongoDB (`e9g connect mongo`; the optional
+  `mongodb` driver loads only then). With `tasks.lead`, the lead merges and pushes the integration branch; workers
+  (`e9g register --worker`) run builders and testers that their watchdog starts, which make their branches from the
+  remote and push them on submit. The lead reviews and merges a branch only as the remote has it, refuses to merge
+  while the remote's integration branch has commits it doesn't, and closes a merge's tasks only once it's pushed.
+- **The constitution** gains the task graph, approval and cycles: Articles 1, 2, 3, 4, 8, 10 and 11.
+- `e9g self-install` copies every production dependency it finds installed, without needing npm.
+- The guard refuses a command that sets, unsets or clears the `E9G_` variables a member is known by (without them,
+  the factory's commands would take it for the operator), and, under the `hosted-data` policy, Mongo tools and
+  connection strings for a hosted server.
+- `e9g serve` always asks for a token (made at start, or `E9G_SERVE_TOKEN`), so agents on the same machine can't
+  approve their own work through it; stakeholders' details live beside the run folder, where the guard refuses them.
+
+### Also in this release: the planner's pull request, and a heartbeat
+
+- **The planner opens a pull request for the operator to merge.** `team.json` `push.pullRequest` (`true` for
+  `base`, or a branch name) gives the planner `e9g pr --title "…" --body-file <file>`. After a push, it opens a
+  pull request from the pushed branch into that one, or updates the open one, so the operator has one to read at a
+  time and merging it is their promotion (Article 3). Its title carries `[E9G-Planner] [<team title>]`, and its body
+  ends with the commit it holds (read from the remote, with any newer commits not yet pushed), and with the
+  planner's thread. The factory runs `gh` for it, so the `github` policy stays denied: `gh pr create` and
+  everything else gh does beyond issues stay refused. Only the planner runs it (the guard, and the command itself).
+  Its rules describe it, the Done report links it, and `e9g check` proves who may run it, and warns when the remote
+  isn't GitHub or `gh` is missing.
+- **A heartbeat, for when the Mac itself stops.** `e9g connect heartbeat <url>` keeps a check's ping URL
+  (healthchecks.io, or any service like it) once a test ping goes through. The watchdog pings it at the end of every
+  run of every team in which T3 Code answers. When the pings stop, because the Mac is off, asleep or at the login
+  screen, the watchdog stopped, or T3 Code won't start, the service alerts the operator: the one alert the factory
+  can't send itself. A failing ping is logged at most hourly. `e9g connect` and `e9g doctor` show when it last
+  went through, and `e9g disconnect heartbeat` turns it off.
+
 ## 0.3.1: The planner decides from direction, and writes less often
 
 - **The planner decides from the operator's direction, and asks for direction when it must ask.** A team's

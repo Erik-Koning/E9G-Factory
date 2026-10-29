@@ -215,8 +215,9 @@ export function detect(root: string) {
 }
 
 // A starting team.json from what was detected. The setup agent and the operator refine it. It pins the factory
-// version that drafted it, and keeps tickets on the machine (a files board): a GitHub board posts issues where
-// people read them, so the setup interview offers it rather than assuming it.
+// version that drafted it, and keeps tickets on the machine (the task graph, in the run folder): a GitHub board posts
+// issues where people read them, so the setup interview offers it rather than assuming it. An approver decides on
+// the planner's proposals within the default thresholds.
 export function draftTeam(found: Detected, { name, branch, owner }: { name: string; branch: string; owner?: string | null | undefined }): RawTeam {
   const policies: Record<string, string> = {};
   const tests = found.e2eDir ? `^${found.e2eDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/` : null;
@@ -224,6 +225,7 @@ export function draftTeam(found: Detected, { name, branch, owner }: { name: stri
     planner: {},
     builder: { limit: 2 },
     reviewer: { limit: 1 },
+    approver: { limit: 1 },
     ...(found.ui.length ? { "ux-specialist": { limit: 1 } } : {}),
     ...(found.e2e.length && tests ? { tester: { limit: 1, write: [tests] } } : {}),
   };
@@ -237,7 +239,7 @@ export function draftTeam(found: Detected, { name, branch, owner }: { name: stri
     branch,
     ...(found.git.defaultBranch ? { base: found.git.defaultBranch } : {}),
     push: null,
-    board: "files",
+    board: "tasks",
     roles,
     gate: { full: ".e9g/adapters/gate.sh", quick: ".e9g/adapters/gate.sh --quick", concurrency: 2 },
     environment: { script: ".e9g/adapters/env.sh", health: [], needsDocker: found.surfaces.some((s) => s.id === "supabase") },

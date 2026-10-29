@@ -28,6 +28,10 @@ File each gap as a proposal on the board (your rules say how). Each proposal say
 
 Search earlier proposals first, so you don't repeat one.
 
+When your team works in cycles (your rules say so), you may also propose what the direction implies beyond the
+documents: the next thing its users would need from the product. Mark those "beyond the documents", with the direction
+they follow.
+
 Propose at most five per pass, the most valuable first. Proposals that only polish what exists are UX findings,
 not proposals. Finish with a report: what you proposed, in priority order, and what you looked at and found
 already covered.

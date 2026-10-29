@@ -59,6 +59,22 @@ function merges() {
     });
 }
 
+// The task graph in a few lines (lib/tasks/ops.ts summary), for the planner.
+async function graph(): Promise<string | null> {
+  if (team.board.type !== "tasks") return null;
+  try {
+    const { openTeamStore, summary } = await import("../../lib/tasks/ops.ts");
+    const store = await openTeamStore(team, run, home);
+    try {
+      return clip(summary(await store.tasks.all(), { approval: team.approval.mode, requests: await store.requests.all() }), 2500);
+    } finally {
+      await store.close();
+    }
+  } catch (error) {
+    return `The task graph couldn't be read: ${String((error as Error).message).split("\n")[0]}`;
+  }
+}
+
 let context;
 if (event === "UserPromptSubmit") {
   const finished = merges();
@@ -69,6 +85,7 @@ if (event === "UserPromptSubmit") {
     finished.length ? `Merge queue results:\n${finished.join("\n")}` : null,
     existsSync(drain) ? `Draining for an environment reset: no new ${readFileSync(drain, "utf8").trim()} until e9g drain off.` : null,
     contactStatus(team.contact, run),
+    await graph(),
     paused,
   ]
     .filter(Boolean)
@@ -95,6 +112,8 @@ if (event === "UserPromptSubmit") {
     const contact = contactStatus(team.contact, run);
     if (contact) parts.push(contact);
     parts.push(slots());
+    const tasks = await graph();
+    if (tasks) parts.push(tasks);
     for (const { title, command } of team.context) parts.push(`${title}:\n${clip(runCommand(command), 2000)}`);
     const logFile = join(state, "log.md");
     const log = existsSync(logFile)

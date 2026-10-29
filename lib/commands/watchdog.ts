@@ -4,7 +4,7 @@
 // team's health URLs and its run folder, and sends anything that needs a checkout to the team's planner as a
 // message. What needs the operator also goes through every channel they've connected (e9g connect,
 // lib/channels.ts), and their replies go to the planner. Run from a terminal (e9g watchdog run, e9g start) it also
-// clears finished worktrees.
+// clears finished worktrees. A run of every team ends by pinging the heartbeat, if one is connected (lib/heartbeat.ts).
 //
 // Per team, in its run folder: watchdog.log, planner-thread, heartbeat/, outbox/, replies/, paused, complete.
 //
@@ -15,10 +15,15 @@ import { homedir, hostname } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { type Channel, channels, failingSend, outboxMessage, recordSend, type Replies, type Reply } from "../channels.ts";
 import { type Contact, DEFAULT_CONTACT, type MessageKind, messageKind, nextAllowed, recordSent, registeredContact } from "../contact.ts";
+import { HEARTBEAT_FILE, heartbeatSettings, hostOf, ping } from "../heartbeat.ts";
 import { PLANNER_TAG } from "../labels.ts";
 import { acquireSlot } from "../lock.ts";
 import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
+import { machineName } from "../machine.ts";
+import { claimRefusal } from "../tasks/model.ts";
+import { expireClaims } from "../tasks/ops.ts";
+import { openStore } from "../tasks/store.ts";
 import * as t3 from "../t3.ts";
 import { die, readJson, which, writeFileAtomic, writeJson } from "../util.ts";
 
@@ -348,7 +353,28 @@ export async function watchOnce(only?: string, before?: (entry: RegistryEntry) =
   }
   if (reach.some((channel) => channel.replies)) writeJson(seenFile, [...seen].slice(-500));
   warnFailing(reach, glog);
+  if (!only) await beat(glog);
   return skipped;
+}
+
+// The heartbeat (lib/heartbeat.ts), last, so a ping says a whole run got through; a run that watches one team (e9g
+// start) doesn't ping. A failing ping is logged at most hourly: the service's own alert is what tells the operator.
+async function beat(glog: (text: string) => void): Promise<void> {
+  let settings: ReturnType<typeof heartbeatSettings> = null;
+  try {
+    settings = heartbeatSettings();
+  } catch (error) {
+    glog(`couldn't read ${HEARTBEAT_FILE}: ${(error as Error).message}`);
+    return;
+  }
+  if (!settings) return;
+  const problem = await ping(settings.url);
+  const mark = join(E9G_HOME, ".stamp-heartbeat-failing");
+  if (!problem) rmSync(mark, { force: true });
+  else if (minutesSince(mark) >= 60) {
+    writeFileSync(mark, "");
+    glog(`couldn't ping the heartbeat at ${hostOf(settings.url)}: ${problem}`);
+  }
 }
 
 async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[], seen: Set<string>): Promise<void> {
@@ -371,6 +397,48 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
   mkdirSync(join(run, "heartbeat"), { recursive: true });
   mkdirSync(join(run, "outbox"), { recursive: true });
   if (existsSync(join(run, "paused"))) return;
+
+  // Claims whose lease ran out go back to approved, for another member (lib/tasks/ops.ts); and what's waiting, which
+  // wakes an idle cycles team.
+  let arrived = "";
+  if (entry.tasks)
+    try {
+      const store = await openStore({ name: entry.name, tasks: entry.tasks }, run);
+      try {
+        const expired = await expireClaims(store, Date.now(), run);
+        if (expired.length) log(`returned tasks whose claims ran out: ${expired.map((id) => `#${id}`).join(" ")}`);
+        // What arrived or changed since the team went idle, so the same waiting work doesn't wake it every run.
+        const idle = join(run, "idle");
+        const since = existsSync(idle) ? new Date(statSync(idle).mtimeMs).toISOString() : "";
+        const requests = (await store.requests.all()).filter((r) => r.status === "new" && r.updatedAt > since).length;
+        // Anything the planner acts on: a finding or proposal, approved work, a hand-in to review, a journey to verify.
+        const tasks = (await store.tasks.all()).filter(
+          (t) => ["triage", "proposed", "approved", "review", "verify"].includes(t.status) && t.updatedAt > since
+        ).length;
+        arrived = [
+          requests ? `${requests} new feature request${requests === 1 ? "" : "s"}` : "",
+          tasks ? `${tasks} task${tasks === 1 ? "" : "s"} to triage, approve, build, review or verify` : "",
+        ]
+          .filter(Boolean)
+          .join(" and ");
+      } finally {
+        await store.close();
+      }
+    } catch (error) {
+      if (oncePer("tasks-unreadable", 60)) log(`couldn't read the task graph: ${(error as Error).message}`);
+    }
+
+  // A worker machine has no planner: the watchdog starts its builders and testers while approved work is free.
+  if (entry.worker) {
+    try {
+      await fillWorkerSlots(entry, log);
+    } catch (error) {
+      if (oncePer("worker-failed", 60)) log(`couldn't fill the worker's slots: ${(error as Error).message}`);
+    }
+    pruneWorktrees(entry);
+    trimLog(run);
+    return;
+  }
 
   if (entry.needsDocker && spawnSync("docker", ["info"], { stdio: "ignore" }).status !== 0) {
     log("Docker isn't running; starting it");
@@ -449,6 +517,13 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
       log("planner waiting on a person");
       await alert("waiting", "The planner is waiting for an answer in T3 Code.");
     }
+  } else if (existsSync(join(run, "idle"))) {
+    // An idle cycles team: woken by new work, else ticked like a finished one.
+    if (arrived) {
+      rmSync(join(run, "idle"), { force: true });
+      if (t3.threadSend(planner, tickText(`, new work: ${arrived}`))) log(`woke the idle planner: ${arrived}`);
+    } else if (oncePer("tick", w.doneTickEveryMin ?? 1440) && t3.threadSend(planner, tickText(", nightly: the team is idle; check for new work")))
+      log("nightly tick (idle)");
   } else if (existsSync(join(run, "complete"))) {
     if (
       oncePer("tick", w.doneTickEveryMin ?? 1440) &&
@@ -465,9 +540,65 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
   // The planner's outbox: a notification on this Mac, and the message itself through each connected channel, as often
   // as the team's contact setting allows.
   await sendOutbox(reach, join(run, "outbox"), title, entry.name, log, registeredContact(entry.contact), (text) => notify(title, text));
+  trimLog(run);
+}
+
+// The team's watchdog log, kept to its last 2,000 lines once it passes 5,000.
+function trimLog(run: string): void {
   const logFile = join(run, "watchdog.log");
+  if (!existsSync(logFile)) return;
   const lines = readFileSync(logFile, "utf8").split("\n");
   if (lines.length > 5000) writeFileSync(logFile, lines.slice(-2000).join("\n"));
+}
+
+// A worker machine: for each role it runs, as many members as its limit leaves room for and approved tasks it could
+// claim, each in a worktree of the integration branch, told to claim (the claim makes its branch from the remote).
+// T3 Code counts only the members a planner starts, so the watchdog keeps the threads it starts (worker-threads.json)
+// and counts those still busy; and it starts at most one member per slot each half hour, so members that end without
+// claiming anything aren't started again every five minutes.
+export const WORKER_PROMPT =
+  "Claim a task from the team's task graph and build it: run e9g task claim first, then work as your role's instructions say, and hand it in with e9g task submit.";
+const WORKER_WINDOW_MIN = 30;
+type WorkerThreads = Record<string, { id: string; at: string }[]>;
+async function fillWorkerSlots(entry: RegistryEntry, log: (text: string) => void): Promise<void> {
+  if (!entry.tasks || !entry.limits) return;
+  const file = join(entry.run, "worker-threads.json");
+  const started = readJson<WorkerThreads>(file, {});
+  const store = await openStore({ name: entry.name, tasks: entry.tasks }, entry.run);
+  let all: Awaited<ReturnType<typeof store.tasks.all>>;
+  try {
+    all = await store.tasks.all();
+  } finally {
+    await store.close();
+  }
+  const busy = (id: string): boolean => {
+    const status = t3.threadShow(id)?.status ?? "";
+    return BUSY.includes(status) || status === "waiting";
+  };
+  for (const role of Object.keys(entry.limits)) {
+    const recent = (started[role] ?? []).filter(({ at }) => Date.now() - Date.parse(at) < WORKER_WINDOW_MIN * 60_000);
+    const running = (started[role] ?? []).filter(({ id }) => busy(id));
+    const limit = entry.limits[role] ?? 0;
+    const claimable = all.filter((t) => claimRefusal(t, role, all) === null).length;
+    const n = Math.min(limit - running.length, limit - recent.length, claimable);
+    const kept = [...new Map([...running, ...recent].map((thread) => [thread.id, thread])).values()];
+    for (let i = 0; i < n; i++) {
+      const { id, error } = t3.threadStart(entry.project, WORKER_PROMPT, {
+        instance: `e9g-${entry.name}-${role}`,
+        model: entry.model,
+        title: `${entry.title} · ${role} (${machineName()})`,
+        worktree: entry.branch ?? "HEAD",
+      });
+      if (id) kept.push({ id, at: new Date().toISOString() });
+      log(
+        id
+          ? `started a ${role} (${id}) for the ${claimable} approved task${claimable === 1 ? "" : "s"} it could claim`
+          : `couldn't start a ${role}: ${error ?? "no id"}`
+      );
+    }
+    started[role] = kept;
+  }
+  writeJson(file, started);
 }
 
 // How long the worktrees of interrupted, failed or cancelled members are kept.

@@ -4,13 +4,18 @@
 //   e9g connect                                   what's connected
 //   e9g connect email [--to <address>] [--from <sender>] [--replies <domain> | --no-replies]
 //   e9g connect whatsapp [--phone-number-id <id>] [--account-id <id>] [--to <number>]
-//   e9g connect email|whatsapp --test             send another test message
-//   e9g disconnect email|whatsapp
+//   e9g connect heartbeat <url>                   an outside check the watchdog pings, which tells them when it stops
+//   e9g connect mongo [--machine <name>] [--no-check]   this machine's connection to a team's shared task graph
+//   e9g connect email|whatsapp|heartbeat --test   send another test message, or ping
+//   e9g disconnect email|whatsapp|heartbeat
 //
 // Email goes through Resend with the operator's own API key (lib/email.ts); WhatsApp through their WhatsApp Business
 // number on Meta's Cloud API (lib/whatsapp.ts). Each key or token is typed at a prompt or piped in, goes in the
 // Keychain, and is kept only after a test message goes through (or, for WhatsApp, while Meta reviews the template).
+// The heartbeat (lib/heartbeat.ts) is kept only after a test ping goes through.
 import { readFileSync } from "node:fs";
+import { MACHINE_NAME, machineName, saveMachineName } from "../machine.ts";
+import { driver, forgetUri, hasUri, MONGO_URI, readUri, shownUri, storeUri } from "../tasks/mongo.ts";
 import { hostname } from "node:os";
 import { createInterface } from "node:readline/promises";
 import {
@@ -27,6 +32,7 @@ import {
   storeKey,
 } from "../email.ts";
 import { recordSend } from "../channels.ts";
+import { forgetHeartbeat, HEARTBEAT_FILE, heartbeatSettings, heartbeatUrl, hostOf, lastPing, ping, saveHeartbeat } from "../heartbeat.ts";
 import { readRegistry, teamFile } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
 import { die, localTime, parseArgs, readJson, text } from "../util.ts";
@@ -301,21 +307,133 @@ to the account. Replies to it don't reach your teams.
   return 0;
 }
 
+function heartbeatStatus(): void {
+  const settings = heartbeatSettings();
+  if (!settings) console.info("heartbeat  not connected: e9g connect heartbeat <url>");
+  else {
+    const last = lastPing();
+    console.info(
+      `heartbeat  pings ${hostOf(settings.url)} each watchdog run, last ${last ? localTime(last) : "never"} (e9g connect heartbeat --test pings it)`
+    );
+  }
+}
+
+const HEARTBEAT_HELP = `An outside service tells you when this Mac stops pinging it: when it's off, asleep or at the login screen
+after a restart, when the watchdog stops, or when T3 Code won't start. The watchdog pings it at the end of every
+run (every 5 minutes) in which T3 Code answers.
+  1. Make a check at a service that alerts you when pings stop, such as https://healthchecks.io (free): period
+     5 minutes, grace 15, so a restart of T3 Code doesn't alert you.
+  2. e9g connect heartbeat <the check's ping URL>`;
+
+async function connectHeartbeat(argv: string[]): Promise<number> {
+  const { positional, options } = parseArgs(argv, { booleans: ["test"] });
+  const previous = heartbeatSettings();
+  if (options["test"]) {
+    if (!previous) die("the heartbeat isn't connected: e9g connect heartbeat <url>");
+    const problem = await ping(previous.url);
+    if (problem) {
+      console.error(`e9g: the ping to ${hostOf(previous.url)} didn't go through: ${problem}`);
+      return 1;
+    }
+    console.info(`e9g: pinged ${hostOf(previous.url)}`);
+    return 0;
+  }
+  if (!positional[0]) {
+    console.info(HEARTBEAT_HELP);
+    return 2;
+  }
+  const url = heartbeatUrl(positional[0]);
+  if (!url) die(`${positional[0]} isn't a URL; give the check's ping URL, like https://hc-ping.com/<uuid>`);
+  const problem = await ping(url);
+  if (problem) {
+    console.error(`e9g: the test ping to ${hostOf(url)} didn't go through: ${problem}. Nothing was saved.`);
+    return 1;
+  }
+  saveHeartbeat({ url, connectedAt: previous?.url === url ? previous.connectedAt : new Date().toISOString() });
+  console.info(`e9g: pinged ${hostOf(url)}. The watchdog now pings it at the end of every run in which T3 Code answers.
+  Give the check a period of 5 minutes and a grace of 15. The URL is in ${HEARTBEAT_FILE}.`);
+  return 0;
+}
+
+function mongoStatus(): void {
+  const uri = hasUri() ? readUri() : null;
+  console.info(
+    uri
+      ? `mongo  ${shownUri(uri)}, as the machine ${machineName()} (e9g connect mongo --machine <name> renames it)`
+      : "mongo  not connected: e9g connect mongo (for a team whose tasks are in Mongo)"
+  );
+}
+
+// e9g connect mongo: the connection string, typed at a prompt or piped in (never an argument, which other processes
+// can read), kept in the Keychain once a connection goes through; and this machine's name in the task graph.
+async function connectMongo(argv: string[]): Promise<number> {
+  const { options } = parseArgs(argv, { booleans: ["no-check"] });
+  const machine = typeof options["machine"] === "string" ? options["machine"] : undefined;
+  if (machine !== undefined && !MACHINE_NAME.test(machine)) die("--machine: lowercase letters, digits and dashes, such as studio");
+  // Already connected, and nothing piped in: --machine only renames this machine.
+  if (machine && hasUri() && process.stdin.isTTY) {
+    saveMachineName(machine);
+    console.info(`e9g: this machine is ${machine} in the task graph`);
+    return 0;
+  }
+  const uri = process.stdin.isTTY ? await askHidden("MongoDB connection string (mongodb+srv://…): ") : readFileSync(0, "utf8").trim();
+  if (!MONGO_URI.test(uri)) die("that isn't a MongoDB connection string (mongodb://… or mongodb+srv://…)");
+  if (!options["no-check"]) {
+    try {
+      const { MongoClient } = await driver();
+      const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, appName: "e9g" });
+      await client.connect();
+      await client.close();
+    } catch (error) {
+      console.error(`e9g: couldn't connect to ${shownUri(uri)}: ${(error as Error).message}. Nothing was saved.`);
+      return 1;
+    }
+  }
+  if (!storeUri(uri)) die("couldn't keep the connection string in the Keychain");
+  // The name is kept either way, so a network that changes the host's name doesn't change which machine this is.
+  saveMachineName(machine ?? machineName());
+  console.info(
+    `e9g: connected to ${shownUri(uri)} as the machine ${machineName()}. A team whose team.json says "tasks": {"store": "mongo"} keeps its task graph there.`
+  );
+  return 0;
+}
+
 export async function connect(argv: string[]): Promise<number> {
   operatorOnly("connect");
   const [what, ...rest] = argv;
   if (!what) {
     status();
     whatsappStatus();
+    heartbeatStatus();
+    mongoStatus();
     return 0;
   }
   if (what === "email") return connectEmail(rest);
   if (what === "whatsapp") return connectWhatsApp(rest);
-  die("usage: e9g connect [email|whatsapp]");
+  if (what === "heartbeat") return connectHeartbeat(rest);
+  if (what === "mongo") return connectMongo(rest);
+  die("usage: e9g connect [email|whatsapp|heartbeat|mongo]");
 }
 
 export function disconnect(argv: string[]): number {
   operatorOnly("disconnect");
+  if (argv[0] === "mongo") {
+    if (!hasUri()) console.info("e9g: Mongo wasn't connected");
+    else {
+      forgetUri();
+      console.info("e9g: this machine no longer reaches the shared task graph; the database and its tasks are as they were.");
+    }
+    return 0;
+  }
+  if (argv[0] === "heartbeat") {
+    const settings = heartbeatSettings();
+    if (!settings) console.info("e9g: the heartbeat wasn't connected");
+    else {
+      forgetHeartbeat();
+      console.info(`e9g: the heartbeat is off. Pause or delete the check at ${hostOf(settings.url)}, or it alerts you when the pings stop.`);
+    }
+    return 0;
+  }
   if (argv[0] === "whatsapp") {
     if (!whatsappSettings() && !readToken()) console.info("e9g: WhatsApp wasn't connected");
     else {
@@ -324,7 +442,7 @@ export function disconnect(argv: string[]): number {
     }
     return 0;
   }
-  if (argv[0] !== "email") die("usage: e9g disconnect email|whatsapp");
+  if (argv[0] !== "email") die("usage: e9g disconnect email|whatsapp|heartbeat|mongo");
   if (!emailSettings() && !readKey()) {
     console.info("e9g: email wasn't connected");
     return 0;

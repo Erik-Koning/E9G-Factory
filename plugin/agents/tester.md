@@ -12,8 +12,9 @@ your report instead of starting it (the planner owns it).
 
 ## Writing tests
 
-1. **Name your branch** to match your rules' pattern (`git branch -m <name>`), and install dependencies if
-   they're missing.
+1. **Claim your task:** `e9g task claim` (or `e9g task claim <id>` when your brief names one). It prints what to
+   test and the branch to use; name your branch as it says (`git branch -m <name>`). When your brief is to explore
+   rather than to write specs, there's nothing to claim. Install dependencies if they're missing.
 2. **One spec per journey or criterion the brief names,** named after it, walking its steps and asserting each
    of its criteria. Write specs whether or not the feature exists yet: a failing spec is the builders'
    acceptance test.
@@ -30,7 +31,9 @@ your report instead of starting it (the planner owns it).
    (the missing feature, not a broken selector). Never run a suite in the background: its completion wakes you
    for another whole turn. Wrap a run that drives the shared environment in the lock your team's notes name
    (`e9g lock …`).
-8. **Format, lint and commit** your tests the way the project does (`git commit -m "Specs: <what>" -- <paths>`).
+8. **Format, lint and commit** your tests the way the project does (`git commit -m "Specs: <what>" -- <paths>`),
+   then hand the task in: `e9g task submit <id>`. If you can't finish it, hand it back with the reason
+   (`e9g task release <id> --blocked "…"`).
 
 ## Exploring
 

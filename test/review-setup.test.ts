@@ -235,11 +235,17 @@ describe("the teams on this machine load as they did before this review", () => 
           if (baseline && loadedAtBaseline) {
             const then = baseline.normalize(structuredClone(raw), home);
             // The default removedPattern changed on purpose (#8), and so did the planner's default lane, which now
-            // names its decisions, and contact is new; the rest is as it was.
+            // names its decisions, and contact and push.pullRequest (none, unless the team names one) are new; the rest
+            // is as it was.
             const plannerWrite = (team: Record<string, unknown>) => {
               const roles = team["roles"] as Record<string, { write: string[] }>;
               const planner = roles["planner"];
               return planner ? { ...roles, planner: { ...planner, write: planner.write.filter((rule) => rule !== "^\\.e9g/decisions\\.md$") } } : roles;
+            };
+            const withoutPullRequest = (push: unknown) => {
+              if (!push || typeof push !== "object") return push;
+              const { pullRequest, ...rest } = push as Record<string, unknown>;
+              return pullRequest === null ? rest : push;
             };
             const comparable = (team: Record<string, unknown>) => ({
               ...team,
@@ -247,10 +253,23 @@ describe("the teams on this machine load as they did before this review", () => 
               file: null,
               warnings: null,
               problems: null,
-              review: raw.review?.removedPattern === undefined ? { ...(team["review"] as object), removedPattern: "the default" } : team["review"],
+              review: reviewThen(team["review"]),
               roles: plannerWrite(team),
               contact: null,
+              push: withoutPullRequest(team["push"]),
+              // 0.4.0: "files" is the task graph, and the task graph's settings are new.
+              board: (team["board"] as { type?: string }).type === "files" ? { type: "tasks" } : team["board"],
+              mode: null,
+              tasks: null,
+              priorities: null,
+              approval: null,
+              critical: null,
             });
+            // review.maxRounds and viewCheckMinLines are new in 0.4.0.
+            function reviewThen(review: unknown) {
+              const { maxRounds: _rounds, viewCheckMinLines: _lines, ...rest } = review as Record<string, unknown>;
+              return raw.review?.removedPattern === undefined ? { ...rest, removedPattern: "the default" } : rest;
+            }
             assert.deepEqual(differences(comparable({ ...now }), comparable(then.team)), [], which);
             assert.deepEqual(differences(now.warnings, then.warnings), [], `${which}: its warnings`);
             compared++;

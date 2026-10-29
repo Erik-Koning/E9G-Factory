@@ -13,7 +13,8 @@ Set up and run a team (the operator)
                                       --name --branch --base --checkout <dir> | --in-place --owner --no-interview
   e9g check [<checkout>] [--run]      prove the setup: rules, adapters, a guard self-test, prompts; --run also
                                       starts the environment and runs the gate
-  e9g register [<checkout>]           T3 project, one instance per role, compiled prompts, the registry (alias: sync)
+  e9g register [<checkout>] [--worker]   T3 project, one instance per role, compiled prompts, the registry (alias: sync);
+                                      --worker on a machine other than a Mongo team's lead: builders and testers only
   e9g start <team>                    resume it and run the watchdog now (it starts the planner)
   e9g pause | resume <team>           stop or restart the watchdog's ticks for one team
   e9g rotate <team>                   a fresh planner thread (refused while members run)
@@ -25,7 +26,9 @@ Set up and run a team (the operator)
   e9g watchdog install|remove|run     the one launchd job that looks after every team
   e9g connect [email|whatsapp] [--test]  send you the watchdog's alerts and the planner's outbox: email through
                                       Resend (replies reach the planner), WhatsApp through your business number
-                                      ·  e9g disconnect email|whatsapp
+  e9g connect heartbeat <url> [--test]  ping an outside check every watchdog run, so it tells you when this Mac stops
+  e9g connect mongo [--machine <name>]  this machine's connection to a team's shared task graph (the string on stdin)
+                                      ·  e9g disconnect email|whatsapp|heartbeat
   e9g self-install [--link] [--force] install this checkout's version into ~/.e9g  ·  e9g versions
 
 Team members (the guard decides who may run which)
@@ -34,6 +37,17 @@ Team members (the guard decides who may run which)
   e9g log [--label …] "<entry>"   e9g lock <name> [--slots N] [--wait-min M] -- <cmd>   e9g drain <role…>|off
   e9g gate [--quick]   e9g env up|down|restart|reset|status   e9g finish   e9g progress
   e9g pages run|shots|status|done
+  e9g pr --title "…" --body-file <file>   the planner's pull request into the branch you promote (push.pullRequest)
+
+The task graph (e9g task help lists every form)
+  e9g task add|list|show|note|graph   anyone on the team: findings go to triage, the planner's work is proposed
+  e9g task edit|score|status|import   the planner: shape, score (the gate and the matrix) and move tasks
+  e9g task approve|reject|research|escalate <id>   the approver (or you), within team.json approval
+  e9g task claim [<id>]  ·  release <id>  ·  submit <id>   builders and testers take the next task, and hand it in
+  e9g request add|list|show|note|reject   stakeholders' feature requests (you add them; the planner promotes them)
+  e9g cycle close --report-file <f> | list   a cycles team's cycles (team.json mode "cycles")
+  e9g blast [<ref>] [--base <branch>] [--json]   what a change touches: importers, related files, tests, UI, critical paths
+  e9g serve [--port 4600] [--host …]   your page for a team: the request form, proposals to approve, the board and graph
 `;
 
 const [command = "help", ...args] = process.argv.slice(2);
@@ -110,6 +124,12 @@ const COMMANDS: Record<string, () => Promise<number | void>> = {
   progress: () => import("../lib/commands/tools.ts").then((m) => m.progress()),
   drain: () => import("../lib/commands/tools.ts").then((m) => m.drain(args)),
   pages: () => import("../lib/commands/pages.ts").then((m) => m.run(args)),
+  pr: () => import("../lib/commands/pr.ts").then((m) => m.pr(args)),
+  task: () => import("../lib/commands/task.ts").then((m) => m.task(args)),
+  request: () => import("../lib/commands/request.ts").then((m) => m.request(args)),
+  cycle: () => import("../lib/commands/cycle.ts").then((m) => m.cycle(args)),
+  blast: () => import("../lib/commands/blast.ts").then((m) => m.blast(args)),
+  serve: () => import("../lib/commands/serve.ts").then((m) => m.serve(args)),
 };
 
 if (["help", "--help", "-h"].includes(command)) {

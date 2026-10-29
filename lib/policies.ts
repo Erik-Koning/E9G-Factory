@@ -184,6 +184,8 @@ export const POLICIES: Policy[] = [
       "e9g lock app -- npx supabase db push",
       "pnpm -C packages/db exec drizzle-kit push",
       "supabase --workdir app db push",
+      'mongosh "mongodb://team:secret@cluster0.abc12.mongodb.net/e9g"',
+      "mongodump --host db.example.com --db e9g",
     ],
     default: "deny",
     summary: "hosted databases and data services (linking, pushing, migrating, dumping, project keys)",
@@ -197,8 +199,16 @@ export const POLICIES: Policy[] = [
       sub("prisma", "migrate\\s+deploy|db\\s+push"),
       sub("drizzle-kit", "push"),
       word("pscale|neonctl|turso|atlas|planetscale"),
+      new RegExp(
+        String.raw`${START}(?:mongosh|mongo|mongodump|mongorestore|mongoexport|mongoimport|mongofiles)${END}[^;&|]*\s--host[=\s]+['"]?(?!(?:localhost|127\.0\.0\.1)\b)[\w-]+\.[\w.-]+`
+      ),
     ],
-    text: [anywhere(String.raw`(?:^|\s)--project-ref(?=$|[\s=])`), anywhere(String.raw`\bmongodb\+srv://`)],
+    text: [
+      anywhere(String.raw`(?:^|\s)--project-ref(?=$|[\s=])`),
+      anywhere(String.raw`\bmongodb\+srv://`),
+      // A Mongo server by a name with a dot in it (a hosted one), not localhost or a compose service's own name.
+      anywhere(String.raw`\bmongodb://(?:[^@\s/]+@)?(?!(?:localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal)(?=[:/,\s'"]|$))[\w-]+\.[\w.-]+`),
+    ],
   },
   {
     id: "publish",
@@ -289,7 +299,7 @@ export const POLICIES: Policy[] = [
 
 // The factory's own commands, which only a person (or the setup agent, for check, register and start) runs.
 export const OPERATOR_COMMANDS = new RegExp(
-  `${START}e9g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|rotate|stop|unregister|connect|disconnect)${END}`
+  `${START}e9g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|rotate|stop|unregister|connect|disconnect|serve)${END}`
 );
 
 // An env file named in a command it reads or writes. Not in what only lists names (ls -la .env*), and not in what
@@ -323,7 +333,18 @@ export const CORE: [Matcher, string][] = [
     /\bsecurity\s+(find|dump|export|add|delete|set)-|\bca\.e9g\.(email|whatsapp)\b|\bgh\s+auth\s+token\b|\.ssh\/id_|\baws\s+configure\s+get\b/,
     "credentials are never read or changed by the team.",
   ],
-  [OPERATOR_COMMANDS, "the operator runs the factory's own commands; the team uses merge, verdict, log, lock, gate, env, finish and pages."],
+  [
+    OPERATOR_COMMANDS,
+    "the operator runs the factory's own commands; the team uses merge, verdict, log, lock, gate, env, finish, pages, pr, task, request, cycle and blast.",
+  ],
+  // Who a member is comes from its instance's E9G_ variables; without E9G_TEAM the factory's commands take the caller
+  // for the operator (e9g task status … done, e9g task add … --approved).
+  [
+    new RegExp(
+      String.raw`(?:^|[;&|(\x60]|\$\()\s*(?:(?:(?:env|exec|nohup)\s+(?:-\S+\s+)*)?(?:\w+=\S*\s+)*E9G_\w*=|(?:export|unset|declare|typeset|readonly)\s+(?:\S+\s+)*E9G_|env\s+(?:\S+\s+)*?(?:-i\b|--ignore-environment\b|-(?=\s)|-u\s*E9G_|--unset=E9G_))`
+    ),
+    "a member's identity is its instance's E9G_ variables; no command sets, unsets or clears them.",
+  ],
 ];
 
 // The secret files no agent reads or writes, by the file tools or the shell, as regexes over a path.
@@ -332,6 +353,10 @@ export const SECRET_FILES = [
   /(^|\/)\.env[^/]*$/,
   /(^|\/)\.envrc$/,
   /(^|\/)\.dev\.vars$/,
+  // A team's stakeholders (beside its run folder, ~/.e9g/runs/<team>.private/): their names and addresses stay with the
+  // operator (Article 8). Anything in that folder, by any path or glob that names it.
+  /\.private\/stakeholders(\/|$)/,
+  /(^|\/)stakeholders\/s\d+\.json$/,
   /\.(pem|p12|key)$/,
   /(^|\/)\.ssh\//,
   /(^|\/)\.npmrc$/,

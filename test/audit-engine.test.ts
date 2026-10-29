@@ -14,11 +14,14 @@ import { loadTeam } from "../lib/config.ts";
 import { acquire } from "../lib/lock.ts";
 import { PACKAGE } from "../lib/paths.ts";
 import { compile, promptStale, writePrompt } from "../lib/prompts.ts";
+import { fileStore } from "../lib/tasks/files.ts";
 
 const as = (home: string, role: string) => ({ cwd: home, env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: role } });
-const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home } });
+// Each checkout's run folder beside it (the default is the team's name, which every fixture shares).
+const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home, E9G_RUN: `${home}-run` } });
+const taskStatus = async (home: string, id: string) => (await fileStore(`${home}-run`, "fixture").tasks.get(id))?.status;
 const review = (home: string, branch: string, sha = git(home, "rev-parse", branch)) =>
-  e9g(["verdict", "review", branch, "approve", "--sha", sha, "--note", "ok"], as(home, "reviewer"));
+  e9g(["verdict", "review", branch, "approve", "--sha", sha, "--note", "ok"], { cwd: home, env: { ...as(home, "reviewer").env, E9G_RUN: `${home}-run` } });
 const record = (home: string, branch: string): { branch: string; result: string; message: string; sha: string } =>
   JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
 const read = (path: string): string => (existsSync(path) ? readFileSync(path, "utf8") : "");
@@ -556,8 +559,8 @@ process.exit(overlap ? 4 : 0);`;
     assert.equal((await review(home, "e9g/b12-x/v2-y")).code, 0);
     const result = await merge(home, "e9g/b12-x/v2-y");
     assert.equal(result.code, 0, result.out);
-    assert.match(read(join(home, ".e9g/run/board/12-twelve.md")), /^status: done$/m);
-    assert.match(read(join(home, ".e9g/run/board/2-two.md")), /^status: ready$/m);
+    assert.equal(await taskStatus(home, "12"), "done");
+    assert.equal(await taskStatus(home, "2"), "approved", "a ready ticket is an approved task, and stays one");
   });
 
   test("#18 a prompt goes stale when a document it lists appears", () => {

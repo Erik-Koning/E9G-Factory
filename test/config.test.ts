@@ -28,7 +28,7 @@ describe("config", () => {
     assert.equal(team.roles.builder?.branch, "^e9g/b\\d+-");
     assert.equal(team.roles.reviewer?.readOnly, true);
     assert.deepEqual(team.protectedBranches, ["main", "master", "production", "prod"]);
-    assert.equal(team.board.type, "files");
+    assert.equal(team.board.type, "tasks");
     assert.equal(team.push, null);
     assert.equal(team.isolation, "strict");
     assert.equal(team.watchdog.tickEveryMin, 10);
@@ -51,7 +51,7 @@ describe("config", () => {
       watchdog: { tickEvery: "5m", stuckAfter: "45m", pruneAfter: "2h", doneTickEvery: "1d" },
       gate: { full: "make check" },
     });
-    assert.deepEqual(team.push, { remote: "origin", branch: "e9g/next", everyMin: 360 });
+    assert.deepEqual(team.push, { remote: "origin", branch: "e9g/next", everyMin: 360, pullRequest: null });
     assert.deepEqual(team.board, { type: "github", label: "loop" });
     assert.deepEqual(team.watchdog, { tickEveryMin: 5, stuckAfterMin: 45, pruneAfterMin: 120, doneTickEveryMin: 1440 });
     assert.equal(team.gate.quick, "make check", "quick falls back to full");

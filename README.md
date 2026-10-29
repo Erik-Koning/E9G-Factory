@@ -1,9 +1,9 @@
 # E9G Factory
 
 E9G Factory provisions a software engineering team of Claude Code agents in any code repository, fast. You give
-as much direction as the project needs. A planner then runs builders, a reviewer, a UX specialist, testers and an
-innovator until a checkable finish line holds. The team contacts you only when the work is done, or when a
-decision would change the outcome a lot.
+as much direction as the project needs. A planner then runs builders, a reviewer, an approver, a UX specialist,
+testers and an innovator, until a checkable finish line holds or, for open-ended work, cycle after cycle. The team
+contacts you only when the work is done or a cycle closes, or when a decision would change the outcome a lot.
 
 It's built on [T3 Code](https://github.com/pingdotgg/t3code), which runs the agents' threads, gives each one its own
 worktree, and wakes the planner when a member finishes. Claude Code is each agent. E9G Factory adds the roles, the
@@ -46,6 +46,12 @@ e9g pause my-app           # and e9g resume my-app; e9g rotate my-app for a fres
 
 You can also watch a team in the T3 Code window: one planner thread, with a child thread per member.
 
+To get a team's work as a pull request, give `push` in `team.json` a `pullRequest`:
+`{"remote": "origin", "branch": "e9g/next", "every": "6h", "pullRequest": true}`. After each push, the planner runs
+`e9g pr`, which opens a pull request into `base` or updates the open one, with what's in it, the calls the planner made
+and what's left. Merging it is how you promote the work; the team never merges into `base` itself. The factory runs
+`gh` for it, so the `github` policy stays denied.
+
 To hear from your teams away from this Mac, and answer them:
 
 ```bash
@@ -61,6 +67,16 @@ passes DMARC. The key stays in the macOS Keychain. The guard refuses agents the 
 any code running as you can reach it, so give the key no more access than you use: sending access only, unless you
 want replies. `e9g connect` shows what's connected, and `e9g disconnect email` turns it off. Without email
 connected, a planner emails you through the claude.ai Gmail connector, when it has one.
+
+To hear when this Mac stops (it's off, asleep or at the login screen after a restart, the watchdog stopped, or T3 Code
+won't start), which nothing on the Mac can tell you:
+
+```bash
+e9g connect heartbeat https://hc-ping.com/<uuid>   # a check at healthchecks.io (free) or any service like it
+```
+
+The watchdog pings it at the end of every run in which T3 Code answers, so give the check a period of 5 minutes and a
+grace of 15. When the pings stop, the service alerts you. `e9g disconnect heartbeat` turns it off.
 
 WhatsApp is one way. A business may message you first only with a template Meta has approved, so
 `e9g connect whatsapp` adds a utility template, `e9g_update`, to your WhatsApp Business account, and every message
@@ -118,6 +134,71 @@ recompiles it.
 **The stop gate** keeps a builder or tester from finishing with uncommitted work, a misnamed branch, or a failing
 quick gate. **The merge queue** (`e9g merge`) is the only way into the integration branch.
 
+## The task graph
+
+Every piece of work is a task: one document each, with a status, who holds it on which machine, and a history of who
+moved it. `e9g task list` shows the open ones; `e9g task graph` writes them as a BetterDiagrams document (a band per
+journey, columns by dependency) to open with `npx @mosphere/better-diagrams`.
+
+```
+ stakeholders ─ e9g request ─▶ REQUESTS ─ planner: research, gate, score ─┐
+ members ─ e9g task add (findings) ─▶ triage ─ planner ──────────────────▶ proposed
+                                                  approver, or you (team.json approval) ▼
+                                       approved ─ e9g task claim ─▶ building ─ e9g task submit ─▶ review
+                                                  reviewer (the review skill) ─▶ merge queue ─▶ done
+                                                  a journey's last task done ─▶ verify ─ polish ─▶ done
+```
+
+- **Proposals.** The planner passes new work through a gate (who asked and why, what could be deleted or simplified
+  instead, the simplest version) and scores it 0–3 on pain, reach, revenue, wow, distribution, leverage, urgency and
+  risk, with a confidence and a size. The command computes the priority from your weights (`priorities`).
+- **Approval.** The planner never approves its own proposals. With `approval.mode` `"thresholds"` (the default, when
+  the team has an approver; without one, every approval is yours) the approver approves work up to
+  `approval.maxSize` and escalates larger work and new journeys to you; `"operator"` keeps
+  every approval yours; `"full"` gives the approver all of it, scope included. Privacy, policy unlocks, promotion and
+  rule changes stay yours whatever the mode.
+- **Claims.** Builders and testers claim the next approved task their role builds (blockers, then majors, then
+  priority), never two on the same files, under a lease their heartbeats renew; the watchdog returns a claim whose
+  member went quiet. The Stop hook won't let a member finish holding one: it submits or releases it.
+- **Review.** The reviewer follows the review skill (`plugin/skills/review/`): the change's blast radius
+  (`e9g blast`: importers, files that usually change with it, their tests, UI, critical paths), goals, edge cases,
+  tangential code, tests that fail without the change, and a before-and-after look at every affected page. A UI change
+  beyond a few lines is approved only with the screenshots the reviewer read. Changes send the task back, up to
+  `review.maxRounds` rounds.
+- **Journeys.** A journey is a task with child tasks. When its last child merges it's due its verification: a UX
+  audit at every viewport, an end-to-end spec of the whole journey, then polish.
+- **Feature requests.** `e9g request add` takes a stakeholder's request; `e9g serve` gives them a form. Agents see a
+  stakeholder's id and role, never a name or address. The planner researches each request and promotes it into tasks
+  (`e9g task add --request`) or rejects it with a reason.
+- **Cycles.** With `"mode": "cycles"` a team has no finish line: it builds, verifies journeys, sweeps for regressions
+  and closes each cycle with a report (`e9g cycle close`), and rests when nothing is left until new work arrives.
+
+`e9g serve` is your page for one team, on the machine it runs on: the request form, the proposals to approve or
+reject, the board and the graph. It listens on 127.0.0.1 and always asks for a token, so the team's own agents on
+this machine can't use it: one made at start and printed in the address to open, or yours in `E9G_SERVE_TOKEN`.
+Whoever has the token can approve work and see stakeholders' names, so share the form with stakeholders through
+someone who does, rather than the token itself.
+
+### Across machines
+
+A team can run on several Macs sharing one task graph in MongoDB: `"tasks": {"store": "mongo", "lead": "<machine>"}`,
+with `push` set, since code moves through the remote. On each machine, `e9g connect mongo --machine <name>` (the
+connection string goes in the Keychain, and no command shows it to an agent). The guard is a seatbelt here too: code
+running as you can read your Keychain, so give the factory a database user that can read and write only its own
+database. The lead, an always-on machine, runs the planner, the approver, the reviews and the merge queue, and pushes
+the integration branch after each merge; `e9g merge` refuses anywhere else, and refuses while the remote's integration
+branch has commits the lead's doesn't (only the lead pushes it). A merge whose push fails leaves its tasks open until
+one pushes. Other machines run `e9g register --worker`: builders and testers only, started by their watchdog while
+approved work is free. A worker's claim makes its branch from the remote, and its submit pushes it for the lead to
+review and merge.
+
+On a team on several machines:
+
+- **Limits are per machine:** each worker runs up to the role's `limit` of its own.
+- **Builders on a worker** use their own previews: the team's shared environment runs on the lead (only the planner
+  starts it).
+- **After changing `tasks` in `team.json`,** run `e9g register` again on each machine, as for `contact`.
+
 ## The two places you edit
 
 | Where                                                  | What                                                                                                                                                                                                                                                                                                 |
@@ -143,7 +224,7 @@ Local and reversible work is allowed. Outward-facing and irreversible actions ar
 | `cloud`        | aws, gcloud, az, terraform, pulumi, kubectl, helm, …                                                                                                                    |
 | `hosted-data`  | Linking, pushing, migrating or dumping hosted databases (Supabase, Prisma migrate deploy, PlanetScale, Neon, Turso, …)                                                  |
 | `publish`      | npm, pnpm, yarn, lerna, cargo, gem and twine publishing; docker, podman and buildah push (including docker image and compose push)                                      |
-| `github`       | gh beyond issues, labels, search and reading PRs and runs (no workflows, API, PRs, releases or settings)                                                                |
+| `github`       | gh beyond issues, labels, search and reading PRs and runs (no workflows, API, PRs, releases or settings). The planner's own pull request goes through `e9g pr` instead  |
 | `messages`     | mail, Slack or Discord webhooks, SMS and email APIs from the shell. The planner emails only you, through its email tool                                                 |
 | `payments`     | The Stripe CLI and live payment keys                                                                                                                                    |
 | `dependencies` | (allowed by default) adding packages                                                                                                                                    |
@@ -156,10 +237,10 @@ branches, and the factory's own files. A team adds its own rules in `never`, eac
 
 `e9g help` lists them all.
 
-| For                                                    | Commands                                                                                                                                                                                                                     |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **The operator**                                       | `doctor`, `init`, `check`, `register` (alias `sync`), `start`, `pause`, `resume`, `rotate`, `status`, `teams`, `metrics`, `prompt`, `upgrade`, `unregister`, `watchdog`, `connect`, `disconnect`, `self-install`, `versions` |
-| **Team members** (the guard decides who may run which) | `merge`, `verdict`, `log`, `lock`, `drain`, `gate`, `env`, `finish`, `progress`, `pages`                                                                                                                                     |
+| For                                                    | Commands                                                                                                                                                                                                                              |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **The operator**                                       | `doctor`, `init`, `check`, `register` (alias `sync`), `start`, `pause`, `resume`, `rotate`, `status`, `teams`, `metrics`, `prompt`, `upgrade`, `unregister`, `watchdog`, `connect`, `disconnect`, `serve`, `self-install`, `versions` |
+| **Team members** (the guard decides who may run which) | `merge`, `verdict`, `log`, `lock`, `drain`, `gate`, `env`, `finish`, `progress`, `pages`, `pr`, `task`, `request`, `cycle`, `blast`                                                                                                   |
 
 ## T3 Code and Claude Code
 
@@ -183,7 +264,7 @@ When T3 Code updates (`t3 update`), run `e9g doctor`:
   current. An installed release doesn't change under a running team. An older version than the current one is only
   added, for teams to pin (`--force` makes it current): the launcher is shared, and an older one doesn't know the
   newer releases. An install that was interrupted is put right by the next one.
-- **Pins:** each team pins one release in `team.json` (`"factory": "0.3.1"`; `e9g init` writes the version that
+- **Pins:** each team pins one release in `team.json` (`"factory": "0.4.0"`; `e9g init` writes the version that
   drafted it), and its agents run that release. A team without a pin runs whichever version registers it.
 - **Upgrading:** `e9g upgrade <team> [version]` registers the team with the target version first, and moves the pin
   only once that worked (`--force` registers even when T3 Code doesn't meet the contract). A running planner keeps

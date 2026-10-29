@@ -18,12 +18,16 @@
 // Exit codes: 0 merged, 2 refused (lane, approval or state), 3 conflict, 4 gate failed, 75 timed out waiting for the
 // merge lock or a gate slot (nothing ran; queue it again).
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync } from "node:fs";
 import { join, posix } from "node:path";
 import { FACTORY_PATH, factoryWrite, laneAllows, roleForBranch, type Team } from "../config.ts";
 import { acquire, TIMED_OUT, withLock } from "../lock.ts";
 import { entryOf, FACTORY_ROOT, readRegistry, stateDir, workDir } from "../paths.ts";
 import { inTeam, teamSession } from "../session.ts";
+import { machineName } from "../machine.ts";
+import { integrationDiverged, isLead, pushIntegration, syncBranch } from "../tasks/machines.ts";
+import { ticketOf } from "../tasks/model.ts";
+import { closeMerged, openTeamStore } from "../tasks/ops.ts";
 import { threadSend } from "../t3.ts";
 import { list, localTime, parseArgs, readJson, text as optionText, writeJson } from "../util.ts";
 import { pruneWorktrees } from "./watchdog.ts";
@@ -103,12 +107,6 @@ export function symlinkProblem(team: Team, role: string, path: string, target: s
   return null;
 }
 
-// The ticket a branch's name gives: the number in the first part after the prefix (e9g/b12-x/v2-y closes 12).
-export function ticketOf(branch: string, prefix: string): string | undefined {
-  const rest = branch.startsWith(`${prefix}/`) ? branch.slice(prefix.length + 1) : branch.includes("/") ? branch.slice(branch.indexOf("/") + 1) : branch;
-  return /^[a-z]*(\d+)-/.exec(rest.split("/")[0] ?? "")?.[1];
-}
-
 class GitFailed extends Error {}
 
 export async function run(argv: string[]): Promise<number> {
@@ -153,6 +151,13 @@ export async function run(argv: string[]): Promise<number> {
     return 2;
   }
 
+  // A team on several machines merges only on its lead, the always-on machine (lib/tasks/machines.ts).
+  if (!isLead(team)) {
+    record("refused", `merges happen on the team's lead machine, ${team.tasks.lead}; this is ${machineName()}`);
+    console.error(`merge: merges happen on the team's lead machine, ${team.tasks.lead}`);
+    return 2;
+  }
+
   // The queued run itself (E9G_MERGE_QUEUED) merges in the foreground, whatever form of --queue it was given.
   const queue = options["queue"];
   if (queue !== undefined && !["false", "0", "no"].includes(String(queue)) && !process.env.E9G_MERGE_QUEUED) {
@@ -184,7 +189,17 @@ export async function run(argv: string[]): Promise<number> {
   let code: number;
   let before: string | null = null;
   try {
-    ({ code, before = null } = await mergeLocked({ home, team, branch, closes, rebasedFrom: optionText(options["rebased-from"]), record, safe, state }));
+    ({ code, before = null } = await mergeLocked({
+      home,
+      team,
+      run: runDir,
+      branch,
+      closes,
+      rebasedFrom: optionText(options["rebased-from"]),
+      record,
+      safe,
+      state,
+    }));
   } catch (error) {
     if (!(error instanceof GitFailed)) throw error;
     record("refused", `${error.message}; nothing was merged`);
@@ -240,6 +255,7 @@ export async function run(argv: string[]): Promise<number> {
 async function mergeLocked({
   home,
   team,
+  run,
   branch,
   closes,
   rebasedFrom,
@@ -249,6 +265,7 @@ async function mergeLocked({
 }: {
   home: string;
   team: Team;
+  run: string;
   branch: string;
   closes: string[];
   rebasedFrom: string | undefined;
@@ -285,6 +302,12 @@ async function mergeLocked({
   if (out("rev-parse", "--abbrev-ref", "HEAD") !== integration) return fail(2, "refused", `the team's checkout must be on ${integration}`);
   if (out("status", "--porcelain", "--untracked-files=no") !== "")
     return fail(2, "refused", `${integration} has uncommitted changes; commit or discard them first`);
+  // A branch a worker pushed: what the remote has (the approval below still has to name that exact commit).
+  const synced = syncBranch(home, team, branch);
+  if (synced.stale) return fail(2, "refused", `${synced.said}; the branch here isn't what was submitted, so it isn't merged`);
+  if (synced.said) console.info(`merge: ${synced.said}`);
+  const diverged = integrationDiverged(home, team);
+  if (diverged) return fail(2, "refused", diverged);
   const tip = commit(`refs/heads/${branch}`);
   if (!tip) return fail(2, "refused", `no branch ${branch}`);
   if (Number(out("rev-list", "--count", `${integration}..${tip}`)) === 0) return fail(2, "refused", `${branch} has nothing that ${integration} doesn't`);
@@ -454,22 +477,42 @@ async function mergeLocked({
   }
   const sha = g("rev-parse", "--short", "HEAD").stdout.trim();
 
-  // Close what the branch did: --closes, plus the number in the branch's name (e9g/b89-… closes 89).
+  // A team on several machines: the integration branch goes to the remote before its tasks are done, so a worker that
+  // claims what they unblock builds on it.
+  const pushed = pushIntegration(home, team);
+  // Close what the branch did: --closes, plus the number in the branch's name (e9g/b89-… closes 89). Merges whose push
+  // failed close theirs with the next one that pushes, since only then can a worker build on them.
   const fromName = ticketOf(branch, team.branchPrefix);
+  const unpushed = join(run, "unpushed.json");
+  const waiting = readJson<{ ids: string[]; branch: string; sha: string; tip: string }[]>(unpushed, []);
+  const ids = [...new Set([...closes, ...(fromName ? [fromName] : [])])];
   const closed: string[] = [];
-  for (const n of [...new Set([...closes, ...(fromName ? [fromName] : [])])]) {
-    if (team.board.type === "files") {
-      const board = join(workDir(home), "board");
-      for (const name of existsSync(board) ? readdirSync(board).filter((file) => file.startsWith(`${n}-`) && file.endsWith(".md")) : []) {
-        const file = join(board, name);
-        const lines = readFileSync(file, "utf8").split("\n");
-        const at = lines.slice(0, 5).findIndex((line) => /^status:/.test(line));
-        if (at >= 0) lines[at] = "status: done";
-        writeFileSync(file, lines.join("\n"));
-        closed.push(n);
+  const skipped: string[] = [];
+  if (!pushed.ok) {
+    writeJson(unpushed, [...waiting, { ids, branch, sha, tip }]);
+    console.error(
+      `merge: merged here, but ${pushed.said}. Its tasks (${ids.join(" ") || "none"}) stay open until a merge pushes; the operator sorts out the remote.`
+    );
+  } else if (team.board.type === "tasks") {
+    // The merge happened; a task graph that can't be reached doesn't undo it, and the planner hears why.
+    try {
+      const store = await openTeamStore(team, run, home);
+      try {
+        for (const earlier of [...waiting, { ids, branch, sha, tip }]) {
+          const result = await closeMerged(store, earlier.ids, { branch: earlier.branch, sha: earlier.sha, tip: earlier.tip });
+          closed.push(...result.closed);
+          skipped.push(...result.skipped);
+        }
+        rmSync(unpushed, { force: true });
+      } finally {
+        await store.close();
       }
-    } else {
-      const label = team.board.label;
+    } catch (error) {
+      console.error(`merge: merged, but couldn't close the tasks (${ids.join(" ")}): ${(error as Error).message}`);
+    }
+  } else {
+    const label = team.board.label;
+    for (const n of ids) {
       spawnSync("gh", ["issue", "edit", n, "--remove-label", `${label}:building`, "--remove-label", `${label}:review`], { cwd: home, stdio: "ignore" });
       const close = spawnSync("gh", ["issue", "close", n, "--comment", `Merged into ${integration} at ${sha} (e9g merge, ${branch}).`], {
         cwd: home,
@@ -478,7 +521,7 @@ async function mergeLocked({
       if (close.status === 0) closed.push(n);
     }
   }
-  const note = `${integration} was ${before.slice(0, 7)}.${closed.length ? ` Closed: ${[...new Set(closed)].join(" ")}.` : ""}`;
+  const note = `${integration} was ${before.slice(0, 7)}.${closed.length ? ` Closed: ${[...new Set(closed)].join(" ")}.` : ""}${skipped.length ? ` Not closed: ${skipped.join("; ")}.` : ""}${pushed.said ? ` ${pushed.said}.` : ""}`;
   record("merged", note, sha);
   console.info(`merge: ${integration} is now ${sha} (was ${before.slice(0, 7)}).${closed.length ? ` Closed: ${[...new Set(closed)].join(" ")}.` : ""}`);
   return { code: 0, before };

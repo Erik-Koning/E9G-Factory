@@ -78,6 +78,14 @@ export interface RegistryEntry {
   watchdog: Team["watchdog"];
   // Missing in entries registered before the setting existed: priority (registeredContact).
   contact?: Team["contact"];
+  // The task graph (0.4.0 on): where it lives and how the team works, for the watchdog, which can't read team.json.
+  tasks?: Team["tasks"];
+  mode?: Team["mode"];
+  // A worker machine of a team whose lead is elsewhere: builders and testers only, started by the watchdog, up to their
+  // limits, in worktrees of the integration branch.
+  worker?: boolean;
+  limits?: Record<string, number>;
+  branch?: string;
   startPrompt: string;
   registeredAt: string;
 }

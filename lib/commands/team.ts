@@ -25,6 +25,9 @@ import { operatorOnly } from "../session.ts";
 import * as t3 from "../t3.ts";
 import { die, parseArgs, writeJson } from "../util.ts";
 import { answers, BUSY, ensureWatchdog, keptWorktrees, watchOnce } from "./watchdog.ts";
+import { machineName } from "../machine.ts";
+import { isLead, multiMachine } from "../tasks/machines.ts";
+import { CLAIMS } from "../tasks/model.ts";
 
 const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : text);
 
@@ -60,13 +63,13 @@ export function memberEnvironment(
 
 export function register(argv: string[]): number {
   operatorOnly("register");
-  const { positional, options } = parseArgs(argv, { booleans: ["force"] });
-  return registerTeam(homeFrom(positional[0]), { force: Boolean(options["force"]) });
+  const { positional, options } = parseArgs(argv, { booleans: ["force", "worker"] });
+  return registerTeam(homeFrom(positional[0]), { force: Boolean(options["force"]), worker: Boolean(options["worker"]) });
 }
 
 // Registers the team in `home` to run `version` (else the one its team.json pins). Dies before changing anything
 // when it can't.
-function registerTeam(home: string, { force, version: target }: { force: boolean; version?: string }): number {
+function registerTeam(home: string, { force, version: target, worker = false }: { force: boolean; version?: string; worker?: boolean }): number {
   const team = loadTeam(home);
   for (const warning of team.warnings) console.warn(`  note: ${warning}`);
   // Register doesn't write team.json (a change there would hold up every merge until it's committed).
@@ -76,6 +79,14 @@ function registerTeam(home: string, { force, version: target }: { force: boolean
   if (problems.length && !force) die(`T3 Code isn't ready:\n  - ${problems.join("\n  - ")}\n(e9g doctor explains; --force registers anyway)`);
   if (!existsSync(join(home, ".e9g", ".gitignore")))
     console.warn("  note: .e9g/.gitignore is missing; add one with run/ so the team's runtime stays out of git");
+
+  // A worker machine of a team on several machines runs its builders and testers only; the lead runs the rest.
+  if (worker && !(multiMachine(team) && !isLead(team)))
+    die(
+      `--worker is for a machine other than the lead of a team whose tasks are in Mongo (team.json tasks.lead${team.tasks.lead ? ` is ${team.tasks.lead}, and this is ${machineName()}` : " isn't set"})`
+    );
+  if (!worker && !isLead(team))
+    die(`this team's lead is ${team.tasks.lead} and this is ${machineName()}: register it here with --worker, or make this machine the lead`);
 
   const version = target ?? versionFor(team);
   const previous = readRegistry(team.name);
@@ -90,7 +101,8 @@ function registerTeam(home: string, { force, version: target }: { force: boolean
   if (!project) die(`couldn't add ${home} as a T3 Code project; add it in T3 Code and put its id in team.json t3ProjectId`);
 
   const instances: Record<string, t3.ProviderInstance> = {};
-  for (const role of Object.keys(team.roles)) {
+  const roles = Object.keys(team.roles).filter((role) => !worker || CLAIMS[role]);
+  for (const role of roles) {
     const prompt = writePrompt(team, role, run);
     const flags = [
       `--agent e9g:${role}`,
@@ -124,6 +136,9 @@ function registerTeam(home: string, { force, version: target }: { force: boolean
     worktreesDir: t3.worktreesDir(home),
     watchdog: team.watchdog,
     contact: team.contact,
+    ...(team.board.type === "tasks" ? { tasks: team.tasks } : {}),
+    mode: team.mode,
+    ...(worker ? { worker: true, branch: team.branch, limits: Object.fromEntries(roles.map((role) => [role, team.roles[role]?.limit ?? 0])) } : {}),
     startPrompt:
       team.startPrompt ??
       'Start the team, or pick it up where your log leaves off: read the documents your rules list, then work through "Each time you wake".',
@@ -132,9 +147,7 @@ function registerTeam(home: string, { force, version: target }: { force: boolean
   writeJson(registryFile(team.name), entry);
   console.info(`e9g: registered ${team.name} (E9G Factory ${version}; T3 project ${project}; run folder ${run})`);
   console.info(
-    `  roles: ${Object.keys(team.roles)
-      .map((role) => `${role} (${instanceId(team, role)})`)
-      .join(", ")}`
+    `  roles${worker ? " (a worker: builders and testers only)" : ""}: ${roles.map((role) => `${role} (${instanceId(team, role)})`).join(", ")}`
   );
   if (existsSync(join(run, "planner-thread")))
     console.info(`  a planner is running; it keeps the flags it started with until e9g rotate ${team.name} (members started from now get the new ones)`);
@@ -320,7 +333,7 @@ export function upgrade(argv: string[]): number {
     });
     return result.status ?? 1;
   }
-  registerTeam(entry.home, { force, version });
+  registerTeam(entry.home, { force, version, worker: Boolean(entry.worker) });
   const file = teamFile(entry.home);
   writeFileSync(file, pinned(readFileSync(file, "utf8"), version));
   // The prompts' sources include team.json, so compile them again with the pin in it.

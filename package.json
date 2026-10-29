@@ -1,6 +1,6 @@
 {
   "name": "e9g-factory",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "Provision a harness-based software engineering team in any code repo, on T3 Code and Claude Code.",
   "type": "module",
   "license": "UNLICENSED",
@@ -28,5 +28,8 @@
   "devDependencies": {
     "@types/node": "26.6.5",
     "typescript": "7.0.2"
+  },
+  "optionalDependencies": {
+    "mongodb": "7.7.0"
   }
 }

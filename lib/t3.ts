@@ -234,9 +234,22 @@ export function threadShow(id: string): T3Thread | null {
 export function threadStart(
   project: string,
   prompt: string,
-  { instance, model, title }: { instance: string; model: string; title: string }
+  { instance, model, title, worktree }: { instance: string; model: string; title: string; worktree?: string }
 ): { id: string | null; error?: string } {
-  const result = t3(["thread", "start", project, prompt, "--provider", instance, "--model", model, "--title", title, "--json"]);
+  const result = t3([
+    "thread",
+    "start",
+    project,
+    prompt,
+    "--provider",
+    instance,
+    "--model",
+    model,
+    "--title",
+    title,
+    ...(worktree ? ["--worktree", worktree] : []),
+    "--json",
+  ]);
   if (!result.ok) return { id: null, error: result.err.trim() };
   try {
     return { id: (JSON.parse(result.out) as { threadId?: string }).threadId ?? null };

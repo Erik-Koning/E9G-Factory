@@ -76,7 +76,7 @@ function commandsFor(team: Team, role: string): string {
     "`e9g lock <name> [--slots N] [--wait-min M] -- <command>`: run a command while holding one of the team's shared slots (for anything that drives the shared environment).",
   ];
   if (team.progress) lines.push(`\`e9g progress\`: where the work stands (${code(team.progress)}).`);
-  if (team.finish) lines.push(`\`e9g finish\`: exits 0 only when the finish line holds (${code(team.finish)}).`);
+  if (team.finish && team.mode !== "cycles") lines.push(`\`e9g finish\`: exits 0 only when the finish line holds (${code(team.finish)}).`);
   if (team.pages)
     lines.push("`e9g pages shots --base <url> [--out <dir>] [--path /x] [ids…]`: the page checks and screenshots against any server, recording nothing.");
   if (role === "planner") {
@@ -88,10 +88,36 @@ function commandsFor(team: Team, role: string): string {
       "`e9g metrics [--since <ISO time>]`: what the team has cost so far."
     );
     if (team.pages) lines.push("`e9g pages run [ids…]`: check the pages on the team's app and record the results.");
+    if (team.push?.pullRequest)
+      lines.push(
+        `\`e9g pr --title "<what it holds>" --body-file <file>\`: after a push, open the pull request from ${code(team.push.branch)} into ${code(team.push.pullRequest)}, or update the open one. Write the body to a file in \`.e9g/run/scratch/\`: what's in it since the operator last merged, how to see it, the product calls you made, and what's left. It's labelled and signed for you.`
+      );
+  }
+  if (team.board.type === "tasks") {
+    lines.push("`e9g task list|show|note|graph`: the task graph (see The board).");
+    if (role === "planner")
+      lines.push(
+        '`e9g task add "<title>" [--kind] [--sev] [--body-file] [--parent <journey>] [--after <ids>] [--files <paths>] [--request <rN>]`, `edit <id> [--sev] [--area] [--files] …`, `score`, `status <id> <status> [--reason]`: shape, score and move tasks. `e9g task release <id>` frees a claim whose member is gone.',
+        "`e9g request list|show|note|reject`: stakeholders' feature requests (promote one with `e9g task add … --request <id>`)."
+      );
+    if (role === "planner" && team.mode === "cycles")
+      lines.push("`e9g cycle close --report-file <file>`: close the cycle; the report goes to the operator.");
+    if ((role === "planner" || role === "reviewer") && team.tasks.store === "mongo" && team.tasks.lead)
+      lines.push("`e9g task fetch <id>`: a task's branch as a worker pushed it, before its review (the verdict and the merge fetch it too).");
+    if (role === "builder" || role === "tester")
+      lines.push('`e9g task claim [<id>]`, `e9g task submit <id>`, `e9g task release <id> [--blocked "…"]`: take, hand in or hand back your task.');
+    if (role === "approver")
+      lines.push(
+        "`e9g task approve|reject|research|escalate <id>`: your verdicts on proposals. `e9g request show|note <id>`: what a stakeholder asked for, and what you found."
+      );
+    if (role === "reviewer" || role === "tester" || role === "builder")
+      lines.push(
+        "`e9g blast [<sha>] [--json]`: what a change touches (run it in the checkout of that commit): importers, related files, their tests, UI, critical paths."
+      );
   }
   if (role === "reviewer")
     lines.push(
-      '`e9g verdict review <branch> approve|changes --sha <the commit you reviewed> --note "<one line>"`: record your verdict on exactly that commit. It\'s refused if the branch has moved past it; review what was added and record again. The merge queue merges only the commit you approved.'
+      '`e9g verdict review <branch> approve|changes --sha <the commit you reviewed> [--shots <dir>] --note "<one line>"`: record your verdict on exactly that commit. It\'s refused if the branch has moved past it; review what was added and record again. A UI change beyond a few lines is approved only with --shots: the folder of before-and-after screenshots you read. The merge queue merges only the commit you approved.'
     );
   if (role === "ux-specialist")
     lines.push(
@@ -115,13 +141,25 @@ function boardText(team: Team, role: string): string {
       severity,
     ].join("\n");
   }
-  return [
-    `The board is files in ${code(join(team.home, ".e9g/run/board"))}. A ticket is \`<n>-<slug>.md\`; its first lines are \`status: triage|ready|building|review|blocked|question|done\`, \`kind:\`, \`sev:\` and the page or journey it belongs to, then the outcome and what done looks like.`,
-    role === "planner"
-      ? "You number findings into tickets, keep statuses true, and the merge queue marks done what a branch fixes."
-      : "File what you find as `f-<yyyymmdd-hhmm>-<slug>.md` there, starting with `status: triage`, `kind:`, `sev:`; one finding per file.",
-    severity,
-  ].join("\n");
+  const intro =
+    "The board is the team's task graph (`e9g task`): one task per piece of work, each with a status and a history of who moved it. Statuses: `triage` (a finding), `proposed` (scored work waiting for approval), `researching`, `approved` (ready to claim), `building` (claimed by a builder or tester, on a machine, with a lease its heartbeats renew), `review`, `verify` (a journey whose tasks are all done), `done`, `blocked`, `question`, `rejected`. `e9g task list` shows what's open (`--all` everything), `e9g task show <id>` one task.";
+  const finding =
+    'File each finding as `e9g task add "<what\'s wrong, in a few words>" --kind bug|ux|test-infra|feature --sev blocker|major|minor --body-file <file>` (steps, what happened, what should, the screenshot\'s path); it goes to triage. Search `e9g task list --all` first so you don\'t repeat one, and add to an existing task with `e9g task note <id> "…"`.';
+  const byRole: Record<string, string> = {
+    planner: `You own it. Triage findings: give each its severity, area and files (\`e9g task edit <id> --sev … --area … --files …\`), then \`e9g task status <id> proposed\` (or rejected or question, with \`--reason\`). Shape work (\`e9g task add\`, \`edit\`: a journey as \`--kind journey\` with its tasks naming it as \`--parent\`, dependencies as \`--after\`, where it lands as \`--files\`), and score every proposal (\`e9g task score\`). ${approvalText(team)} The merge queue marks what it merges done; you never approve your own proposals or mark code done.`,
+    builder: `Take your task with \`e9g task claim\` (the next approved one, or the one your brief names), hand it in with \`e9g task submit <id>\` once it's committed and the gate passes, or hand it back with \`e9g task release <id> --blocked "<why>"\`. ${finding}`,
+    tester: `Take your task with \`e9g task claim\` (the next approved test work, or the one your brief names), hand it in with \`e9g task submit <id>\`, or back with \`e9g task release <id> --blocked "<why>"\`. ${finding}`,
+    approver: `You decide on proposals: \`e9g task approve <id> [--note]\`, \`reject <id> --reason\`, \`research <id> --note "<what to find out>"\`, or \`escalate <id> --reason\` (it goes to the operator). ${approvalText(team)}`,
+  };
+  return [intro, byRole[role] ?? finding, severity].join("\n");
+}
+
+// Who approves the planner's proposals (team.json approval).
+function approvalText(team: Team): string {
+  if (team.approval.mode === "operator") return "Proposals wait for the operator to approve them (team.json approval).";
+  if (team.approval.mode === "full")
+    return "The approver approves proposals of any size, new journeys included (team.json approval: full); privacy, policy unlocks, promotion and rule changes stay the operator's.";
+  return `The approver approves proposals up to size ${team.approval.maxSize} that start no new journey; anything larger or new is escalated to the operator (team.json approval).`;
 }
 
 // Builders and testers get their own worktree from delegate_task; everyone else shares the team's checkout, which
@@ -140,8 +178,12 @@ function teamTable(team: Team): string {
 // What leaves the machine: the planner's pushes, if any, and a GitHub board's issues and comments.
 function pushText(team: Team): string {
   const board = team.board.type === "github" ? " The board's issues and comments go to GitHub." : "";
-  if (team.push)
-    return `Pushes: only the planner, only ${code(`git push ${team.push.remote} ${team.push.branch}`)}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}.${board} Nothing else leaves this machine.`;
+  if (team.push) {
+    const pull = team.push.pullRequest
+      ? ` After a push, the planner's ${code("e9g pr")} opens the pull request from ${code(team.push.branch)} into ${code(team.push.pullRequest)}, or updates the open one; the operator merges it.`
+      : "";
+    return `Pushes: only the planner, only ${code(`git push ${team.push.remote} ${team.push.branch}`)}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}.${pull}${board} Nothing else leaves this machine.`;
+  }
   return board ? `Pushes: none, so the code stays on this machine.${board} Nothing else leaves it.` : "Pushes: none. Everything stays on this machine.";
 }
 
@@ -154,10 +196,20 @@ export function compile(team: LoadedTeam, role: string): string {
     list(
       [
         `You are the **${role}**. The team's checkout is ${code(team.home)}; its integration branch is ${code(team.branch)}.`,
-        team.finish
-          ? `The finish line: ${code(team.finish)} exits 0, with no blocker or major ticket open.`
-          : "The team has no finish command yet; the brief says what done means.",
+        team.mode === "cycles"
+          ? null
+          : team.finish
+            ? `The finish line: ${code(team.finish)} exits 0, with no blocker or major task open.`
+            : "The team has no finish command yet; the brief says what done means.",
         `Polish: ${team.polishRounds} round(s) of minor fixes per page or journey, then one last audit (Article 9).`,
+        team.mode === "cycles"
+          ? "The team works in cycles (team.json mode): it keeps building toward the direction, cycle after cycle, with no finish line to stop at (Article 1)."
+          : null,
+        role === "planner" && team.board.type === "tasks"
+          ? `Priority weights (team.json priorities): ${Object.entries(team.priorities.weights)
+              .map(([d, w]) => `${d} ${w}`)
+              .join(", ")}.`
+          : null,
         pushText(team),
         `Protected branches, never pushed or merged into by the team: ${team.protectedBranches.map(code).join(", ")}.`,
         role === "planner" && team.owner ? `The operator: ${team.owner} (Article 10).` : null,

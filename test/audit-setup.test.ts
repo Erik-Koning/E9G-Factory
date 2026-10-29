@@ -173,7 +173,7 @@ describe("e9g init and its drafts", { concurrency: true }, () => {
     const team = JSON.parse(readFileSync(join(checkout, ".e9g", "team.json"), "utf8")) as RawTeam;
     assert.equal(team.name, "team-2048", "a name that starts with a digit gets team- in front");
     assert.equal(team.factory, VERSION, "the draft pins the version that wrote it");
-    assert.equal(team.board, "files", "a GitHub remote isn't a reason to post issues");
+    assert.equal(team.board, "tasks", "a GitHub remote isn't a reason to post issues");
     assert.match(readFileSync(join(checkout, ".e9g", "brief.md"), "utf8"), /## Budget[\s\S]*not a\s+limit the factory enforces/);
     const gate = readFileSync(join(checkout, ".e9g", "adapters", "gate.sh"), "utf8");
     assert.match(gate, /if \[ "\$\{1:-\}" != "--quick" \]; then\n {2}: # \(fill in/);
@@ -261,7 +261,7 @@ describe("e9g init and its drafts", { concurrency: true }, () => {
     git(repo, "remote", "add", "origin", "https://github.com/someone/app.git");
     const found = detect(repo);
     assert.equal(found.git.github, "someone/app");
-    assert.equal(draftTeam(found, { name: "app", branch: "e9g/next" }).board, "files");
+    assert.equal(draftTeam(found, { name: "app", branch: "e9g/next" }).board, "tasks");
     assert.equal(draftTeam(found, { name: "app", branch: "e9g/next" }).factory, VERSION);
   });
 });

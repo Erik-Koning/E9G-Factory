@@ -6,10 +6,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadTeam, TeamError } from "../config.ts";
 import { emailSettings, readKey } from "../email.ts";
+import { heartbeatSettings, hostOf, lastPing } from "../heartbeat.ts";
 import { E9G_HOME, entryOf, type FactoryPackage, PACKAGE, readRegistry, versionDir } from "../paths.ts";
 import { promptFile, promptStale } from "../prompts.ts";
 import * as t3 from "../t3.ts";
-import { readJson, which } from "../util.ts";
+import { localTime, readJson, which } from "../util.ts";
 import { readToken, whatsappSettings } from "../whatsapp.ts";
 import { teamNames } from "./team.ts";
 import { keptWorktrees, watchdogLoaded } from "./watchdog.ts";
@@ -114,6 +115,15 @@ export async function doctor(): Promise<number> {
     ok(`email: the watchdog's alerts and the planner's outbox go to ${email.to}${email.replyDomain ? ", and replies come back" : " (no replies)"}`);
   if (whatsapp && !readToken()) fail("WhatsApp: its access token isn't in the Keychain any more: e9g connect whatsapp");
   else if (whatsapp) ok(`WhatsApp: the watchdog's alerts and the planner's outbox go to +${whatsapp.to}`);
+  // The watchdog pings at the end of each run (every 5 minutes) in which T3 Code answers.
+  const heartbeat = heartbeatSettings();
+  const last = lastPing();
+  if (heartbeat && last && Date.now() - last.getTime() <= 15 * 60_000)
+    ok(`heartbeat: the watchdog pings ${hostOf(heartbeat.url)}, last at ${localTime(last)}, so it tells you if this Mac stops`);
+  else if (heartbeat)
+    warn(
+      `heartbeat: ${hostOf(heartbeat.url)} hasn't been pinged ${last ? `since ${localTime(last)}` : "by the watchdog yet"}, so it will alert you (e9g connect heartbeat --test)`
+    );
 
   const gh = spawnSync("gh", ["auth", "status"], { encoding: "utf8" });
   gh.status === 0 ? ok("gh is signed in (for GitHub boards)") : warn("gh isn't signed in; teams with a GitHub board need it");

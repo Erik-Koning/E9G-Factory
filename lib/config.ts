@@ -5,6 +5,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { type Contact, DEFAULT_CONTACT } from "./contact.ts";
 import { teamFile, VERSION_NAME } from "./paths.ts";
 import { POLICIES, type PolicyState } from "./policies.ts";
+import { MACHINE_NAME } from "./machine.ts";
+import { DEFAULT_WEIGHTS, DIMENSIONS, type Dimension, SIZES, type Size } from "./tasks/model.ts";
 import { minutes } from "./util.ts";
 
 // A role's settings in team.json (schema/team.schema.json, $defs.role).
@@ -70,12 +72,17 @@ export interface RawTeam {
   branch?: string;
   base?: string;
   protectedBranches?: string[];
-  push?: { remote?: string; branch?: string; every?: string | number } | null | false;
-  board?: "files" | { github?: { label?: string } };
+  push?: { remote?: string; branch?: string; every?: string | number; pullRequest?: string | boolean } | null | false;
+  board?: "tasks" | "files" | { github?: { label?: string } };
+  mode?: string;
+  tasks?: { store?: string; database?: string; lead?: string | null };
+  priorities?: { weights?: Record<string, number> };
+  approval?: { mode?: string; maxSize?: string };
+  critical?: string[];
   branchPrefix?: string;
   model?: string;
   roles?: Record<string, RoleSettings>;
-  review?: { required?: string[]; removedPattern?: string | null };
+  review?: { required?: string[]; removedPattern?: string | null; maxRounds?: number; viewCheckMinLines?: number };
   gate?: { full?: string | null; quick?: string | null; concurrency?: number };
   environment?: { script?: string | null; health?: string[]; needsDocker?: boolean };
   vars?: Record<string, string | number | boolean>;
@@ -126,12 +133,23 @@ export interface Team {
   branch: string;
   base: string;
   protectedBranches: string[];
-  push: { remote: string; branch: string; everyMin: number } | null;
-  board: { type: "github"; label: string } | { type: "files" };
+  // pullRequest: the branch the planner's pull request goes into (e9g pr), or null for none.
+  push: { remote: string; branch: string; everyMin: number; pullRequest: string | null } | null;
+  // "tasks": the factory's task graph (lib/tasks/); "files" in team.json means the same.
+  board: { type: "github"; label: string } | { type: "tasks" };
+  // "finish": work until the finish line holds, then stop. "cycles": keep building, cycle after cycle.
+  mode: "finish" | "cycles";
+  // Where the task graph lives, and (with Mongo) the always-on machine that merges.
+  tasks: { store: "files" | "mongo"; database: string; lead: string | null };
+  priorities: { weights: Record<Dimension, number> };
+  // Who approves the planner's proposals: the operator, the approver up to maxSize, or the approver alone ("full").
+  approval: { mode: "operator" | "thresholds" | "full"; maxSize: Size };
+  // Paths (regexes) whose changes get the full review whatever their size.
+  critical: string[];
   branchPrefix: string;
   model: string;
   roles: Record<string, Lane>;
-  review: { required: string[]; removedPattern: string | null };
+  review: { required: string[]; removedPattern: string | null; maxRounds: number; viewCheckMinLines: number };
   gate: { full: string | null; quick: string | null; concurrency: number };
   environment: { script: string | null; health: string[]; needsDocker: boolean };
   vars: Record<string, string>;
@@ -183,6 +201,7 @@ export const ROLES: Record<string, RoleDefaults> = {
   reviewer: { summary: "reviews one finished branch before it merges", limit: 1, readOnly: true, write: [] },
   "ux-specialist": { summary: "audits pages and journeys, desktop and phone, light and dark", limit: 1, readOnly: true, write: [] },
   innovator: { summary: "finds what the brief misses and proposes it", limit: 1, readOnly: true, write: [] },
+  approver: { summary: "approves or sends back the planner's proposals, within the team's approval rules", limit: 1, readOnly: true, write: [] },
 };
 
 const KNOWN_KEYS = new Set([
@@ -197,6 +216,11 @@ const KNOWN_KEYS = new Set([
   "push",
   "board",
   "branchPrefix",
+  "mode",
+  "tasks",
+  "priorities",
+  "approval",
+  "critical",
   "model",
   "roles",
   "review",
@@ -398,6 +422,17 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     roles[id] = lane;
   }
   if (!roles["planner"]) problems.push("roles.planner: every team has a planner");
+  // Task branches are named for their task (e9g/b12-…, e9g/t-12-…), so the merge closes the task; a team's own pattern
+  // has to accept those names when it keeps a task graph.
+  const tasksBoard = input.board === undefined || input.board === "files" || input.board === "tasks";
+  for (const [id, sample] of [
+    ["builder", `${prefix}/b1-task`],
+    ["tester", `${prefix}/t-1-task`],
+  ] as const) {
+    const pattern = roles[id]?.branch;
+    if (tasksBoard && pattern && pattern !== NOTHING && !new RegExp(pattern).test(sample))
+      problems.push(`roles.${id}.branch: the task graph names ${id} branches like ${sample}; make the pattern accept them`);
+  }
   if (roles["tester"] && !roles["tester"].write.length) problems.push('roles.tester.write: say where tests live (e.g. ["^e2e/"])');
 
   const policies: Record<string, PolicyState> = {};
@@ -437,26 +472,70 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
       return title === undefined || run === undefined ? undefined : { title, command: run };
     }) ?? [];
 
-  // null or false: nothing leaves the machine.
+  // null or false: nothing leaves the machine. pullRequest: true goes into base, a name into that branch.
+  const base = text(input.base, "base") ?? "main";
   let push: Team["push"] = null;
   if (input.push !== undefined && input.push !== null && input.push !== false) {
-    const value = object(input.push, "push", ["remote", "branch", "every"]);
-    if (value)
+    const value = object(input.push, "push", ["remote", "branch", "every", "pullRequest"]);
+    if (value) {
+      const pullRequest =
+        value.pullRequest === undefined || value.pullRequest === false
+          ? null
+          : value.pullRequest === true
+            ? base
+            : typeof value.pullRequest === "string" && value.pullRequest !== ""
+              ? value.pullRequest
+              : (bad("push.pullRequest", 'true (into base), or the branch it goes into, such as "main"') ?? null);
       push = {
         remote: text(value.remote, "push.remote") ?? "origin",
         branch: text(value.branch, "push.branch") ?? branch,
         everyMin: duration(value.every, "push.every", 0),
+        pullRequest,
       };
+    }
   }
-  let board: Team["board"] = { type: "files" };
-  if (input.board !== undefined && input.board !== "files") {
+  let board: Team["board"] = { type: "tasks" };
+  if (input.board !== undefined && input.board !== "files" && input.board !== "tasks") {
     const value = isObject(input.board) ? object(input.board, "board", ["github"]) : undefined;
     const github = value && isObject(value.github) ? object(value.github, "board.github", ["label"]) : undefined;
-    if (!github) problems.push('board: "files", or {"github": {"label": "e9g"}}');
+    if (!github) problems.push('board: "tasks" (the factory\'s task graph; "files" is the same), or {"github": {"label": "e9g"}}');
     else board = { type: "github", label: text(github.label, "board.github.label") ?? "e9g" };
   }
+  const mode = input.mode ?? "finish";
+  if (mode !== "finish" && mode !== "cycles")
+    problems.push('mode: "finish" (work until the finish line holds) or "cycles" (keep building, cycle after cycle)');
+  if (mode === "cycles" && board.type === "github") problems.push('mode: "cycles" needs the task graph (board "tasks"); a GitHub board keeps no cycles');
+  const tasksIn = object(input.tasks, "tasks", ["store", "database", "lead"]) ?? {};
+  const store = tasksIn.store ?? "files";
+  if (store !== "files" && store !== "mongo") problems.push('tasks.store: "files" (in the run folder) or "mongo" (e9g connect mongo)');
+  if (store === "mongo" && board.type === "github")
+    problems.push("tasks.store: a GitHub board keeps its tickets on GitHub; leave tasks out, or use the task graph");
+  const lead = tasksIn.lead === null ? null : (text(tasksIn.lead, "tasks.lead") ?? null);
+  if (lead && !MACHINE_NAME.test(lead))
+    problems.push(`tasks.lead: a machine's name as e9g connect mongo --machine sets it: lowercase letters, digits and dashes (not "${lead}")`);
+  if (store === "mongo" && !lead)
+    warnings.push("tasks.lead: none, so every machine that registers this team merges on its own; name the always-on machine if it runs on several");
+  if (lead && store !== "mongo")
+    problems.push('tasks.lead: a team on several machines keeps its tasks in Mongo (tasks.store "mongo"); on one machine, leave lead out');
+  const database = text(tasksIn.database, "tasks.database") ?? "e9g";
+  if (!/^[\w-]{1,60}$/.test(database)) problems.push("tasks.database: letters, digits, _ and - (a Mongo database name)");
+  const weights: Record<Dimension, number> = { ...DEFAULT_WEIGHTS };
+  const prioritiesIn = object(input.priorities, "priorities", ["weights"]) ?? {};
+  for (const [key, value] of Object.entries(object(prioritiesIn.weights, "priorities.weights", null) ?? {})) {
+    if (!(DIMENSIONS as readonly string[]).includes(key)) problems.push(`priorities.weights.${key}: no such dimension (${DIMENSIONS.join(", ")})`);
+    else if (typeof value !== "number" || !Number.isFinite(value) || value < 0) problems.push(`priorities.weights.${key}: a number, 0 or more`);
+    else weights[key as Dimension] = value;
+  }
+  const approvalIn = object(input.approval, "approval", ["mode", "maxSize"]) ?? {};
+  const approvalMode = approvalIn.mode ?? "thresholds";
+  if (approvalMode !== "operator" && approvalMode !== "thresholds" && approvalMode !== "full")
+    problems.push(
+      'approval.mode: "operator" (you approve every proposal), "thresholds" (the approver, up to approval.maxSize) or "full" (the approver alone)'
+    );
+  const maxSize = approvalIn.maxSize ?? "M";
+  if (typeof maxSize !== "string" || !Object.hasOwn(SIZES, maxSize)) problems.push(`approval.maxSize: ${Object.keys(SIZES).join(", ")}`);
 
-  const review = object(input.review, "review", ["required", "removedPattern"]) ?? {};
+  const review = object(input.review, "review", ["required", "removedPattern", "maxRounds", "viewCheckMinLines"]) ?? {};
   // A tester's branches get the assertion default; null turns it off.
   let removedPattern: string | null = roles["tester"] ? ASSERTION_PATTERN : null;
   if (review.removedPattern !== undefined) removedPattern = review.removedPattern === null ? null : regex(review.removedPattern, "review.removedPattern");
@@ -586,14 +665,28 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     owner: typeof input.owner === "string" ? input.owner : null,
     factory,
     branch,
-    base: text(input.base, "base") ?? "main",
+    base,
     protectedBranches,
     push,
     board,
+    mode: mode === "cycles" ? "cycles" : "finish",
+    tasks: { store: store === "mongo" ? "mongo" : "files", database, lead },
+    priorities: { weights },
+    // Without an approver on the team, proposals wait for the operator whatever the mode says (warned below).
+    approval: {
+      mode: approvalMode === "operator" || approvalMode === "full" ? approvalMode : "thresholds",
+      maxSize: typeof maxSize === "string" && Object.hasOwn(SIZES, maxSize) ? (maxSize as Size) : "M",
+    },
+    critical: list(input.critical, "critical", regex) ?? [],
     branchPrefix: prefix,
     model: text(input.model, "model") ?? "claude-opus-5-5",
     roles,
-    review: { required: list(review.required, "review.required", role) ?? ["builder"], removedPattern },
+    review: {
+      required: list(review.required, "review.required", role) ?? ["builder"],
+      removedPattern,
+      maxRounds: whole(review.maxRounds, "review.maxRounds", 1) ?? 3,
+      viewCheckMinLines: whole(review.viewCheckMinLines, "review.viewCheckMinLines", 0) ?? 10,
+    },
     gate: { full, quick, concurrency: whole(gate.concurrency, "gate.concurrency", 1) ?? 2 },
     environment: {
       script: textOrNull(environment.script, "environment.script") ?? null,
@@ -632,9 +725,17 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     plannerCompactAt: roles["planner"]?.compactAt ?? 160000,
     legacyInstances,
   };
+  if (team.tasks.store === "mongo" && team.tasks.lead && !push)
+    problems.push('push: a team on several machines (tasks.lead) shares its code through a remote; set push, such as {"remote": "origin"}');
   if (push && push.branch && protectedBranches.includes(push.branch))
     problems.push(`push.branch: ${push.branch} is protected (protectedBranches); the planner pushes only the team's branch`);
-  if (!team.finish) warnings.push("finish: no finish command, so the team can't tell when it's done");
+  if (push?.pullRequest && push.pullRequest === push.branch)
+    problems.push(`push.pullRequest: ${push.pullRequest} is the branch the planner pushes; name the branch you promote into, such as main`);
+  // A team without an approver: its proposals wait for the operator, whatever the mode (said only when it was asked for).
+  if (team.approval.mode !== "operator" && !roles["approver"]) team.approval.mode = "operator";
+  if (approvalIn.mode !== undefined && approvalIn.mode !== "operator" && !roles["approver"])
+    warnings.push(`approval.mode: ${String(approvalIn.mode)} needs an approver in roles; until there is one, proposals wait for you (e9g task approve)`);
+  if (!team.finish && team.mode === "finish") warnings.push("finish: no finish command, so the team can't tell when it's done");
   if (!team.gate.full) warnings.push("gate.full: no gate, so merges aren't checked");
   if (!team.owner) warnings.push("owner: nobody to email when the team is done or needs a decision");
   return { team, problems, warnings };

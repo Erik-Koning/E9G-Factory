@@ -7,32 +7,83 @@
   "required": ["name", "branch"],
   "additionalProperties": false,
   "$defs": {
-    "text": { "type": "string", "minLength": 1 },
-    "textOrNull": { "type": ["string", "null"], "description": "null or \"\" for none." },
-    "regex": { "type": "string", "minLength": 1, "format": "regex", "description": "A JavaScript regular expression." },
+    "text": {
+      "type": "string",
+      "minLength": 1
+    },
+    "textOrNull": {
+      "type": ["string", "null"],
+      "description": "null or \"\" for none."
+    },
+    "regex": {
+      "type": "string",
+      "minLength": 1,
+      "format": "regex",
+      "description": "A JavaScript regular expression."
+    },
     "duration": {
       "type": ["string", "number"],
       "pattern": "^\\s*\\d+(\\.\\d+)?\\s*(m|min|h|d)?\\s*$",
       "minimum": 0,
       "description": "45m, 6h, 2d, or minutes."
     },
-    "roleName": { "enum": ["planner", "builder", "tester", "reviewer", "ux-specialist", "innovator"] },
-    "id": { "type": "string", "pattern": "^[\\w-]+$" },
+    "roleName": {
+      "enum": ["planner", "builder", "tester", "reviewer", "ux-specialist", "innovator", "approver"]
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[\\w-]+$"
+    },
     "role": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "limit": { "type": "integer", "minimum": 0, "description": "At most this many at once." },
+        "limit": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "At most this many at once."
+        },
         "write": {
           "type": "array",
-          "items": { "anyOf": [{ "const": "*" }, { "$ref": "#/$defs/regex" }] },
+          "items": {
+            "anyOf": [
+              {
+                "const": "*"
+              },
+              {
+                "$ref": "#/$defs/regex"
+              }
+            ]
+          },
           "description": "Paths the role may write; \"*\" for anything."
         },
-        "deny": { "type": "array", "items": { "$ref": "#/$defs/regex" }, "description": "Paths the role may never write." },
-        "branch": { "$ref": "#/$defs/regex", "description": "The role's branch pattern (builders, testers)." },
-        "mcp": { "type": "array", "items": { "$ref": "#/$defs/text" }, "description": "Outside tools the role may call." },
-        "readOnly": { "type": "boolean", "description": "Changes nothing in the checkout." },
-        "compactAt": { "type": "integer", "minimum": 1, "description": "Planner only: compact its context at this many tokens." }
+        "deny": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/regex"
+          },
+          "description": "Paths the role may never write."
+        },
+        "branch": {
+          "$ref": "#/$defs/regex",
+          "description": "The role's branch pattern (builders, testers)."
+        },
+        "mcp": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          },
+          "description": "Outside tools the role may call."
+        },
+        "readOnly": {
+          "type": "boolean",
+          "description": "Changes nothing in the checkout."
+        },
+        "compactAt": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Planner only: compact its context at this many tokens."
+        }
       }
     },
     "page": {
@@ -40,10 +91,25 @@
       "additionalProperties": false,
       "required": ["id", "path"],
       "properties": {
-        "id": { "$ref": "#/$defs/id", "description": "Names the page's results, screenshots and UX verdicts." },
-        "path": { "type": "string", "pattern": "^/", "description": "The page's path on the team's app." },
-        "title": { "$ref": "#/$defs/text" },
-        "exclude": { "type": "array", "items": { "$ref": "#/$defs/regex" }, "description": "Source paths that belong only to other pages." }
+        "id": {
+          "$ref": "#/$defs/id",
+          "description": "Names the page's results, screenshots and UX verdicts."
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "The page's path on the team's app."
+        },
+        "title": {
+          "$ref": "#/$defs/text"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/regex"
+          },
+          "description": "Source paths that belong only to other pages."
+        }
       }
     },
     "viewport": {
@@ -51,76 +117,294 @@
       "additionalProperties": false,
       "required": ["id", "width", "height"],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "width": { "type": "integer", "minimum": 1 },
-        "height": { "type": "integer", "minimum": 1 },
-        "isMobile": { "type": "boolean" },
-        "deviceScaleFactor": { "type": "number", "exclusiveMinimum": 0 }
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "isMobile": {
+          "type": "boolean"
+        },
+        "deviceScaleFactor": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
       }
     }
   },
   "properties": {
-    "$schema": { "$ref": "#/$defs/text" },
-    "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,30}$" },
-    "title": { "type": "string", "description": "Shown in T3 Code, emails and prompts; the name when left out or \"\"." },
-    "owner": { "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", "description": "The operator's email address." },
+    "$schema": {
+      "$ref": "#/$defs/text"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,30}$"
+    },
+    "title": {
+      "type": "string",
+      "description": "Shown in T3 Code, emails and prompts; the name when left out or \"\"."
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "description": "The operator's email address."
+    },
     "factory": {
       "type": "string",
       "pattern": "^(dev|\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.-]+)?)$",
       "description": "The E9G Factory version the team runs, or \"dev\"."
     },
-    "branch": { "$ref": "#/$defs/text", "description": "The integration branch. It can't be one of protectedBranches." },
-    "base": { "$ref": "#/$defs/text" },
-    "protectedBranches": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+    "branch": {
+      "$ref": "#/$defs/text",
+      "description": "The integration branch. It can't be one of protectedBranches."
+    },
+    "base": {
+      "$ref": "#/$defs/text"
+    },
+    "protectedBranches": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
     "push": {
       "description": "null or false: nothing leaves the machine.",
       "oneOf": [
-        { "type": "null" },
-        { "const": false },
+        {
+          "type": "null"
+        },
+        {
+          "const": false
+        },
         {
           "type": "object",
           "additionalProperties": false,
-          "properties": { "remote": { "$ref": "#/$defs/text" }, "branch": { "$ref": "#/$defs/text" }, "every": { "$ref": "#/$defs/duration" } }
+          "properties": {
+            "remote": {
+              "$ref": "#/$defs/text"
+            },
+            "branch": {
+              "$ref": "#/$defs/text"
+            },
+            "every": {
+              "$ref": "#/$defs/duration"
+            },
+            "pullRequest": {
+              "description": "e9g pr: the planner's pull request from branch into this one (true: into base). Merging it is the operator's promotion.",
+              "oneOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "$ref": "#/$defs/text"
+                }
+              ]
+            }
+          }
         }
       ]
     },
     "board": {
       "oneOf": [
-        { "const": "files" },
+        {
+          "enum": ["tasks", "files"],
+          "description": "The factory's task graph (e9g task); \"files\" means the same."
+        },
         {
           "type": "object",
           "additionalProperties": false,
           "required": ["github"],
-          "properties": { "github": { "type": "object", "properties": { "label": { "$ref": "#/$defs/text" } }, "additionalProperties": false } }
+          "properties": {
+            "github": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "$ref": "#/$defs/text"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
         }
       ]
     },
-    "branchPrefix": { "$ref": "#/$defs/text" },
-    "model": { "$ref": "#/$defs/text" },
+    "mode": {
+      "enum": ["finish", "cycles"],
+      "description": "finish (default): work until the finish line holds. cycles: keep building, cycle after cycle."
+    },
+    "tasks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "store": {
+          "enum": ["files", "mongo"],
+          "description": "files (default): in the run folder. mongo: shared by machines (e9g connect mongo)."
+        },
+        "database": {
+          "type": "string",
+          "pattern": "^[\\w-]{1,60}$"
+        },
+        "lead": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,40}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The always-on machine (its name from e9g connect mongo --machine) that runs the planner and merges, when the team runs on several."
+        }
+      }
+    },
+    "priorities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "weights": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "pain": {
+              "type": "number",
+              "minimum": 0
+            },
+            "reach": {
+              "type": "number",
+              "minimum": 0
+            },
+            "revenue": {
+              "type": "number",
+              "minimum": 0
+            },
+            "wow": {
+              "type": "number",
+              "minimum": 0
+            },
+            "distribution": {
+              "type": "number",
+              "minimum": 0
+            },
+            "leverage": {
+              "type": "number",
+              "minimum": 0
+            },
+            "urgency": {
+              "type": "number",
+              "minimum": 0
+            },
+            "risk": {
+              "type": "number",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": ["operator", "thresholds", "full"],
+          "description": "Who approves the planner's proposals: you, the approver up to maxSize, or the approver alone."
+        },
+        "maxSize": {
+          "enum": ["S", "M", "L", "XL"]
+        }
+      }
+    },
+    "critical": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/regex"
+      },
+      "description": "Paths whose changes get the full review whatever their size."
+    },
+    "branchPrefix": {
+      "$ref": "#/$defs/text"
+    },
+    "model": {
+      "$ref": "#/$defs/text"
+    },
     "roles": {
       "type": "object",
       "additionalProperties": false,
       "required": ["planner"],
       "properties": {
-        "planner": { "$ref": "#/$defs/role" },
-        "builder": { "$ref": "#/$defs/role" },
+        "planner": {
+          "$ref": "#/$defs/role"
+        },
+        "builder": {
+          "$ref": "#/$defs/role"
+        },
         "tester": {
-          "allOf": [{ "$ref": "#/$defs/role" }, { "required": ["write"], "properties": { "write": { "minItems": 1 } } }],
+          "allOf": [
+            {
+              "$ref": "#/$defs/role"
+            },
+            {
+              "required": ["write"],
+              "properties": {
+                "write": {
+                  "minItems": 1
+                }
+              }
+            }
+          ],
           "description": "Testers need write: where the tests live."
         },
-        "reviewer": { "$ref": "#/$defs/role" },
-        "ux-specialist": { "$ref": "#/$defs/role" },
-        "innovator": { "$ref": "#/$defs/role" }
+        "reviewer": {
+          "$ref": "#/$defs/role"
+        },
+        "ux-specialist": {
+          "$ref": "#/$defs/role"
+        },
+        "innovator": {
+          "$ref": "#/$defs/role"
+        },
+        "approver": {
+          "$ref": "#/$defs/role"
+        }
       }
     },
     "review": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "required": { "type": "array", "items": { "$ref": "#/$defs/roleName" } },
+        "required": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/roleName"
+          }
+        },
         "removedPattern": {
-          "oneOf": [{ "$ref": "#/$defs/regex" }, { "type": "null" }],
+          "oneOf": [
+            {
+              "$ref": "#/$defs/regex"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "description": "Defaults to assertion calls when the team has a tester; null turns it off."
+        },
+        "maxRounds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Rounds of review changes a task gets before it's blocked for the planner (default 3)."
+        },
+        "viewCheckMinLines": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "A UI change of more lines than this needs the reviewer's screenshots to be approved (default 10)."
         }
       }
     },
@@ -128,49 +412,126 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "full": { "$ref": "#/$defs/textOrNull" },
-        "quick": { "type": ["string", "null"], "description": "null or left out: the full gate. \"\": none." },
-        "concurrency": { "type": "integer", "minimum": 1 }
+        "full": {
+          "$ref": "#/$defs/textOrNull"
+        },
+        "quick": {
+          "type": ["string", "null"],
+          "description": "null or left out: the full gate. \"\": none."
+        },
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "environment": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "script": { "$ref": "#/$defs/textOrNull" },
-        "health": { "type": "array", "items": { "type": "string", "pattern": "^(any:)?https?://\\S+$" } },
-        "needsDocker": { "type": "boolean" }
+        "script": {
+          "$ref": "#/$defs/textOrNull"
+        },
+        "health": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(any:)?https?://\\S+$"
+          }
+        },
+        "needsDocker": {
+          "type": "boolean"
+        }
       }
     },
     "vars": {
       "type": "object",
-      "propertyNames": { "pattern": "^(?!E9G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)[A-Za-z_][A-Za-z0-9_]*$" },
-      "additionalProperties": { "type": ["string", "number", "boolean"], "description": "Passed as text; a number or true/false is turned into text." }
+      "propertyNames": {
+        "pattern": "^(?!E9G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)[A-Za-z_][A-Za-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "type": ["string", "number", "boolean"],
+        "description": "Passed as text; a number or true/false is turned into text."
+      }
     },
-    "afterMerge": { "$ref": "#/$defs/textOrNull" },
-    "finish": { "$ref": "#/$defs/textOrNull" },
-    "progress": { "$ref": "#/$defs/textOrNull" },
+    "afterMerge": {
+      "$ref": "#/$defs/textOrNull"
+    },
+    "finish": {
+      "$ref": "#/$defs/textOrNull"
+    },
+    "progress": {
+      "$ref": "#/$defs/textOrNull"
+    },
     "pages": {
       "type": "object",
       "additionalProperties": false,
       "required": ["list"],
       "properties": {
-        "appUrl": { "type": "string", "pattern": "^https?://\\S+$" },
-        "base": { "$ref": "#/$defs/text", "description": "What allowedChanges compares against; the team's base if left out." },
-        "content": { "type": "array", "items": { "$ref": "#/$defs/text" } },
-        "allowedChanges": { "type": "array", "items": { "$ref": "#/$defs/regex" } },
-        "list": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/page" } },
-        "viewports": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/viewport" } },
-        "schemes": { "type": "array", "minItems": 1, "items": { "enum": ["light", "dark", "no-preference"] } },
-        "ignoreConsole": { "type": "array", "items": { "$ref": "#/$defs/regex" } },
-        "settleMs": { "type": "integer", "minimum": 0 }
+        "appUrl": {
+          "type": "string",
+          "pattern": "^https?://\\S+$"
+        },
+        "base": {
+          "$ref": "#/$defs/text",
+          "description": "What allowedChanges compares against; the team's base if left out."
+        },
+        "content": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "allowedChanges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/regex"
+          }
+        },
+        "list": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/page"
+          }
+        },
+        "viewports": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/viewport"
+          }
+        },
+        "schemes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": ["light", "dark", "no-preference"]
+          }
+        },
+        "ignoreConsole": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/regex"
+          }
+        },
+        "settleMs": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "policies": {
       "type": "object",
       "additionalProperties": false,
-      "propertyNames": { "enum": ["deploy", "cloud", "hosted-data", "publish", "github", "messages", "payments", "dependencies"] },
-      "patternProperties": { ".*": { "enum": ["allow", "deny"] } }
+      "propertyNames": {
+        "enum": ["deploy", "cloud", "hosted-data", "publish", "github", "messages", "payments", "dependencies"]
+      },
+      "patternProperties": {
+        ".*": {
+          "enum": ["allow", "deny"]
+        }
+      }
     },
     "never": {
       "type": "array",
@@ -181,12 +542,31 @@
             "required": ["rule", "reason"],
             "additionalProperties": false,
             "properties": {
-              "rule": { "$ref": "#/$defs/regex" },
-              "reason": { "$ref": "#/$defs/text" },
-              "example": { "type": ["string", "null"], "description": "A command the rule must refuse; null or \"\" for none." }
+              "rule": {
+                "$ref": "#/$defs/regex"
+              },
+              "reason": {
+                "$ref": "#/$defs/text"
+              },
+              "example": {
+                "type": ["string", "null"],
+                "description": "A command the rule must refuse; null or \"\" for none."
+              }
             }
           },
-          { "type": "array", "prefixItems": [{ "$ref": "#/$defs/regex" }, { "$ref": "#/$defs/text" }], "minItems": 2, "maxItems": 2 }
+          {
+            "type": "array",
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/regex"
+              },
+              {
+                "$ref": "#/$defs/text"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
         ]
       }
     },
@@ -199,14 +579,36 @@
             "required": ["rule", "roles"],
             "additionalProperties": false,
             "properties": {
-              "rule": { "$ref": "#/$defs/regex" },
-              "roles": { "type": "array", "items": { "$ref": "#/$defs/roleName" } },
-              "reason": { "$ref": "#/$defs/text" }
+              "rule": {
+                "$ref": "#/$defs/regex"
+              },
+              "roles": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/roleName"
+                }
+              },
+              "reason": {
+                "$ref": "#/$defs/text"
+              }
             }
           },
           {
             "type": "array",
-            "prefixItems": [{ "$ref": "#/$defs/regex" }, { "type": "array", "items": { "$ref": "#/$defs/roleName" } }, { "$ref": "#/$defs/text" }],
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/regex"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/roleName"
+                }
+              },
+              {
+                "$ref": "#/$defs/text"
+              }
+            ],
             "minItems": 2,
             "maxItems": 3
           }
@@ -221,39 +623,108 @@
             "type": "object",
             "required": ["title", "command"],
             "additionalProperties": false,
-            "properties": { "title": { "$ref": "#/$defs/text" }, "command": { "$ref": "#/$defs/text" } }
+            "properties": {
+              "title": {
+                "$ref": "#/$defs/text"
+              },
+              "command": {
+                "$ref": "#/$defs/text"
+              }
+            }
           },
-          { "type": "array", "prefixItems": [{ "$ref": "#/$defs/text" }, { "$ref": "#/$defs/text" }], "minItems": 2, "maxItems": 2 }
+          {
+            "type": "array",
+            "prefixItems": [
+              {
+                "$ref": "#/$defs/text"
+              },
+              {
+                "$ref": "#/$defs/text"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2
+          }
         ]
       }
     },
-    "docs": { "type": "array", "items": { "$ref": "#/$defs/text" } },
-    "polishRounds": { "type": "integer", "minimum": 0 },
-    "worktreeSetup": { "$ref": "#/$defs/textOrNull" },
+    "docs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "polishRounds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "worktreeSetup": {
+      "$ref": "#/$defs/textOrNull"
+    },
     "watchdog": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "tickEvery": { "$ref": "#/$defs/duration" },
-        "stuckAfter": { "$ref": "#/$defs/duration" },
-        "pruneAfter": { "$ref": "#/$defs/duration" },
-        "doneTickEvery": { "$ref": "#/$defs/duration" }
+        "tickEvery": {
+          "$ref": "#/$defs/duration"
+        },
+        "stuckAfter": {
+          "$ref": "#/$defs/duration"
+        },
+        "pruneAfter": {
+          "$ref": "#/$defs/duration"
+        },
+        "doneTickEvery": {
+          "$ref": "#/$defs/duration"
+        }
       }
     },
     "contact": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "mode": { "enum": ["digest", "priority"] },
-        "every": { "$ref": "#/$defs/duration" }
+        "mode": {
+          "enum": ["digest", "priority"]
+        },
+        "every": {
+          "$ref": "#/$defs/duration"
+        }
       }
     },
-    "protect": { "type": "array", "items": { "$ref": "#/$defs/regex" } },
-    "isolation": { "enum": ["strict", "user"] },
-    "startPrompt": { "$ref": "#/$defs/textOrNull" },
-    "t3ProjectId": { "type": ["string", "null"], "minLength": 1, "description": "null until register assigns one." },
-    "legacyInstances": { "type": "object", "additionalProperties": { "$ref": "#/$defs/roleName" } }
+    "protect": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/regex"
+      }
+    },
+    "isolation": {
+      "enum": ["strict", "user"]
+    },
+    "startPrompt": {
+      "$ref": "#/$defs/textOrNull"
+    },
+    "t3ProjectId": {
+      "type": ["string", "null"],
+      "minLength": 1,
+      "description": "null until register assigns one."
+    },
+    "legacyInstances": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/roleName"
+      }
+    }
   },
-  "if": { "required": ["finish"], "properties": { "finish": { "type": "string", "pattern": "\\be9g\\s+pages\\s+done\\b" } } },
-  "then": { "required": ["pages"] }
+  "if": {
+    "required": ["finish"],
+    "properties": {
+      "finish": {
+        "type": "string",
+        "pattern": "\\be9g\\s+pages\\s+done\\b"
+      }
+    }
+  },
+  "then": {
+    "required": ["pages"]
+  }
 }

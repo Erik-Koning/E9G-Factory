@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
+import { fileStore } from "../lib/tasks/files.ts";
 
-const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home } });
+// Each checkout's run folder beside it (the default is the team's name, which every fixture shares).
+const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home, E9G_RUN: `${home}-run` } });
+const taskStatus = async (home: string, id: string) => (await fileStore(`${home}-run`, "fixture").tasks.get(id))?.status;
 const approve = (home: string, branch: string) =>
   e9g(["verdict", "review", branch, "approve", "--sha", git(home, "rev-parse", branch), "--note", "ok"], {
     cwd: home,
-    env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer" },
+    env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer", E9G_RUN: `${home}-run` },
   });
 const record = (home: string, branch: string): { result: string; message: string; sha: string } =>
   JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
@@ -46,7 +49,7 @@ describe("merge queue", { concurrency: true }, () => {
     assert.equal(result.code, 0, result.out);
     assert.equal(record(home, "e9g/b1-feature").result, "merged");
     assert.equal(git(home, "rev-parse", "e9g/next^2"), tip(home, "e9g/b1-feature"), "a merge commit of the approved tip");
-    assert.match(readFileSync(join(home, ".e9g/run/board/1-feature.md"), "utf8"), /^status: done$/m);
+    assert.equal(await taskStatus(home, "1"), "done", "the board's ticket, now a task, is done");
     assert.match(readFileSync(join(home, ".e9g/run/state/merges.log"), "utf8"), /e9g\/b1-feature merged/);
     assert.ok(!existsSync(join(home, ".e9g/run/merge")), "the scratch worktree is gone");
   });
@@ -140,6 +143,6 @@ describe("merge queue", { concurrency: true }, () => {
     git(home, "checkout", "--", "README.md");
     const result = await merge(home, "e9g/b10-ten", "--closes", "7");
     assert.equal(result.code, 0, result.out);
-    assert.match(readFileSync(join(home, ".e9g/run/board/7-seven.md"), "utf8"), /^status: done$/m);
+    assert.equal(await taskStatus(home, "7"), "done");
   });
 });

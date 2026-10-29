@@ -121,6 +121,42 @@ function older(a: string, b: string): boolean {
   return false;
 }
 
+// The installed folders (relative to root) of the package's dependencies and optional dependencies, and theirs, found
+// the way Node finds them: in node_modules beside the one that needs it, then each folder up. A missing optional one is
+// passed over; npm isn't needed.
+export function productionModules(root: string): string[] {
+  const read = (dir: string): Record<string, Record<string, string>> => {
+    try {
+      return JSON.parse(readFileSync(join(root, dir, "package.json"), "utf8")) as Record<string, Record<string, string>>;
+    } catch {
+      return {};
+    }
+  };
+  const needs = (dir: string): string[] => {
+    const pkg = read(dir);
+    return [...Object.keys(pkg["dependencies"] ?? {}), ...Object.keys(pkg["optionalDependencies"] ?? {})];
+  };
+  const found = new Set<string>();
+  const queue: [string, string][] = needs("").map((name) => ["", name]);
+  for (let next = queue.shift(); next; next = queue.shift()) {
+    const [from, name] = next;
+    // Beside the package that needs it (node_modules/a/node_modules/<name>), then each package up, then the root's.
+    let dir: string | null = null;
+    for (let at = from; ; at = at.includes("/node_modules/") ? at.slice(0, at.lastIndexOf("/node_modules/")) : "") {
+      const candidate = at ? `${at}/node_modules/${name}` : `node_modules/${name}`;
+      if (existsSync(join(root, candidate, "package.json"))) {
+        dir = candidate;
+        break;
+      }
+      if (!at) break;
+    }
+    if (!dir || found.has(dir)) continue;
+    found.add(dir);
+    for (const dep of needs(dir)) queue.push([dir, dep]);
+  }
+  return [...found].sort();
+}
+
 export function selfInstall(argv: string[]): number {
   operatorOnly("self-install");
   const { options } = parseArgs(argv, { booleans: ["link", "force"] });
@@ -132,7 +168,15 @@ export function selfInstall(argv: string[]): number {
     die(`${FACTORY_ROOT} is an installed copy of E9G Factory; run self-install from a clone of the factory (node bin/e9g.ts self-install)`);
   const files = sourceFiles().filter((file) => existsSync(join(FACTORY_ROOT, file)));
   sweepInstalls();
-  const contentHash = hash(...files.map((file) => `${file}\0${readFileSync(join(FACTORY_ROOT, file), "utf8")}`));
+  // The production modules count too (by name and version), so installing the mongodb driver makes a new release.
+  const modules = productionModules(FACTORY_ROOT).map((dir) => {
+    try {
+      return `${dir}@${(JSON.parse(readFileSync(join(FACTORY_ROOT, dir, "package.json"), "utf8")) as { version?: string }).version ?? ""}`;
+    } catch {
+      return dir;
+    }
+  });
+  const contentHash = hash(...files.map((file) => `${file}\0${readFileSync(join(FACTORY_ROOT, file), "utf8")}`), ...modules);
   const built = readJson<Build>(join(dest, ".build.json"));
   // The same files: nothing to copy, unless --force asks for the release to be made again (to record its commit).
   if (built && built.hash === contentHash && !options["force"]) {
@@ -148,10 +192,14 @@ export function selfInstall(argv: string[]): number {
     for (const file of files) cpSync(join(FACTORY_ROOT, file), join(staging, file), { recursive: true });
     for (const script of ["bin/e9g.ts", "bin/e9g.mjs", ...files.filter((f) => f.endsWith(".sh"))])
       if (existsSync(join(staging, script))) chmodSync(join(staging, script), 0o755);
-    const axe = join(FACTORY_ROOT, "node_modules", "axe-core");
-    if (existsSync(axe)) cpSync(axe, join(staging, "node_modules", "axe-core"), { recursive: true });
-    else if (spawnSync("npm", ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: staging, stdio: "inherit" }).status !== 0)
-      console.warn("e9g: couldn't install axe-core; e9g pages will report it missing");
+    // The production dependencies, as this checkout has them installed: axe-core for e9g pages, and the optional
+    // mongodb driver for teams whose tasks are in Mongo. Without them, npm installs them into the release.
+    for (const path of productionModules(FACTORY_ROOT)) cpSync(join(FACTORY_ROOT, path), join(staging, path), { recursive: true });
+    if (
+      !existsSync(join(staging, "node_modules", "axe-core")) &&
+      spawnSync("npm", ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: staging, stdio: "inherit" }).status !== 0
+    )
+      console.warn("e9g: couldn't install the production dependencies; e9g pages will report axe-core missing, and Mongo teams the driver");
     const commit = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: FACTORY_ROOT, encoding: "utf8" }).stdout.trim();
     const dirty = spawnSync("git", ["status", "--porcelain"], { cwd: FACTORY_ROOT, encoding: "utf8" }).stdout.trim() !== "";
     writeFileSync(

@@ -20,7 +20,8 @@ import { FACTORY_ROOT, findHome, versionDir } from "../paths.ts";
 import { ALLOWED_EXAMPLES, policyStates } from "../policies.ts";
 import { compile } from "../prompts.ts";
 import * as t3 from "../t3.ts";
-import { die, parseArgs } from "../util.ts";
+import { die, parseArgs, which } from "../util.ts";
+import { githubRepo, remoteUrl, shownUrl } from "./pr.ts";
 
 // One self-test case: a tool call as a role would make it, and what the guard must do with it. `says`: what the
 // refusal must say, where another check would refuse the call too (a push the planner may not make anyway), so the
@@ -75,6 +76,18 @@ export function guardCases(team: Team): GuardCase[] {
     add("planner", "Bash", { command: `git -C . push ${remote} HEAD:${guarded}` }, "refuse", "a push to a protected branch behind git -C", says);
   }
   bash(builder, "git push --force origin topic", "refuse", "a force push");
+  if (team.board.type === "tasks") {
+    // The task graph's commands belong to their roles (the commands check the role too).
+    bash(builder, "e9g task list", "allow", "reading the task graph");
+    if (builder !== "planner") {
+      bash(builder, "e9g task approve 1", "refuse", "approving a proposal, which the approver or the operator does");
+      bash(builder, "e9g task score 1 --pain 3", "refuse", "scoring, which the planner does");
+      bash(builder, "e9g request stakeholders", "refuse", "the stakeholders' names, which are the operator's");
+    }
+    bash("planner", "e9g task approve 1", "refuse", "the planner approving its own proposal");
+    if (team.roles["approver"]) bash("approver", 'e9g task approve 1 --note "e9g check"', "allow", "the approver's verdict");
+    if (team.roles["builder"]) bash("builder", "e9g task claim", "allow", "a builder claiming a task");
+  }
   bash(builder, "cat .env", "refuse", "reading an env file");
   bash(builder, "e9g register", "refuse", "an operator's command");
   if (team.environment.script && builder !== "planner") {
@@ -84,6 +97,12 @@ export function guardCases(team: Team): GuardCase[] {
   if (builder !== "planner") {
     bash(builder, "e9g merge some/branch", "refuse", "merging, which only the planner does");
     bash(builder, "e9g verdict review some/branch approve", "refuse", "a reviewer's verdict");
+    bash(builder, "e9g pr --title x --body-file /tmp/e9g-check.md", "refuse", "the pull request, which only the planner opens");
+  }
+  if (team.push?.pullRequest) {
+    bash("planner", 'e9g pr --title "e9g check" --body-file /tmp/e9g-check.md', "allow", "the planner's pull request");
+    if (policyStates(team).find((policy) => policy.id === "github")?.state === "deny")
+      bash("planner", "gh pr create --fill", "refuse", "a pull request opened with gh itself, which e9g pr does instead");
   }
   for (const policy of policyStates(team))
     for (const example of policy.examples)
@@ -273,6 +292,14 @@ export async function check(argv: string[]): Promise<number> {
   else if (!existsSync(versionDir(team.factory)))
     line("warn", `factory: the team pins ${team.factory}, which isn't installed here (e9g versions); register refuses until it is`);
   committed(team, [".e9g/team.json", ".e9g/.gitignore", ...named], adapters, line);
+  if (team.push?.pullRequest) {
+    const url = remoteUrl(home, team.push.remote);
+    if (!url) line("warn", `push.remote: the checkout has no remote ${team.push.remote}, so nothing can be pushed and e9g pr opens nothing`);
+    else if (!githubRepo(url))
+      line("warn", `push.pullRequest: ${team.push.remote} (${shownUrl(url)}) isn't on GitHub, so e9g pr can't open a pull request there`);
+    else if (!which("gh")) line("warn", "push.pullRequest: gh isn't installed, which e9g pr runs (brew install gh, then gh auth login)");
+    else line("ok", `e9g pr opens the planner's pull request on ${githubRepo(url)}, from ${team.push.branch} into ${team.push.pullRequest}`);
+  }
 
   const run = mkdtempSync(join(tmpdir(), "e9g-check-"));
   const cases = guardCases(team);
@@ -430,9 +457,17 @@ function summary(team: Team, failures: number): number {
     );
   }
   console.info(
-    `  - pushes: ${team.push ? `only the planner, ${team.push.branch} to ${team.push.remote}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}` : "none"}`
+    `  - pushes: ${team.push ? `only the planner, ${team.push.branch} to ${team.push.remote}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}${team.push.pullRequest ? `, with a pull request into ${team.push.pullRequest} (e9g pr) for you to merge` : ""}` : "none"}`
   );
   console.info(`  - messages to the operator, ${contactRule(team.contact)}`);
+  if (team.board.type === "tasks") {
+    console.info(
+      `  - works ${team.mode === "cycles" ? "in cycles, with no finish line to stop at" : "until the finish line holds"}; tasks in ${team.tasks.store === "mongo" ? `Mongo (${team.tasks.database})${team.tasks.lead ? `, merged on ${team.tasks.lead}` : ""}` : "the run folder"}`
+    );
+    console.info(
+      `  - proposals approved by ${team.approval.mode === "operator" ? "you" : team.approval.mode === "full" ? "the approver, any size (full)" : `the approver up to size ${team.approval.maxSize}; larger ones and new journeys by you`}`
+    );
+  }
   for (const policy of states.filter((p) => p.state === "allow"))
     console.info(`  - ${policy.summary}${policy.default === "deny" ? " (unlocked by the operator)" : ""}`);
   console.info("What it may not do:");

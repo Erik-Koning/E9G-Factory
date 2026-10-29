@@ -572,9 +572,28 @@ function ownedCommands(team: Team): [RegExp, string[], string][] {
       ?.split("/")
       .pop() ?? "";
   return [
-    [e9g("merge|log|drain\\s+(?!status(?:$|\\s))\\S+"), ["planner"], "the planner merges, keeps the log and drains the environment."],
+    [
+      e9g("merge|log|pr|drain\\s+(?!status(?:$|\\s))\\S+"),
+      ["planner"],
+      "the planner merges, keeps the log, opens the pull request and drains the environment.",
+    ],
     [e9g("env\\s+(?:up|reset|restart|down)"), ["planner"], "only the planner starts, resets or stops the team's environment."],
     [e9g("pages\\s+run"), ["planner"], "the planner records page results; use e9g pages shots to check anything yourself."],
+    [
+      e9g("task\\s+(?:edit|score|status|import)"),
+      ["planner"],
+      "the planner shapes, scores and moves tasks; add a finding (e9g task add) or a note (e9g task note) instead.",
+    ],
+    [
+      e9g("task\\s+(?:approve|reject|research|escalate)"),
+      ["approver"],
+      "the approver (or the operator) decides on proposals, and nobody approves their own (Article 4).",
+    ],
+    [e9g("task\\s+(?:claim|release|submit)"), ["builder", "tester", "planner"], "builders and testers claim, release and submit tasks."],
+    [e9g("request\\s+(?:add|reject)|cycle\\s+close"), ["planner"], "the planner takes in feature requests and closes cycles."],
+    [e9g("request\\s+note"), ["planner", "approver"], "the planner and the approver note what they found about a request."],
+    [e9g("task\\s+fetch"), ["planner", "reviewer"], "the planner and the reviewer fetch a task's branch from the remote."],
+    [e9g("request\\s+stakeholders"), [], "the stakeholders' names and addresses are the operator's to see (Article 8)."],
     [e9g("verdict\\s+review"), ["reviewer"], "only a reviewer records a review (Article 4)."],
     [e9g("verdict\\s+ux"), ["ux-specialist"], "only the UX specialist records a UX verdict (Article 4)."],
     ...(script
@@ -719,7 +738,8 @@ export function check(input: HookInput): void {
     }
     const ours = inside(absolute, root) || inside(absolute, home);
     if (!ours) {
-      if (role === "planner" && run && (inside(absolute, join(run, "outbox")) || absolute === join(run, "complete"))) return null;
+      if (role === "planner" && run && (inside(absolute, join(run, "outbox")) || absolute === join(run, "complete") || absolute === join(run, "idle")))
+        return null;
       if (machine.some((dir) => inside(absolute, dir)))
         refuse(`${absolute} belongs to the factory, T3 Code or Claude Code on this machine; the team never writes there.`);
       if (scratch.some((dir) => inside(absolute, dir))) return null;

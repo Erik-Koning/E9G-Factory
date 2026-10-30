@@ -21,7 +21,10 @@ const as = (home: string, role: string) => ({ cwd: home, env: { E9G_HOME_DIR: ho
 const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home, E9G_RUN: `${home}-run` } });
 const taskStatus = async (home: string, id: string) => (await fileStore(`${home}-run`, "fixture").tasks.get(id))?.status;
 const review = (home: string, branch: string, sha = git(home, "rev-parse", branch)) =>
-  e9g(["verdict", "review", branch, "approve", "--sha", sha, "--note", "ok"], { cwd: home, env: { ...as(home, "reviewer").env, E9G_RUN: `${home}-run` } });
+  e9g(["verdict", "review", branch, "approve", "--sha", sha, "--risk", "low", "--note", "ok"], {
+    cwd: home,
+    env: { ...as(home, "reviewer").env, E9G_RUN: `${home}-run` },
+  });
 const record = (home: string, branch: string): { branch: string; result: string; message: string; sha: string } =>
   JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
 const read = (path: string): string => (existsSync(path) ? readFileSync(path, "utf8") : "");

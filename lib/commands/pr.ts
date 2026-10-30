@@ -115,7 +115,10 @@ export function pr(argv: string[]): number {
   } else {
     const create = gh(["pr", "create", "--repo", repo, "--head", push.branch, "--base", into, "--title", fullTitle, "--body-file", "-"], fullBody);
     if (create.status !== 0) return fail(`gh couldn't open the pull request: ${why(create)}`, 1);
-    console.info(`pr: opened ${push.branch} into ${into}: ${create.stdout.trim().split("\n").pop() ?? ""}`);
+    const url = create.stdout.trim().split("\n").pop() ?? "";
+    console.info(`pr: opened ${push.branch} into ${into}: ${url}`);
+    // Followed from the planner's thread, the operator's comments on it wake the planner (T3 Code's PR watch).
+    if (url) console.info(`pr: watch it from your thread: mcp__t3-code__watch_pull_request with url ${url}`);
   }
   if (unpushed) console.info(`pr: ${unpushed} newer commit(s) on ${push.branch} aren't pushed yet; the pull request says so`);
   return 0;

@@ -6,9 +6,11 @@ import { describe, test } from "node:test";
 import type { RawTeam } from "../lib/config.ts";
 import { normalize } from "../lib/config.ts";
 import { fileStore } from "../lib/tasks/files.ts";
-import { integrationDiverged, isLead, multiMachine, prepareBranch, pushIntegration, pushTaskBranch, syncBranch } from "../lib/tasks/machines.ts";
+import { branchRef, integrationDiverged, isLead, multiMachine, prepareBranch, pushIntegration, pushTaskBranch } from "../lib/tasks/machines.ts";
 import { newTask, type Task, withEvent } from "../lib/tasks/model.ts";
-import { update } from "../lib/tasks/store.ts";
+import { keyHash } from "../lib/commands/request.ts";
+import { markMoved, migrate } from "../lib/tasks/migrate.ts";
+import { openStore, update } from "../lib/tasks/store.ts";
 import { type MongoClientLike, type MongoCollectionLike, storeOver } from "../lib/tasks/mongo.ts";
 
 const team = (overrides: RawTeam = {}) =>
@@ -51,6 +53,14 @@ describe("feature requests", () => {
     assert.doesNotMatch(seen.out, /Dana|dana@/, "agents see a stakeholder's id and role only");
     assert.match(seen.out, /"fromRole": "customer"/);
     assert.equal((await e9g(["request", "stakeholders"], as("planner"))).code, 2);
+    // A link of their own, kept as a hash; revoked, it opens nothing.
+    const link = await e9g(["request", "stakeholders", "add", "--name", "Dana Ruiz", "--email", "dana@example.com", "--role", "customer"], as(null));
+    const key = /\?token=(\S+)/.exec(link.out)?.[1] ?? "";
+    assert.ok(key.length > 20, link.out);
+    assert.equal((await store().stakeholders.get("s1"))?.key, keyHash(key));
+    assert.doesNotMatch(JSON.stringify(await store().stakeholders.all()), new RegExp(key), "never the key itself");
+    assert.equal((await e9g(["request", "stakeholders", "revoke", "s1"], as(null))).code, 0);
+    assert.equal((await store().stakeholders.get("s1"))?.key, null);
     assert.match((await e9g(["request", "add", "x", "--name", "A", "--email", "a@b.co"], as("planner"))).out, /doesn't record people's names/);
 
     // Researched, then promoted into a task, or rejected with a reason.
@@ -70,7 +80,7 @@ describe("cycles", () => {
   test("closing one records what's done since the last and drafts the report", async () => {
     const { run, as, store } = setup(team({ mode: "cycles" }));
     const merged = newTask({ team: "fixture", title: "a", kind: "feature", status: "done", by: "planner" });
-    merged.history.push({ at: new Date().toISOString(), by: "merge-queue", what: "review → done: merged e9g/b1-a at abc" });
+    merged.history.push({ at: new Date().toISOString(), by: "merge-queue", what: "review → done: merged e9g/b1-a at abc", from: "review", to: "done" });
     await store().tasks.createAs("1", merged);
     // Done long ago, and only noted on since: not this cycle's.
     await store().tasks.createAs("2", newTask({ team: "fixture", title: "b", kind: "feature", status: "done", by: "planner" }));
@@ -143,6 +153,47 @@ function fakeMongo(): MongoClientLike {
     close: async () => {},
   };
 }
+
+describe("moving a task graph to Mongo", () => {
+  test("copies every document with its id, refuses a store that has the team's already, and freezes the files", async () => {
+    const run = tmp("e9g-run-");
+    const files = fileStore(run, "fixture");
+    await files.tasks.createAs("7", newTask({ team: "fixture", title: "seven", kind: "feature", status: "approved", by: "planner" }));
+    await files.tasks.create(newTask({ team: "fixture", title: "eight", kind: "bug", status: "triage", by: "tester" }));
+    await files.requests.create({
+      team: "fixture",
+      title: "r",
+      body: "b",
+      from: "s1",
+      status: "new",
+      tasks: [],
+      notes: [],
+      createdAt: "x",
+      updatedAt: "x",
+      history: [],
+    });
+    await files.stakeholders.create({ team: "fixture", name: "Dana", email: "d@example.com", role: "customer", createdAt: "x" });
+    const mongo = storeOver(fakeMongo(), { name: "fixture", tasks: { store: "mongo", database: "e9g", lead: null } });
+    assert.deepEqual(await migrate(files, mongo), { tasks: 2, requests: 1, stakeholders: 1, cycles: 0 });
+    assert.deepEqual(
+      (await mongo.tasks.all()).map((t) => [t.id, t.title]),
+      [
+        ["7", "seven"],
+        ["8", "eight"],
+      ]
+    );
+    assert.equal((await mongo.tasks.create(newTask({ team: "fixture", title: "nine", kind: "chore", status: "triage", by: "planner" }))).id, "9");
+    await assert.rejects(migrate(files, mongo), /already has this team's tasks/);
+    markMoved(run, "mongo");
+    await assert.rejects(openStore({ name: "fixture", tasks: { store: "files", database: "e9g", lead: null } }, run), /moved to mongo/);
+  });
+
+  test("is the operator's, from the store team.json names", async () => {
+    const { as } = setup();
+    assert.match((await e9g(["task", "migrate", "--to", "mongo"], as("planner"))).out, /operator's/);
+    assert.match((await e9g(["task", "migrate", "--to", "files"], as(null))).out, /in files already/);
+  });
+});
 
 describe("the Mongo store", () => {
   test("numbers per team, replaces only the version it read, and keeps imported numbers", async () => {
@@ -234,30 +285,20 @@ describe("a team on several machines", () => {
     commit(tree, { "src/thing.ts": "export const t = 1;\n" }, "the thing");
     assert.equal(pushTaskBranch(tree, settings, "e9g/b5-thing"), null);
 
-    // The lead makes the local branch from the remote; a second push moves it.
-    assert.match(syncBranch(lead, settings, "e9g/b5-thing").said ?? "", /e9g\/b5-thing is now origin's/);
-    assert.equal(git(lead, "rev-parse", "e9g/b5-thing"), git(tree, "rev-parse", "HEAD"));
-    assert.deepEqual(syncBranch(lead, settings, "e9g/b5-thing"), { said: null, stale: false }, "already there");
+    // The lead reviews and merges the remote's copy, fetched each time: a second push is what it sees next.
+    const seen = branchRef(lead, settings, "e9g/b5-thing");
+    assert.deepEqual(seen.ok && [seen.ref, git(lead, "rev-parse", seen.ref)], ["refs/remotes/origin/e9g/b5-thing", git(tree, "rev-parse", "HEAD")]);
     commit(tree, { "src/thing.ts": "export const t = 2;\n" }, "round two");
     assert.equal(pushTaskBranch(tree, settings, "e9g/b5-thing"), null);
-    // A finished worktree on the lead that still has it checked out is detached, so the lead sees the new round.
-    const holder = join(realpathSync(tmp("e9g-hold-")), "h");
-    git(lead, "worktree", "add", "-q", holder, "e9g/b5-thing");
-    assert.equal(syncBranch(lead, settings, "e9g/b5-thing").stale, false);
-    assert.equal(git(lead, "rev-parse", "e9g/b5-thing"), git(tree, "rev-parse", "HEAD"));
-    commit(tree, { "src/thing.ts": "export const t = 2.5;\n" }, "round two and a half");
-    pushTaskBranch(tree, settings, "e9g/b5-thing");
-    git(holder, "checkout", "-q", "e9g/b5-thing");
-    write(holder, { "scratch.txt": "uncommitted" });
-    assert.match(JSON.stringify(syncBranch(lead, settings, "e9g/b5-thing")), /uncommitted work.*"stale":true/, "a holder with work isn't touched");
-    git(lead, "worktree", "remove", "--force", holder);
-    syncBranch(lead, settings, "e9g/b5-thing");
-    assert.equal(git(lead, "rev-parse", "e9g/b5-thing"), git(tree, "rev-parse", "HEAD"));
+    const again2 = branchRef(lead, settings, "e9g/b5-thing");
+    assert.equal(again2.ok && git(lead, "rev-parse", again2.ref), git(tree, "rev-parse", "HEAD"));
+    assert.equal(git(lead, "branch", "--list", "e9g/b5-thing"), "", "the lead keeps no copy of its own");
+    assert.match(JSON.stringify(branchRef(lead, settings, "e9g/b9-never-pushed")), /isn't on origin/);
     // Rework: the next claim starts from the task's own branch on the remote.
     git(tree, "checkout", "-q", "--detach", "HEAD~2");
     const rework = prepareBranch(tree, settings, "e9g/b5-thing", true);
     assert.equal(rework.ok, true, rework.said);
-    assert.equal(readFileSync(join(tree, "src/thing.ts"), "utf8"), "export const t = 2.5;\n");
+    assert.equal(readFileSync(join(tree, "src/thing.ts"), "utf8"), "export const t = 2;\n");
     // A rework whose branch never reached the remote: said loudly, not started over from the integration branch.
     git(tree, "checkout", "-q", "--detach");
     const missing = prepareBranch(tree, settings, "e9g/b6-lost", true);
@@ -270,14 +311,6 @@ describe("a team on several machines", () => {
     assert.match(again.said, /earlier member's work/);
     assert.ok(existsSync(join(tree, "src/again.ts")), "not reset to the integration branch");
 
-    // Never backwards: a lead branch with work the remote lacks stays; nor a branch that isn't a member's.
-    const ahead = git(lead, "commit-tree", "-p", "e9g/b5-thing", "-m", "lead-only", `${git(lead, "rev-parse", "e9g/b5-thing")}^{tree}`);
-    git(lead, "update-ref", "refs/heads/e9g/b5-thing", ahead);
-    commit(tree, { "src/thing.ts": "export const t = 3;\n" }, "round three");
-    assert.equal(pushTaskBranch(tree, settings, "e9g/b5-thing"), null);
-    assert.match(syncBranch(lead, settings, "e9g/b5-thing").said ?? "", /has commits origin's doesn't/);
-    assert.equal(git(lead, "rev-parse", "e9g/b5-thing"), ahead);
-    assert.equal(syncBranch(lead, settings, "main").said, null, "main isn't a member's branch");
     // Only the lead pushes the integration branch: a push from elsewhere stops its merges until the operator brings it in.
     assert.equal(integrationDiverged(lead, settings), null);
     git(tree, "checkout", "-q", "-B", "hotfix", "origin/e9g/next");

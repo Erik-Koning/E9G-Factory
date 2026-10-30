@@ -51,7 +51,9 @@ export function sourcesHash(team: LoadedTeam, role: string): string {
     read(lessonsFile(team)),
     read(directionFile(team)),
     read(decisionsFile(team)),
-    existingDocs(team).join("\n")
+    existingDocs(team).join("\n"),
+    // The rules name CLAUDE.md only when the repository has one.
+    String(existsSync(join(team.home, "CLAUDE.md")))
   );
 }
 
@@ -90,7 +92,7 @@ function commandsFor(team: Team, role: string): string {
     if (team.pages) lines.push("`e9g pages run [ids…]`: check the pages on the team's app and record the results.");
     if (team.push?.pullRequest)
       lines.push(
-        `\`e9g pr --title "<what it holds>" --body-file <file>\`: after a push, open the pull request from ${code(team.push.branch)} into ${code(team.push.pullRequest)}, or update the open one. Write the body to a file in \`.e9g/run/scratch/\`: what's in it since the operator last merged, how to see it, the product calls you made, and what's left. It's labelled and signed for you.`
+        `\`e9g pr --title "<what it holds>" --body-file <file>\`: after a push, open the pull request from ${code(team.push.branch)} into ${code(team.push.pullRequest)}, or update the open one. Write the body to a file in \`.e9g/run/scratch/\`: what's in it since the operator last merged, how to see it, the product calls you made, and what's left. It's labelled and signed for you. The first time, watch it from your thread (\`mcp__t3-code__watch_pull_request\` with its URL): T3 Code wakes you on the operator's comments and reviews, failed checks and conflicts, and settles your thread when they merge it.`
       );
   }
   if (team.board.type === "tasks") {
@@ -117,7 +119,7 @@ function commandsFor(team: Team, role: string): string {
   }
   if (role === "reviewer")
     lines.push(
-      '`e9g verdict review <branch> approve|changes --sha <the commit you reviewed> [--shots <dir>] --note "<one line>"`: record your verdict on exactly that commit. It\'s refused if the branch has moved past it; review what was added and record again. A UI change beyond a few lines is approved only with --shots: the folder of before-and-after screenshots you read. The merge queue merges only the commit you approved.'
+      '`e9g verdict review <branch> approve|changes --sha <the commit you reviewed> [--risk low|medium|high] [--shots <dir>] --note "<one line>"`: record your verdict on exactly that commit; an approval says how much the change could break (`--risk`; a high-risk change merges only with its tests), and `--shots` names the screenshots you read when you looked. It\'s refused if the branch has moved past it; review what was added and record again. The merge queue merges only the commit you approved.'
     );
   if (role === "ux-specialist")
     lines.push(
@@ -142,12 +144,12 @@ function boardText(team: Team, role: string): string {
     ].join("\n");
   }
   const intro =
-    "The board is the team's task graph (`e9g task`): one task per piece of work, each with a status and a history of who moved it. Statuses: `triage` (a finding), `proposed` (scored work waiting for approval), `researching`, `approved` (ready to claim), `building` (claimed by a builder or tester, on a machine, with a lease its heartbeats renew), `review`, `verify` (a journey whose tasks are all done), `done`, `blocked`, `question`, `rejected`. `e9g task list` shows what's open (`--all` everything), `e9g task show <id>` one task.";
+    "The board is the team's task graph (`e9g task`): one task per piece of work, each with a status and a history of who moved it. Statuses: `triage` (a finding), `proposed` (scored work waiting for approval), `researching`, `approved` (ready to claim), `building` (claimed by a builder or tester, on a machine, with a lease its heartbeats renew), `review`, `done`, `blocked`, `question`, `rejected`. A journey whose tasks are all done is due its verification (`e9g task list` says so). `e9g task list` shows what's open (`--all` everything), `e9g task show <id>` one task.";
   const finding =
     'File each finding as `e9g task add "<what\'s wrong, in a few words>" --kind bug|ux|test-infra|feature --sev blocker|major|minor --body-file <file>` (steps, what happened, what should, the screenshot\'s path); it goes to triage. Search `e9g task list --all` first so you don\'t repeat one, and add to an existing task with `e9g task note <id> "…"`.';
   const byRole: Record<string, string> = {
-    planner: `You own it. Triage findings: give each its severity, area and files (\`e9g task edit <id> --sev … --area … --files …\`), then \`e9g task status <id> proposed\` (or rejected or question, with \`--reason\`). Shape work (\`e9g task add\`, \`edit\`: a journey as \`--kind journey\` with its tasks naming it as \`--parent\`, dependencies as \`--after\`, where it lands as \`--files\`), and score every proposal (\`e9g task score\`). ${approvalText(team)} The merge queue marks what it merges done; you never approve your own proposals or mark code done.`,
-    builder: `Take your task with \`e9g task claim\` (the next approved one, or the one your brief names), hand it in with \`e9g task submit <id>\` once it's committed and the gate passes, or hand it back with \`e9g task release <id> --blocked "<why>"\`. ${finding}`,
+    planner: `You own it. Triage findings: give each its severity, area and files (\`e9g task edit <id> --sev … --area … --files …\`), then approve it (\`e9g task approve <id>\`) when your rules let you approve the findings other members file, or \`e9g task status <id> proposed\` for the approver (or rejected or question, with \`--reason\`). Shape work (\`e9g task add\`, \`edit\`: a journey as \`--kind journey\` with its tasks naming it as \`--parent\`, dependencies as \`--after\`, where it lands as \`--files\`), and score every proposal (\`e9g task score\`). ${approvalText(team)} The merge queue marks what it merges done; you never approve your own proposals or mark code done.`,
+    builder: `Take your task with \`e9g task claim\` (the next approved one, or the one your brief names), hand it in with \`e9g task submit <id>\` once it's committed and the gate passes, or hand it back with \`e9g task release <id> --blocked "<why>"\`. When what you change could break much (money, sign-in, data, code many files import, a flow people depend on), its tests come in the same branch: the reviewer judges the risk, and a high-risk change merges only with them. ${finding}`,
     tester: `Take your task with \`e9g task claim\` (the next approved test work, or the one your brief names), hand it in with \`e9g task submit <id>\`, or back with \`e9g task release <id> --blocked "<why>"\`. ${finding}`,
     approver: `You decide on proposals: \`e9g task approve <id> [--note]\`, \`reject <id> --reason\`, \`research <id> --note "<what to find out>"\`, or \`escalate <id> --reason\` (it goes to the operator). ${approvalText(team)}`,
   };
@@ -156,10 +158,17 @@ function boardText(team: Team, role: string): string {
 
 // Who approves the planner's proposals (team.json approval).
 function approvalText(team: Team): string {
+  const findings =
+    team.approval.findings === "planner"
+      ? ` The planner approves the bug, UX and test findings other members file, up to size ${team.approval.maxSize}.`
+      : "";
+  return proposalsText(team) + findings;
+}
+function proposalsText(team: Team): string {
   if (team.approval.mode === "operator") return "Proposals wait for the operator to approve them (team.json approval).";
   if (team.approval.mode === "full")
-    return "The approver approves proposals of any size, new journeys included (team.json approval: full); privacy, policy unlocks, promotion and rule changes stay the operator's.";
-  return `The approver approves proposals up to size ${team.approval.maxSize} that start no new journey; anything larger or new is escalated to the operator (team.json approval).`;
+    return "The approver approves proposals of any size (team.json approval: full); privacy, policy unlocks, promotion and rule changes stay the operator's.";
+  return `The approver approves proposals up to size ${team.approval.maxSize}; anything larger, or a change of scope, is escalated to the operator (team.json approval). A journey only groups tasks: nobody approves it, only its tasks.`;
 }
 
 // Builders and testers get their own worktree from delegate_task; everyone else shares the team's checkout, which
@@ -236,7 +245,10 @@ export function compile(team: LoadedTeam, role: string): string {
             .join("; ")}.`
         : ""
     }`,
-    `## Read first\n\n${list(["`CLAUDE.md` (the repository's own rules; already in your context)", ...existingDocs(team).map(code)])}`,
+    `## Read first\n\n${list([
+      ...(existsSync(join(team.home, "CLAUDE.md")) ? ["`CLAUDE.md` (the repository's own rules; already in your context)"] : []),
+      ...existingDocs(team).map(code),
+    ])}`,
     readFilled(directionFile(team)) ? `## The operator's direction (.e9g/direction.md)\n\n${readFilled(directionFile(team))}` : null,
     readFilled(decisionsFile(team))
       ? `## Decisions made from it (.e9g/decisions.md)\n\nThe planner's rulings and the operator's answers, each with the direction it follows. Treat them as settled; a member who thinks one is wrong says so in its report.\n\n${readFilled(decisionsFile(team))}`

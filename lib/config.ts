@@ -6,7 +6,7 @@ import { type Contact, DEFAULT_CONTACT } from "./contact.ts";
 import { teamFile, VERSION_NAME } from "./paths.ts";
 import { POLICIES, type PolicyState } from "./policies.ts";
 import { MACHINE_NAME } from "./machine.ts";
-import { DEFAULT_WEIGHTS, DIMENSIONS, type Dimension, SIZES, type Size } from "./tasks/model.ts";
+import { type ApprovalRules, DEFAULT_WEIGHTS, DIMENSIONS, type Dimension, SIZES, type Size } from "./tasks/model.ts";
 import { minutes } from "./util.ts";
 
 // A role's settings in team.json (schema/team.schema.json, $defs.role).
@@ -77,12 +77,12 @@ export interface RawTeam {
   mode?: string;
   tasks?: { store?: string; database?: string; lead?: string | null };
   priorities?: { weights?: Record<string, number> };
-  approval?: { mode?: string; maxSize?: string };
+  approval?: { mode?: string; maxSize?: string; findings?: string };
   critical?: string[];
   branchPrefix?: string;
   model?: string;
   roles?: Record<string, RoleSettings>;
-  review?: { required?: string[]; removedPattern?: string | null; maxRounds?: number; viewCheckMinLines?: number };
+  review?: { required?: string[]; removedPattern?: string | null; maxRounds?: number };
   gate?: { full?: string | null; quick?: string | null; concurrency?: number };
   environment?: { script?: string | null; health?: string[]; needsDocker?: boolean };
   vars?: Record<string, string | number | boolean>;
@@ -143,13 +143,13 @@ export interface Team {
   tasks: { store: "files" | "mongo"; database: string; lead: string | null };
   priorities: { weights: Record<Dimension, number> };
   // Who approves the planner's proposals: the operator, the approver up to maxSize, or the approver alone ("full").
-  approval: { mode: "operator" | "thresholds" | "full"; maxSize: Size };
+  approval: ApprovalRules;
   // Paths (regexes) whose changes get the full review whatever their size.
   critical: string[];
   branchPrefix: string;
   model: string;
   roles: Record<string, Lane>;
-  review: { required: string[]; removedPattern: string | null; maxRounds: number; viewCheckMinLines: number };
+  review: { required: string[]; removedPattern: string | null; maxRounds: number };
   gate: { full: string | null; quick: string | null; concurrency: number };
   environment: { script: string | null; health: string[]; needsDocker: boolean };
   vars: Record<string, string>;
@@ -526,7 +526,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     else if (typeof value !== "number" || !Number.isFinite(value) || value < 0) problems.push(`priorities.weights.${key}: a number, 0 or more`);
     else weights[key as Dimension] = value;
   }
-  const approvalIn = object(input.approval, "approval", ["mode", "maxSize"]) ?? {};
+  const approvalIn = object(input.approval, "approval", ["mode", "maxSize", "findings"]) ?? {};
   const approvalMode = approvalIn.mode ?? "thresholds";
   if (approvalMode !== "operator" && approvalMode !== "thresholds" && approvalMode !== "full")
     problems.push(
@@ -534,8 +534,11 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     );
   const maxSize = approvalIn.maxSize ?? "M";
   if (typeof maxSize !== "string" || !Object.hasOwn(SIZES, maxSize)) problems.push(`approval.maxSize: ${Object.keys(SIZES).join(", ")}`);
+  const findings = approvalIn.findings ?? "planner";
+  if (findings !== "planner" && findings !== "approver")
+    problems.push('approval.findings: "planner" (it approves the findings other members file) or "approver" (they go with the proposals)');
 
-  const review = object(input.review, "review", ["required", "removedPattern", "maxRounds", "viewCheckMinLines"]) ?? {};
+  const review = object(input.review, "review", ["required", "removedPattern", "maxRounds"]) ?? {};
   // A tester's branches get the assertion default; null turns it off.
   let removedPattern: string | null = roles["tester"] ? ASSERTION_PATTERN : null;
   if (review.removedPattern !== undefined) removedPattern = review.removedPattern === null ? null : regex(review.removedPattern, "review.removedPattern");
@@ -676,6 +679,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     approval: {
       mode: approvalMode === "operator" || approvalMode === "full" ? approvalMode : "thresholds",
       maxSize: typeof maxSize === "string" && Object.hasOwn(SIZES, maxSize) ? (maxSize as Size) : "M",
+      findings: findings === "approver" ? "approver" : "planner",
     },
     critical: list(input.critical, "critical", regex) ?? [],
     branchPrefix: prefix,
@@ -685,7 +689,6 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
       required: list(review.required, "review.required", role) ?? ["builder"],
       removedPattern,
       maxRounds: whole(review.maxRounds, "review.maxRounds", 1) ?? 3,
-      viewCheckMinLines: whole(review.viewCheckMinLines, "review.viewCheckMinLines", 0) ?? 10,
     },
     gate: { full, quick, concurrency: whole(gate.concurrency, "gate.concurrency", 1) ?? 2 },
     environment: {

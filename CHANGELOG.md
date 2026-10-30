@@ -13,35 +13,50 @@
   deleted or simplified instead, the simplest version) and scores it 0–3 on pain, reach, revenue, wow, distribution,
   leverage, urgency and risk, with a confidence and a size; the command computes the priority from `priorities`
   weights. A new role, the **approver**, approves, rejects, sends back for research or escalates proposals, within
-  `approval`: `"thresholds"` (the default, up to `maxSize`, no new journeys), `"operator"` or `"full"`. The planner
-  never approves its own.
+  `approval`: `"thresholds"` (the default, up to `maxSize`; a journey only groups tasks, so it needs no approval of its own), `"operator"` or `"full"`. The planner
+  never approves its own, and approves the findings other members file (`approval.findings`, `"approver"` to send them
+  with the proposals). Every move of a task, by whom and from where, is one table (`lib/tasks/model.ts`), and each
+  history event records the statuses it went between.
 - **Members claim their work.** Builders and testers run `e9g task claim`: the next approved task their role builds,
   blockers then majors then priority, never two on the same files, with dependencies (`--after`) done first. A lease
   (`watchdog.stuckAfter`) is renewed by the heartbeat hook and expired by the watchdog. `e9g task submit` hands it in
   for review; the Stop hook won't let a member finish holding a claim. The merge queue marks what it merges done, and a
-  journey whose tasks are all done moves to `verify` for its polish cycle. A task edited in what it is (its title,
+  journey whose tasks are all done is due its verification (worked out from them, never stored). A task edited in what it is (its title,
   body or kind) or scored again is approved again before it's built, and a journey's tasks wait for the journey's
   approval.
 - **Review persists.** A review skill ships in the plugin (`e9g:review`): blast radius first, then goals, edge cases,
-  tangential code, tests that fail without the change, and a before-and-after look at every affected page. `e9g
-blast` computes the blast radius: importers (two levels, relative imports and tsconfig paths), files that usually
-  change together, their tests, UI and `critical` paths. A UI change beyond `review.viewCheckMinLines` (10) is
-  approved only with `--shots` (screenshots taken since the commit); a changes verdict sends a task in review back for
+  tangential code, tests that fail without the change, a before-and-after look at anything a person sees (the
+  reviewer judges when; `--shots` records what it read), and how much the change could break. `e9g blast` computes the
+  blast radius: importers (two levels, relative imports and tsconfig paths), files that usually change together,
+  their tests, UI and `critical` paths. An approval says its risk (`--risk low|medium|high`), and the merge queue
+  merges a high-risk change only with its own tests in the branch; a changes verdict sends a task in review back for
   rework, and blocks it after `review.maxRounds` (3) rounds.
 - **Feature requests.** `e9g request` keeps stakeholders' requests; the planner researches each and promotes it into
   tasks (`e9g task add --request`) or rejects it. Stakeholders' names and addresses stay with the operator: agents see
   an id and a role (Article 8). `e9g serve` is the operator's page: the request form, proposals to approve, the board
-  and the graph, on 127.0.0.1 or behind a token.
+  and the graph, behind the operator's token. Each stakeholder can have a link of their own (`e9g request stakeholders
+add`), which opens only the form and their own requests and attributes what they send.
 - **Cycles.** `mode: "cycles"` takes away the finish line: the planner builds, verifies journeys, sweeps for
   regressions and closes each cycle with `e9g cycle close`, whose report goes to the operator; an idle team is woken by
   new requests and tasks.
 - **Several machines.** `tasks.store: "mongo"` keeps the graph in MongoDB (`e9g connect mongo`; the optional
   `mongodb` driver loads only then). With `tasks.lead`, the lead merges and pushes the integration branch; workers
-  (`e9g register --worker`) run builders and testers that their watchdog starts, which make their branches from the
-  remote and push them on submit. The lead reviews and merges a branch only as the remote has it, refuses to merge
-  while the remote's integration branch has commits it doesn't, and closes a merge's tasks only once it's pushed.
+  (`e9g register --worker`) run builders that their watchdog starts, which make their branches from the remote and
+  push them on submit. The lead reviews and merges the remote's copy of each branch (it keeps none of its own),
+  refuses to merge while the remote's integration branch has commits it doesn't, and closes a merge's tasks only once
+  it's pushed. `e9g task migrate --to mongo` moves a team's graph there, ids and all.
 - **The constitution** gains the task graph, approval and cycles: Articles 1, 2, 3, 4, 8, 10 and 11.
 - `e9g self-install` copies every production dependency it finds installed, without needing npm.
+- **T3 Code 0.1.4 or newer.** Its tools are allowed by role, from a list: every member may look with T3 Code's
+  preview browser, devices and HTML previews (the review skill, the builder and the UX specialist look at pages
+  there, at each size and theme, with `e9g pages shots` as the fallback); the planner also runs its members through
+  `delegate_task` and watches its pull request, so the operator's comments and reviews wake it and their merge
+  settles its thread. Nobody starts threads around the team's limits (`create_threads`, `t3_thread_launch`),
+  schedules work, changes projects, environments or threads' settings, or asks the operator for a secret.
+- `e9g init` gives a library or command-line tool (no UI, no dev or start script, no HTML) no environment and no
+  after-merge restart; the rules name `CLAUDE.md` only when the repository has one; `--help` works on every `e9g task`
+  and `e9g request` command; and text that starts with `--` (a title like "--skip-common leaves out common words")
+  is read as text.
 - The guard refuses a command that sets, unsets or clears the `E9G_` variables a member is known by (without them,
   the factory's commands would take it for the operator), and, under the `hosted-data` policy, Mongo tools and
   connection strings for a hosted server.

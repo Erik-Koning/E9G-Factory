@@ -318,6 +318,10 @@
         },
         "maxSize": {
           "enum": ["S", "M", "L", "XL"]
+        },
+        "findings": {
+          "enum": ["planner", "approver"],
+          "description": "Who approves the bug, UX and test findings other members file: the planner (the default), or the approver with the proposals."
         }
       }
     },
@@ -400,11 +404,6 @@
           "type": "integer",
           "minimum": 1,
           "description": "Rounds of review changes a task gets before it's blocked for the planner (default 3)."
-        },
-        "viewCheckMinLines": {
-          "type": "integer",
-          "minimum": 0,
-          "description": "A UI change of more lines than this needs the reviewer's screenshots to be approved (default 10)."
         }
       }
     },

@@ -4,6 +4,7 @@ import { baseTeam, makeRepo, tmp } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { request } from "node:http";
 import { describe, test } from "node:test";
+import { keyHash } from "../lib/commands/request.ts";
 import { startServer } from "../lib/commands/serve.ts";
 import { loadTeam } from "../lib/config.ts";
 import { fileStore } from "../lib/tasks/files.ts";
@@ -167,6 +168,52 @@ describe("e9g serve", () => {
       assert.equal((await fetch(s.url, { headers: { cookie } })).status, 200);
       assert.equal((await fetch(`${s.url}/api/tasks`, { headers: { "x-e9g-token": "s3cret-token" } })).status, 200);
       assert.equal((await fetch(s.url, { headers: { cookie: `${cookie.split("=")[0]}=guess` } })).status, 401);
+    } finally {
+      await s.close();
+    }
+  });
+
+  test("a stakeholder's own link opens only the form and their own requests, and what they send is theirs", async () => {
+    const s = await served({ token: "operator-token" });
+    try {
+      const dana = await s.store.stakeholders.create({
+        team: "fixture",
+        name: "Dana",
+        email: "dana@example.com",
+        role: "customer",
+        key: keyHash("dana-link"),
+        createdAt: "x",
+      });
+      const ada = await s.store.stakeholders.create({ team: "fixture", name: "Ada", email: "ada@example.com", role: "sales", key: null, createdAt: "x" });
+      await s.store.requests.create({
+        team: "fixture",
+        title: "Ada's idea",
+        body: "",
+        from: ada.id,
+        status: "new",
+        tasks: [],
+        notes: [],
+        createdAt: "x",
+        updatedAt: "x",
+        history: [],
+      });
+      await s.add({ title: "A proposal", score: SCORE });
+      const headers = { "x-e9g-token": "dana-link" };
+      const own = await (await fetch(s.url, { headers })).text();
+      assert.match(own, /Signed in as Dana \(customer\)/);
+      assert.doesNotMatch(own, /Ada|A proposal|name="email"/, "nobody else's requests, no proposals, no name or email to type");
+      for (const path of ["/api/tasks", "/api/requests", "/api/graph"]) assert.equal((await fetch(`${s.url}${path}`, { headers })).status, 403, path);
+      assert.equal((await post(`${s.url}/api/tasks/1/approve`, {}, headers)).status, 403, "a stakeholder doesn't approve");
+      const sent = await fetch(`${s.url}/requests`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ title: "Export to CSV", body: "Accounting re-types every invoice.", email: "ada@example.com" }),
+        redirect: "manual",
+      });
+      assert.equal(sent.status, 303);
+      const theirs = (await s.store.requests.all()).find((r) => r.title === "Export to CSV");
+      assert.equal(theirs?.from, dana.id, "the link says who it's from, whatever the form says");
+      assert.equal((await fetch(s.url, { headers: { "x-e9g-token": "revoked-or-wrong" } })).status, 401);
     } finally {
       await s.close();
     }

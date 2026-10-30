@@ -25,7 +25,8 @@ import { acquire, TIMED_OUT, withLock } from "../lock.ts";
 import { entryOf, FACTORY_ROOT, readRegistry, stateDir, workDir } from "../paths.ts";
 import { inTeam, teamSession } from "../session.ts";
 import { machineName } from "../machine.ts";
-import { integrationDiverged, isLead, pushIntegration, syncBranch } from "../tasks/machines.ts";
+import { isTest } from "../blast.ts";
+import { branchRef, integrationDiverged, isLead, pushIntegration } from "../tasks/machines.ts";
 import { ticketOf } from "../tasks/model.ts";
 import { closeMerged, openTeamStore } from "../tasks/ops.ts";
 import { threadSend } from "../t3.ts";
@@ -45,6 +46,8 @@ export interface Verdict {
   name: string;
   verdict: string;
   sha: string;
+  // How much the reviewer judged the change could break (review approvals since 0.4.0).
+  risk?: string;
   note: string;
   by: string;
   at: string;
@@ -303,12 +306,12 @@ async function mergeLocked({
   if (out("status", "--porcelain", "--untracked-files=no") !== "")
     return fail(2, "refused", `${integration} has uncommitted changes; commit or discard them first`);
   // A branch a worker pushed: what the remote has (the approval below still has to name that exact commit).
-  const synced = syncBranch(home, team, branch);
-  if (synced.stale) return fail(2, "refused", `${synced.said}; the branch here isn't what was submitted, so it isn't merged`);
-  if (synced.said) console.info(`merge: ${synced.said}`);
+  // On a team on several machines, the remote's copy of the branch, where every submit pushes it.
+  const from = branchRef(home, team, branch);
+  if (!from.ok) return fail(2, "refused", from.said);
   const diverged = integrationDiverged(home, team);
   if (diverged) return fail(2, "refused", diverged);
-  const tip = commit(`refs/heads/${branch}`);
+  const tip = commit(from.ref);
   if (!tip) return fail(2, "refused", `no branch ${branch}`);
   if (Number(out("rev-list", "--count", `${integration}..${tip}`)) === 0) return fail(2, "refused", `${branch} has nothing that ${integration} doesn't`);
 
@@ -384,6 +387,13 @@ async function mergeLocked({
       if (!commits || Number(out("rev-list", "--count", newRange)) !== commits || lines.length !== commits || same !== commits)
         return fail(2, "refused", `${branch} isn't only a rebase of the approved ${approved} (git range-diff shows changes); have it reviewed again`);
     }
+    // A change the reviewer judged high-risk merges with its tests: they come in the same branch, not after it.
+    if (review.risk === "high" && !changed.some(isTest))
+      return fail(
+        2,
+        "refused",
+        `the reviewer judged ${branch} high-risk, and it changes no tests: its tests come with it (unit tests for logic, end-to-end for a flow); send it back with changes`
+      );
   }
 
   const before = out("rev-parse", integration);

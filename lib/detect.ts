@@ -175,6 +175,8 @@ export function detect(root: string) {
     "nuxt",
     "@angular/core",
   ].filter((dep) => dep in deps);
+  // A page of its own, served without a framework (index.html, public/index.html, …), outside docs.
+  const html = (git(root, "ls-files", "--", "*.html") ?? "").split("\n").some((file) => file !== "" && !/(^|\/)(docs?|node_modules)\//.test(file));
   const e2e = ["@playwright/test", "playwright", "cypress", "@wdio/cli"].filter((dep) => dep in deps);
   const e2eDir = ["e2e", "tests/e2e", "test/e2e", "cypress", "playwright"].find((dir) => has(root, dir)) ?? null;
 
@@ -198,6 +200,7 @@ export function detect(root: string) {
     ci: workflows(root),
     surfaces,
     ui,
+    html,
     e2e,
     e2eDir,
     unitTests: ["vitest", "jest", "mocha", "ava"].filter((dep) => dep in deps),
@@ -218,8 +221,14 @@ export function detect(root: string) {
 // version that drafted it, and keeps tickets on the machine (the task graph, in the run folder): a GitHub board posts
 // issues where people read them, so the setup interview offers it rather than assuming it. An approver decides on
 // the planner's proposals within the default thresholds.
+// Whether the repository has an app to run for the team (a UI, or a script that serves something), so it gets an
+// environment and a restart after each merge. A library or a command-line tool has neither.
+export const hasApp = (found: Detected): boolean =>
+  found.ui.length > 0 || found.html || ["dev", "start", "serve", "preview"].some((script) => found.scripts[script]);
+
 export function draftTeam(found: Detected, { name, branch, owner }: { name: string; branch: string; owner?: string | null | undefined }): RawTeam {
   const policies: Record<string, string> = {};
+  const app = hasApp(found);
   const tests = found.e2eDir ? `^${found.e2eDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/` : null;
   const roles: Record<string, RoleSettings> = {
     planner: {},
@@ -242,8 +251,10 @@ export function draftTeam(found: Detected, { name, branch, owner }: { name: stri
     board: "tasks",
     roles,
     gate: { full: ".e9g/adapters/gate.sh", quick: ".e9g/adapters/gate.sh --quick", concurrency: 2 },
-    environment: { script: ".e9g/adapters/env.sh", health: [], needsDocker: found.surfaces.some((s) => s.id === "supabase") },
-    afterMerge: ".e9g/adapters/after-merge.sh",
+    environment: app
+      ? { script: ".e9g/adapters/env.sh", health: [], needsDocker: found.surfaces.some((s) => s.id === "supabase") }
+      : { script: null, health: [], needsDocker: false },
+    afterMerge: app ? ".e9g/adapters/after-merge.sh" : null,
     finish: null,
     policies,
     never: [],

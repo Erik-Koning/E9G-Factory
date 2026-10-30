@@ -44,6 +44,13 @@ describe("guard", () => {
     await selfTest(home, cases);
   });
 
+  test("the self-test passes for a team on the task graph, with an approver, either way findings go", async () => {
+    for (const findings of ["planner", "approver"]) {
+      const graph = makeRepo(baseTeam({ board: "tasks", roles: { planner: {}, builder: {}, reviewer: {}, approver: {} }, approval: { findings } }));
+      await selfTest(graph, guardCases(loadTeam(graph)));
+    }
+  });
+
   test("the self-test passes for every example team", async () => {
     for (const file of readdirSync(join(ROOT, "examples"))) {
       const example = makeRepo({ ...(JSON.parse(readFileSync(join(ROOT, "examples", file), "utf8")) as RawTeam), name: "fixture" });

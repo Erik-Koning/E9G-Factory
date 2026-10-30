@@ -15,6 +15,16 @@ function branch(dir: string, files: Record<string, unknown>, name = "feature"): 
   commit(dir, files, name);
 }
 
+test("importers: an exact tsconfig paths key that names nothing of its file's name", () => {
+  const dir = makeRepo(baseTeam(), {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@app": ["src/main.ts"] } } }),
+    "src/main.ts": "export const start = 0;\n",
+    "src/boot.ts": 'import { start } from "@app";\nexport const boot = start;\n',
+  });
+  branch(dir, { "src/main.ts": "export const start = 1;\n" });
+  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, ["src/boot.ts"]);
+});
+
 test("importers: relative, .js-suffixed and tsconfig paths imports, two levels and no further", () => {
   const dir = makeRepo(baseTeam(), {
     // Comments, trailing commas, and a "@/*" key that isn't the start of a comment.
@@ -73,6 +83,155 @@ test("importers: relative, .js-suffixed and tsconfig paths imports, two levels a
     without.importers,
     radius.importers.filter((file) => file !== "src/alias.ts" && file !== "src/via-alias.ts")
   );
+});
+
+test("importers: a workspace's packages by name, through exports, main or module, or the index, and paths in them", () => {
+  const dir = makeRepo(baseTeam(), {
+    "pnpm-workspace.yaml": "packages:\n  - 'packages/*' # the libraries\n  - \"apps/*\"\n  - '!packages/legacy'\n",
+    "packages/ui/package.json": {
+      name: "@acme/ui",
+      // The build isn't in the checkout, so "." is its types; a condition inside another is read too.
+      exports: {
+        ".": { import: "./dist/index.js", types: "./src/index.ts" },
+        "./button": "./src/Button.tsx",
+        "./icons/*": { import: { default: "./src/icons/*.tsx" } },
+      },
+    },
+    "packages/ui/src/index.ts": 'export { Button } from "./Button";\nexport const version = 1;\n',
+    "packages/ui/src/Button.tsx": "export const Button = () => null;\n",
+    "packages/ui/src/icons/Star.tsx": "export const Star = () => null;\n",
+    "packages/legacy/package.json": { name: "@acme/legacy", main: "Button.ts" },
+    "packages/legacy/Button.ts": "export const Old = 1;\n",
+    "apps/web/package.json": { name: "web", dependencies: { "@acme/ui": "workspace:*" } },
+    "apps/web/src/Page.tsx": 'import { Button } from "@acme/ui";\nexport const Page = Button;\n',
+    "apps/web/src/Toolbar.tsx": 'import { Button } from "@acme/ui/button";\n',
+    "apps/web/src/Rating.tsx": 'import { Star } from "@acme/ui/icons/Star";\n',
+    "apps/web/src/Direct.tsx": 'import { Button } from "@acme/ui/src/Button";\n',
+    // Another package whose name @acme/ui starts, and one the workspace leaves out.
+    "apps/web/src/Kit.tsx": 'import { Button } from "@acme/ui-kit";\nimport { Old } from "@acme/legacy";\nexport { Button, Old };\n',
+  });
+  branch(dir, {
+    "packages/ui/src/Button.tsx": "export const Button = () => 1;\n",
+    "packages/ui/src/icons/Star.tsx": "export const Star = () => 1;\n",
+    "packages/legacy/Button.ts": "export const Old = 2;\n",
+  });
+  // One level: the package's index, and through exports ./button, ./icons/* and a path in the folder; two: Page,
+  // which imports the package itself (its index).
+  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, [
+    "apps/web/src/Direct.tsx",
+    "apps/web/src/Page.tsx",
+    "apps/web/src/Rating.tsx",
+    "apps/web/src/Toolbar.tsx",
+    "packages/ui/src/index.ts",
+  ]);
+
+  // Yarn's workspaces in package.json: a package found by its main (the .ts behind a .js), and one without exports or
+  // main by its src/index.
+  const yarn = makeRepo(baseTeam(), {
+    "package.json": { private: true, workspaces: { packages: ["libs/**"] } },
+    "libs/shared/package.json": { name: "shared", main: "./lib/main.js" },
+    "libs/shared/lib/main.ts": "export const shared = 1;\n",
+    "libs/fmt/package.json": { name: "@acme/fmt", version: "1.0.0" },
+    "libs/fmt/src/index.ts": "export const fmt = 1;\n",
+    "src/a.ts": 'import { shared } from "shared";\nexport const a = shared;\n',
+    "src/b.ts": 'import { fmt } from "@acme/fmt";\nexport const b = fmt;\n',
+  });
+  branch(yarn, { "libs/shared/lib/main.ts": "export const shared = 2;\n", "libs/fmt/src/index.ts": "export const fmt = 2;\n" });
+  assert.deepEqual(blastRadius(yarn, { base: "e9g/next" }).importers, ["src/a.ts", "src/b.ts"]);
+});
+
+test("importers: paths from the nearest jsconfig.json or tsconfig.json above the importing file, baseUrl relative to it", () => {
+  const dir = makeRepo(baseTeam(), {
+    "jsconfig.json": { compilerOptions: { baseUrl: "src", paths: { "~/*": ["*"] } } },
+    "src/lib/core.js": "export const core = 1;\n",
+    "src/app.jsx": 'import { core } from "~/lib/core";\nexport const App = () => core;\n',
+    // A folder with a config of its own and no paths in it: the root's don't apply there.
+    "tools/tsconfig.json": { compilerOptions: { strict: true } },
+    "tools/build.ts": 'import { core } from "~/lib/core";\n',
+  });
+  branch(dir, { "src/lib/core.js": "export const core = 2;\n" });
+  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, ["src/app.jsx"]);
+});
+
+test("importers: a package's tsconfig.json with the paths of the base it extends, baseUrl relative to the base", () => {
+  const dir = makeRepo(baseTeam(), {
+    "tsconfig.base.json": { compilerOptions: { baseUrl: ".", paths: { "@shared/*": ["packages/shared/src/*"] } } },
+    "packages/shared/src/core.ts": "export const core = 1;\n",
+    // A package's config (@tsconfig/…) isn't read; a relative one may leave out .json.
+    "packages/app/tsconfig.json": `{
+  // the base's paths
+  "extends": ["@tsconfig/node22/tsconfig.json", "../../tsconfig.base"],
+  "compilerOptions": { "outDir": "dist", },
+}
+`,
+    "packages/app/src/main.ts": 'import { core } from "@shared/core";\nexport const main = core;\n',
+    // Paths without a baseUrl are relative to the file that sets them.
+    "config/paths.json": { compilerOptions: { paths: { "#shared/*": ["../packages/shared/src/*"] } } },
+    "packages/cli/tsconfig.json": { extends: "../../config/paths.json" },
+    "packages/cli/src/run.ts": 'import { core } from "#shared/core.js";\nexport const run = core;\n',
+    // Configs that extend each other: the cycle ends, and the paths stay.
+    "packages/loop/tsconfig.json": { extends: "./tsconfig.other.json" },
+    "packages/loop/tsconfig.other.json": { extends: "./tsconfig.json", compilerOptions: { baseUrl: ".", paths: { "@shared/*": ["../shared/src/*"] } } },
+    "packages/loop/index.ts": 'import { core } from "@shared/core";\nexport const loop = core;\n',
+    // No tsconfig.json above it: tsconfig.base.json isn't one TypeScript would read for it.
+    "scripts/release.ts": 'import { core } from "@shared/core";\n',
+  });
+  branch(dir, { "packages/shared/src/core.ts": "export const core = 2;\n" });
+  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, ["packages/app/src/main.ts", "packages/cli/src/run.ts", "packages/loop/index.ts"]);
+});
+
+test("importers: a barrel (export … from and nothing else) isn't a level; what imports it is at its level", () => {
+  const dir = makeRepo(baseTeam(), {
+    "src/ui/components/Button.tsx": "export const Button = () => null;\nexport type ButtonProps = {};\n",
+    "src/ui/components/index.ts": 'export { Button, type ButtonProps } from "./Button";\n',
+    "src/ui/index.ts": '// The UI kit, all of it.\nexport * from "./components";\nexport * as icons from "./icons";\n',
+    "src/pages/Home.tsx": 'import { Button } from "../ui";\nexport const Home = () => Button;\n',
+    "src/pages/Home.test.tsx": 'import { Home } from "./Home";\n',
+    "src/pages/About.tsx": 'import { Home } from "./Home";\nexport const About = Home;\n',
+    "src/ui/components/parts/Label.tsx": 'import { Button as B } from "..";\nexport const Label = B;\n', // names its folder's index by ".." alone
+    "src/App.tsx": 'import { About } from "./pages/About";\n', // three levels away
+    // Barrels in a cycle: each is listed once, and the cycle ends.
+    "src/ui/left/index.ts": 'export * from "../right";\n',
+    "src/ui/right/index.ts": 'export * from "../left";\nexport * from "../components";\n',
+    // More than re-exports: a level of its own.
+    "src/lib/index.ts": 'export { Button } from "../ui/components/Button";\nexport const lib = 1;\n',
+    "src/feature.ts": 'import { lib } from "./lib";\nexport const feature = lib;\n',
+    "src/deeper.ts": 'import { feature } from "./feature";\n',
+  });
+  branch(dir, { "src/ui/components/Button.tsx": "export const Button = () => 1;\nexport type ButtonProps = {};\n" });
+  const radius = blastRadius(dir, { base: "e9g/next" });
+  // One level: lib/index, and through the barrels (components/index, ui/index, right and left) Home and Label; two:
+  // Home's test, About and feature. Not App or deeper, three levels away.
+  assert.deepEqual(radius.importers, [
+    "src/feature.ts",
+    "src/lib/index.ts",
+    "src/pages/About.tsx",
+    "src/pages/Home.test.tsx",
+    "src/pages/Home.tsx",
+    "src/ui/components/index.ts",
+    "src/ui/components/parts/Label.tsx",
+    "src/ui/index.ts",
+    "src/ui/left/index.ts",
+    "src/ui/right/index.ts",
+  ]);
+  assert.deepEqual(radius.tests, ["src/pages/Home.test.tsx"]);
+});
+
+test("importers: only the files that name a changed file are read, so few are plenty; more of them than that is truncated", () => {
+  // 30 files that come first in git's order and name nothing that changed, then three that do, one of them an importer.
+  const noise = Object.fromEntries(Array.from({ length: 30 }, (_, i) => [`a/noise${i}.ts`, `export const n${i} = ${i};\n`]));
+  const dir = makeRepo(baseTeam(), {
+    ...noise,
+    "b/one.ts": "// the core of it\n",
+    "b/two.ts": "// core values\n",
+    "src/lib/core.ts": "export const core = 1;\n",
+    "src/use.ts": 'import { core } from "./lib/core";\nexport const use = core;\n',
+  });
+  branch(dir, { "src/lib/core.ts": "export const core = 2;\n" });
+  const radius = blastRadius(dir, { base: "e9g/next", maxSources: 3 });
+  assert.deepEqual([radius.importers, radius.truncated], [["src/use.ts"], false]);
+  // Three files name core (besides itself), and only two are read: importers may be missing, and it says so.
+  assert.equal(blastRadius(dir, { base: "e9g/next", maxSources: 2 }).truncated, true);
 });
 
 test("related: files that changed together in at least 3 commits and 30% of the changed file's, still in the tree", () => {

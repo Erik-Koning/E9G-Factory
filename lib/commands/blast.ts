@@ -53,6 +53,6 @@ function summary(radius: BlastRadius): string {
     radius.ui ? `UI: yes, ${count(uiFiles.length, "file")}, ${count(uiLines, "line")} added or removed` : "UI: no",
     ...(radius.ui ? section("UI files", uiFiles) : []),
     critical.length ? `critical paths it reaches: ${critical.join(", ")}` : "critical paths it reaches: none",
-    ...(radius.truncated ? ["(a large repository: only the first 20,000 source files were read for imports, so importers may be missing)"] : []),
+    ...(radius.truncated ? ["(a large repository: more files name the change than are read for imports, so importers may be missing)"] : []),
   ].join("\n");
 }

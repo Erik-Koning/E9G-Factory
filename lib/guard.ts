@@ -585,8 +585,14 @@ function ownedCommands(team: Team): [RegExp, string[], string][] {
       "the planner shapes, scores and moves tasks; add a finding (e9g task add) or a note (e9g task note) instead.",
     ],
     [
-      e9g("task\\s+(?:approve|reject|research|escalate)"),
+      e9g("task\\s+(?:reject|research|escalate)"),
       ["approver"],
+      "the approver (or the operator) decides on proposals, and nobody approves their own (Article 4).",
+    ],
+    // The planner approves the findings other members file (team.json approval.findings); e9g task approve says which.
+    [
+      e9g("task\\s+approve"),
+      ["approver", ...(team.approval.findings === "planner" ? ["planner"] : [])],
       "the approver (or the operator) decides on proposals, and nobody approves their own (Article 4).",
     ],
     [e9g("task\\s+(?:claim|release|submit)"), ["builder", "tester", "planner"], "builders and testers claim, release and submit tasks."],
@@ -594,6 +600,7 @@ function ownedCommands(team: Team): [RegExp, string[], string][] {
     [e9g("request\\s+note"), ["planner", "approver"], "the planner and the approver note what they found about a request."],
     [e9g("task\\s+fetch"), ["planner", "reviewer"], "the planner and the reviewer fetch a task's branch from the remote."],
     [e9g("request\\s+stakeholders"), [], "the stakeholders' names and addresses are the operator's to see (Article 8)."],
+    [e9g("task\\s+migrate"), [], "moving the task graph between stores is the operator's."],
     [e9g("verdict\\s+review"), ["reviewer"], "only a reviewer records a review (Article 4)."],
     [e9g("verdict\\s+ux"), ["ux-specialist"], "only the UX specialist records a UX verdict (Article 4)."],
     ...(script
@@ -614,6 +621,38 @@ function ownedCommands(team: Team): [RegExp, string[], string][] {
 }
 
 // Judges one tool call; throws a Refusal to refuse it.
+// T3 Code's own tools (mcp__t3-code__…), by who may call them. T3 adds tools often, so one not named here is refused
+// until the factory knows it. Everyone may look: the preview browser, devices, rendered HTML. The planner also runs
+// its members (only through delegate_task, which holds the team's limits) and follows its pull request. Nobody starts
+// threads around the limits, schedules work, changes projects, environments or threads' settings, answers a member's
+// pending request, or asks the operator for a secret.
+const T3_LOOK = /^(preview_\w+|device_(?:list|open|screenshot|close)|html_(?:render|preview))$/;
+const T3_PLANNER = new Set([
+  "delegate_task",
+  "task_status",
+  "task_cancel",
+  "orchestrator_capabilities",
+  "t3_thread_read",
+  "t3_thread_list",
+  "t3_thread_search",
+  "t3_thread_send",
+  "t3_thread_wait",
+  "t3_thread_interrupt",
+  "t3_background_wait",
+  "link_pull_request",
+  "unlink_pull_request",
+  "list_thread_pull_requests",
+  "watch_pull_request",
+  "unwatch_pull_request",
+  "read_pull_request_guide",
+  "write_pull_request_guides",
+  "t3_environment_links",
+  "t3_worktree_list",
+  "t3_worktree_status",
+  "t3_pending_request_list",
+  "t3_pending_request_read",
+]);
+
 export function check(input: HookInput): void {
   const tool = input.tool_name ?? "";
   const args = (input.tool_input ?? {}) as Record<string, unknown>;
@@ -1000,7 +1039,13 @@ export function check(input: HookInput): void {
 
   function checkMcp(): void {
     if (tool.startsWith(TOOLS.prefix)) {
-      if (role !== "planner") refuse("only the planner starts and manages members (Article 2).");
+      const name = tool.slice(TOOLS.prefix.length);
+      if (T3_LOOK.test(name)) return;
+      if (role !== "planner") refuse("only the planner starts and manages members (Article 2); members use T3 Code's browser, devices and HTML previews.");
+      if (!T3_PLANNER.has(name))
+        refuse(
+          `the team doesn't use T3 Code's ${name}: members start through delegate_task, within the team's limits, and nothing is scheduled, reconfigured or asked of the operator outside the factory's rules (Articles 2, 6 and 7).`
+        );
       if (tool === TOOLS.delegate) checkDelegate();
       return;
     }

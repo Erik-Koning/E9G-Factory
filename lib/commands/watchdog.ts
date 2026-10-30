@@ -22,6 +22,7 @@ import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from ".
 import { operatorOnly } from "../session.ts";
 import { machineName } from "../machine.ts";
 import { claimRefusal } from "../tasks/model.ts";
+import { journeyDue } from "../tasks/model.ts";
 import { expireClaims } from "../tasks/ops.ts";
 import { openStore } from "../tasks/store.ts";
 import * as t3 from "../t3.ts";
@@ -411,9 +412,14 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
         const idle = join(run, "idle");
         const since = existsSync(idle) ? new Date(statSync(idle).mtimeMs).toISOString() : "";
         const requests = (await store.requests.all()).filter((r) => r.status === "new" && r.updatedAt > since).length;
-        // Anything the planner acts on: a finding or proposal, approved work, a hand-in to review, a journey to verify.
-        const tasks = (await store.tasks.all()).filter(
-          (t) => ["triage", "proposed", "approved", "review", "verify"].includes(t.status) && t.updatedAt > since
+        // Anything the planner acts on: a finding or proposal, approved work, a hand-in to review, and a journey whose
+        // last task just finished (it's due its verification).
+        const all = await store.tasks.all();
+        const tasks = all.filter(
+          (t) =>
+            t.updatedAt > since &&
+            (["triage", "proposed", "approved", "review"].includes(t.status) ||
+              (t.status === "done" && all.some((j) => j.id === t.parent && journeyDue(j, all))))
         ).length;
         arrived = [
           requests ? `${requests} new feature request${requests === 1 ? "" : "s"}` : "",
@@ -428,7 +434,7 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
       if (oncePer("tasks-unreadable", 60)) log(`couldn't read the task graph: ${(error as Error).message}`);
     }
 
-  // A worker machine has no planner: the watchdog starts its builders and testers while approved work is free.
+  // A worker machine has no planner: the watchdog starts its builders while approved work is free.
   if (entry.worker) {
     try {
       await fillWorkerSlots(entry, log);

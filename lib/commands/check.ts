@@ -84,7 +84,11 @@ export function guardCases(team: Team): GuardCase[] {
       bash(builder, "e9g task score 1 --pain 3", "refuse", "scoring, which the planner does");
       bash(builder, "e9g request stakeholders", "refuse", "the stakeholders' names, which are the operator's");
     }
-    bash("planner", "e9g task approve 1", "refuse", "the planner approving its own proposal");
+    // The planner decides no proposal; it approves the findings other members file, which e9g task approve checks.
+    bash("planner", 'e9g task reject 1 --reason "e9g check"', "refuse", "the planner deciding on a proposal");
+    if (team.approval.findings === "approver")
+      bash("planner", "e9g task approve 1", "refuse", "the planner approving a finding, which the approver does here");
+    bash("planner", "E9G_TEAM= e9g task status 1 done", "refuse", "a member clearing who it is, to pass as the operator");
     if (team.roles["approver"]) bash("approver", 'e9g task approve 1 --note "e9g check"', "allow", "the approver's verdict");
     if (team.roles["builder"]) bash("builder", "e9g task claim", "allow", "a builder claiming a task");
   }
@@ -137,6 +141,11 @@ export function guardCases(team: Team): GuardCase[] {
   add(builder, "Monitor", { command: "cat .env", description: "e9g check" }, "refuse", "a command run through Monitor");
   if (builder !== "planner")
     add(builder, "mcp__t3-code__delegate_task", { target: { providerInstanceId: instanceId(team, builder) } }, "refuse", "a member starting members");
+  // T3 Code's tools: everyone looks with its browser; nobody starts threads around the limits or asks for a secret.
+  add(builder, "mcp__t3-code__preview_open", {}, "allow", "a member looking at a page in T3 Code's browser");
+  add("planner", "mcp__t3-code__create_threads", { threads: [{ prompt: "x" }] }, "refuse", "threads started around delegate_task's limits");
+  add("planner", "mcp__t3-code__request_secret", { label: "key" }, "refuse", "asking the operator for a secret");
+  add("planner", "mcp__t3-code__watch_pull_request", { url: "https://github.com/o/r/pull/1" }, "allow", "the planner watching its pull request");
   if (planner.mcp.includes("mcp__claude_ai_Gmail__send_message")) {
     add("planner", "mcp__claude_ai_Gmail__send_message", { to: ["someone@example.com"] }, "refuse", "email to anyone but the operator");
     if (team.owner) {
@@ -465,7 +474,7 @@ function summary(team: Team, failures: number): number {
       `  - works ${team.mode === "cycles" ? "in cycles, with no finish line to stop at" : "until the finish line holds"}; tasks in ${team.tasks.store === "mongo" ? `Mongo (${team.tasks.database})${team.tasks.lead ? `, merged on ${team.tasks.lead}` : ""}` : "the run folder"}`
     );
     console.info(
-      `  - proposals approved by ${team.approval.mode === "operator" ? "you" : team.approval.mode === "full" ? "the approver, any size (full)" : `the approver up to size ${team.approval.maxSize}; larger ones and new journeys by you`}`
+      `  - proposals approved by ${team.approval.mode === "operator" ? "you" : team.approval.mode === "full" ? "the approver, any size (full)" : `the approver up to size ${team.approval.maxSize}; larger ones by you`}${team.approval.findings === "planner" ? "; other members' findings by the planner" : ""}`
     );
   }
   for (const policy of states.filter((p) => p.state === "allow"))

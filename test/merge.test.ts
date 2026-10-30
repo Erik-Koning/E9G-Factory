@@ -9,7 +9,7 @@ import { fileStore } from "../lib/tasks/files.ts";
 const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home, E9G_RUN: `${home}-run` } });
 const taskStatus = async (home: string, id: string) => (await fileStore(`${home}-run`, "fixture").tasks.get(id))?.status;
 const approve = (home: string, branch: string) =>
-  e9g(["verdict", "review", branch, "approve", "--sha", git(home, "rev-parse", branch), "--note", "ok"], {
+  e9g(["verdict", "review", branch, "approve", "--sha", git(home, "rev-parse", branch), "--risk", "low", "--note", "ok"], {
     cwd: home,
     env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer", E9G_RUN: `${home}-run` },
   });

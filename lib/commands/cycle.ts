@@ -44,9 +44,7 @@ export async function cycle(argv: string[]): Promise<number> {
     }
     const since = cycles.at(-1)?.at ?? "";
     // Done in this cycle: moved to done since the last one closed (a later note on it doesn't count it again).
-    const done = (await store.tasks.all())
-      .filter((t) => t.status === "done" && t.history.some((e) => e.at > since && / → done\b/.test(e.what)))
-      .map((t) => t.id);
+    const done = (await store.tasks.all()).filter((t) => t.status === "done" && t.history.some((e) => e.at > since && e.to === "done")).map((t) => t.id);
     const closed = await store.cycles.create({ team: team.name, report, done, at: new Date().toISOString() });
     const number = closed.id.replace(/^c/, "");
     const firstLine =

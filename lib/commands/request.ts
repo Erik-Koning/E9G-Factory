@@ -2,6 +2,7 @@
 // form), the planner researches each and promotes it into the task graph (e9g task add --request) or rejects it.
 // Who sent a request is a stakeholder id and a role: names and email addresses stay with the stakeholders, which only
 // the operator's own commands show (Article 8).
+import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { inTeam, teamSession } from "../session.ts";
@@ -14,10 +15,13 @@ export const USAGE = `usage: e9g request <command>
   add "<title>" [--body "…" | --body-file f] [--name "…" --email "…" --role "…" | --from sN]   (you; the planner without a person)
   list [--status s,t] [--all] [--json]   ·   show <id> [--json]
   note <id> "<text>"   ·   reject <id> --reason "…"   (the planner)
-  stakeholders   (you)`;
+  stakeholders [add --name "…" --email "…" --role "…" | revoke <sN>]   (you: a stakeholder's own link to e9g serve's form)`;
 
 const actor = (): string => (inTeam() ? process.env.E9G_ROLE || "unknown" : OPERATOR);
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+// A stakeholder's link key, as kept: the hash, never the key itself.
+export const keyHash = (key: string): string => createHash("sha256").update(key).digest("hex");
 
 // A stakeholder by email, made when new: the same person's requests share one id.
 export async function stakeholderFor(
@@ -69,10 +73,10 @@ function line(r: FeatureRequest & { fromRole?: string | null }, who: Stakeholder
 
 export async function request(argv: string[]): Promise<number> {
   const [sub = "help", ...rest] = argv;
-  const { positional, options } = parseArgs(rest, { booleans: ["all", "json"] });
-  if (!["add", "list", "show", "note", "reject", "stakeholders"].includes(sub)) {
+  const { positional, options } = parseArgs(rest, { booleans: ["all", "json", "help"] });
+  if (!["add", "list", "show", "note", "reject", "stakeholders"].includes(sub) || options["help"] === true) {
     console.info(USAGE);
-    return sub === "help" || sub === "--help" ? 0 : 2;
+    return sub === "help" || sub === "--help" || options["help"] === true ? 0 : 2;
   }
   const who = actor();
   const operator = who === OPERATOR;
@@ -111,8 +115,31 @@ export async function request(argv: string[]): Promise<number> {
     }
     if (sub === "stakeholders") {
       if (!operator) throw new Refused("the stakeholders' names and addresses are the operator's to see");
+      const [action, id] = positional;
+      // A link of their own: it opens only the request form and their own requests, and what they send is theirs.
+      if (action === "add") {
+        const name = optionText(options["name"]);
+        const email = optionText(options["email"]);
+        if (!name || !email || !EMAIL.test(email)) throw new Refused('a stakeholder needs --name "…", an --email and a --role');
+        const found = await stakeholderFor(store, team.name, { name, email, role: optionText(options["role"]) ?? "stakeholder" });
+        const key = randomBytes(18).toString("base64url");
+        await update(store.stakeholders, found.id, (s) => ({ ...s, key: keyHash(key) }));
+        console.info(
+          `${found.id} ${name} has a link of their own: e9g serve's address followed by /?token=${key}\nIt opens only the request form and their own requests. A new link replaces this one; e9g request stakeholders revoke ${found.id} ends it.`
+        );
+        return 0;
+      }
+      if (action === "revoke") {
+        if (!id || !(await store.stakeholders.get(id))) throw new Refused("which stakeholder? e9g request stakeholders revoke <sN>");
+        await update(store.stakeholders, id, (s) => ({ ...s, key: null }));
+        console.info(`${id}'s link no longer opens the form`);
+        return 0;
+      }
+      if (action) throw new Refused("e9g request stakeholders [add --name … --email … --role … | revoke <sN>]");
       const all = await store.stakeholders.all();
-      console.info(all.length ? all.map((s) => `${s.id.padEnd(5)} ${s.name} <${s.email}>, ${s.role}`).join("\n") : "no stakeholders");
+      console.info(
+        all.length ? all.map((s) => `${s.id.padEnd(5)} ${s.name} <${s.email}>, ${s.role}${s.key ? " (has a link)" : ""}`).join("\n") : "no stakeholders"
+      );
       return 0;
     }
     if (sub === "list") {
@@ -153,13 +180,16 @@ export async function request(argv: string[]): Promise<number> {
     if (sub === "note") {
       const text = (optionText(options["text"]) ?? positional.slice(1).join(" ")).trim();
       if (!text) throw new Refused('say what: e9g request note <id> "<text>"');
-      await update(store.requests, r.id, (x) =>
-        withEvent(
-          { ...x, status: x.status === "new" ? "researching" : x.status, notes: [...x.notes, { at: nowIso(), by: who, text }] },
+      // The planner's note on a new request starts its research; anyone else's leaves it new, for the planner.
+      await update(store.requests, r.id, (x) => {
+        const starts = x.status === "new" && who === "planner";
+        return withEvent(
+          { ...x, status: starts ? "researching" : x.status, notes: [...x.notes, { at: nowIso(), by: who, text }] },
           who,
-          "added a note"
-        )
-      );
+          starts ? "new → researching: added a note" : "added a note",
+          starts ? { from: "new", to: "researching" } : {}
+        );
+      });
       console.info(`request ${r.id}: note added`);
       return 0;
     }
@@ -178,7 +208,8 @@ export async function request(argv: string[]): Promise<number> {
       return withEvent(
         { ...x, status: "rejected", notes: [...x.notes, { at: nowIso(), by: who, text: `rejected: ${reason}` }] },
         who,
-        `${x.status} → rejected: ${reason}`
+        `${x.status} → rejected: ${reason}`,
+        { from: x.status, to: "rejected" }
       );
     });
     console.info(`request ${r.id}: rejected`);

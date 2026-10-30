@@ -1,7 +1,7 @@
 // The task graph as a BetterDiagrams document, generated from the tasks and never edited: a band per journey with its
 // tasks inside, a band for the tasks in no journey, columns by how many tasks must come first, and an edge for each
 // dependency. Open it with `npx @mosphere/better-diagrams <file>`; e9g serve draws the same layout itself.
-import { claimOrder, type Kind, type Task } from "./model.ts";
+import { claimOrder, journeyDue, type Kind, type Task } from "./model.ts";
 
 const W = 220;
 const H = 76;
@@ -86,7 +86,7 @@ export function betterDiagram(tasks: Task[], { title, all = false }: { title: st
       y,
       w,
       h,
-      ...(j ? { description: j.status } : {}),
+      ...(j ? { description: journeyDue(j, tasks) ? "due its verification" : j.status } : {}),
     });
     for (const p of placed.filter((p) => p.band === band.id)) {
       const t = p.task;

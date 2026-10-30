@@ -1,15 +1,14 @@
 // The commands team members run: verdict, log, lock, gate, env, finish, progress and drain. Each works for the
 // team the caller belongs to (its instance sets E9G_HOME_DIR) or the checkout a person runs it in.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Team } from "../config.ts";
 import { withLock } from "../lock.ts";
 import { stateDir } from "../paths.ts";
 import { inTeam, teamSession } from "../session.ts";
 import { blastRadius } from "../blast.ts";
-import { isLead, syncBranch } from "../tasks/machines.ts";
-import { nowIso, ticketOf, withEvent } from "../tasks/model.ts";
+import { branchRef, isLead } from "../tasks/machines.ts";
+import { nowIso, type Risk, RISKS, ticketOf, withEvent } from "../tasks/model.ts";
 import { changesRequested, openTeamStore } from "../tasks/ops.ts";
 import { update } from "../tasks/store.ts";
 import { git, list, localTime, minutes, parseArgs, text as optionText, writeJson } from "../util.ts";
@@ -31,7 +30,7 @@ const commitOf = (home: string, ref: string): string | null => {
 };
 
 const VERDICT_USAGE =
-  'usage: e9g verdict review <branch> approve|changes --sha <the commit you reviewed> [--shots <dir>] [--note "…"] | ux <subject> pass|issues --ref <the commit you audited> [--note "…"] | show review|ux <name>';
+  'usage: e9g verdict review <branch> approve --sha <the commit you reviewed> --risk low|medium|high [--shots <dir>] [--note "…"] | review <branch> changes --sha <commit> [--note "…"] | ux <subject> pass|issues --ref <the commit you audited> [--note "…"] | show review|ux <name>';
 
 // e9g verdict review <branch> approve|changes --sha <commit> [--note "…"]
 // e9g verdict ux <subject> pass|issues --ref <commit> [--note "…"]
@@ -81,14 +80,15 @@ export async function verdict(argv: string[]): Promise<number> {
     );
     return 2;
   }
-  // On a team on several machines, the branch as the worker pushed it, before its commit is looked for.
+  // The branch as it's merged from: on a team on several machines, the remote's copy, where every submit pushes it.
+  let ref = `refs/heads/${name}`;
   if (kind === "review") {
-    const synced = syncBranch(home, team, name);
-    if (synced.stale) {
-      console.error(`verdict: ${synced.said}; the branch here isn't what was submitted, so it isn't reviewed here yet`);
+    const from = branchRef(home, team, name);
+    if (!from.ok) {
+      console.error(`verdict: ${from.said}`);
       return 2;
     }
-    if (synced.said) console.info(`verdict: ${synced.said}`);
+    ref = from.ref;
   }
   const sha = commitOf(home, given);
   if (!sha) {
@@ -96,7 +96,7 @@ export async function verdict(argv: string[]): Promise<number> {
     return 2;
   }
   if (kind === "review") {
-    const tip = commitOf(home, `refs/heads/${name}`);
+    const tip = commitOf(home, ref);
     if (!tip) {
       console.error(`verdict: no branch ${name}`);
       return 2;
@@ -108,42 +108,30 @@ export async function verdict(argv: string[]): Promise<number> {
       return 2;
     }
   }
-  // A change a person sees, beyond a few lines, is approved only with the screenshots the reviewer read (the review
-  // skill's before-and-after look), taken after the commit was made. When what it touches can't be worked out, the
-  // screenshots are asked for all the same.
-  let shots: string | undefined;
-  if (kind === "review" && value === "approve") {
-    let radius: ReturnType<typeof blastRadius> | null = null;
-    let unknown = "";
-    try {
-      radius = blastRadius(home, { base: team.branch, ref: sha, critical: team.critical, touches: true });
-    } catch (error) {
-      unknown = (error as Error).message;
-    }
-    if (!radius || (radius.ui && radius.uiLines > team.review.viewCheckMinLines)) {
-      shots = optionText(options["shots"]);
-      // Taken since the commit, and since it was handed in for review: a commit's date is its author's to set, and an
-      // earlier round's screenshots aren't this one's.
-      const committed = Number(spawnSync("git", ["show", "-s", "--format=%ct", sha], { cwd: home, encoding: "utf8" }).stdout.trim()) * 1000 || 0;
-      const since = Math.max(committed, await handedIn(team, run, home, name, sha));
-      const pngs = shots ? pngsIn(shots, since) : 0;
-      if (!shots || !pngs) {
-        const what = radius
-          ? `${name} changes ${radius.uiLines} lines of UI (${radius.uiFiles.slice(0, 5).join(", ")}${radius.uiFiles.length > 5 ? ", …" : ""})`
-          : `what ${name} touches couldn't be worked out (${unknown.split("\n")[0]})`;
-        console.error(
-          `verdict: ${what}; approve it with --shots <the folder of before-and-after screenshots you read>${shots ? `, and ${shots} holds no PNGs taken since the commit` : ""}`
-        );
-        return 2;
-      }
-    }
+  // How much could break, as the reviewer judges it: a high-risk change merges only with its tests (e9g merge). Whether
+  // to look at a change a person sees is the reviewer's call (the review skill); a UI change approved without
+  // screenshots is said so, for the planner to see.
+  const risk = optionText(options["risk"]);
+  if (kind === "review" && value === "approve" && !(RISKS as readonly string[]).includes(risk ?? "")) {
+    console.error(`verdict: say how much this change could break: --risk ${RISKS.join("|")} (the review skill says how to judge it)\n${VERDICT_USAGE}`);
+    return 2;
   }
+  const shots = optionText(options["shots"]);
+  if (kind === "review" && value === "approve" && !shots)
+    try {
+      const radius = blastRadius(home, { base: team.branch, ref: sha, touches: true });
+      if (radius.ui)
+        console.info(
+          `verdict: approved without screenshots, though ${name} changes ${radius.uiLines} lines of UI (${radius.uiFiles.slice(0, 3).join(", ")})`
+        );
+    } catch {}
   const record = {
     kind,
     name,
     verdict: value,
     sha,
     ...(shots ? { shots } : {}),
+    ...(risk ? { risk } : {}),
     note: optionText(options["note"]) ?? "",
     by: process.env.E9G_ROLE ?? "operator",
     at: new Date().toISOString(),
@@ -168,9 +156,17 @@ export async function verdict(argv: string[]): Promise<number> {
         } else if (await store.tasks.get(id))
           await update(store.tasks, id, (t) =>
             withEvent(
-              { ...t, notes: [...t.notes, { at: nowIso(), by: record.by, text: `review approved ${record.sha.slice(0, 9)}: ${record.note}` }] },
+              {
+                ...t,
+                risk: (risk as Risk | undefined) ?? t.risk,
+                notes: [
+                  ...t.notes,
+                  { at: nowIso(), by: record.by, text: `review approved ${record.sha.slice(0, 9)} (${risk ?? "risk not said"}): ${record.note}` },
+                ],
+              },
               record.by,
-              "review approved"
+              "review approved",
+              { sha: record.sha }
             )
           );
       } finally {
@@ -181,37 +177,6 @@ export async function verdict(argv: string[]): Promise<number> {
     }
   }
   return 0;
-}
-
-// When the branch's task was last handed in for review at `sha` (epoch ms), from its history; 0 when it can't be told.
-async function handedIn(team: Team, run: string, home: string, branch: string, sha: string): Promise<number> {
-  const id = team.board.type === "tasks" ? ticketOf(branch, team.branchPrefix) : undefined;
-  if (!id) return 0;
-  try {
-    const store = await openTeamStore(team, run, home);
-    try {
-      const event = (await store.tasks.get(id))?.history.findLast((e) => e.what.includes("→ review") && e.what.includes(sha.slice(0, 9)));
-      return event ? Date.parse(event.at) || 0 : 0;
-    } finally {
-      await store.close();
-    }
-  } catch {
-    return 0;
-  }
-}
-
-// The PNGs in a folder, three levels down (e9g pages shots writes <out>/<page>/<viewport>.png; a before-and-after look
-// adds a level), modified at or after `since` (epoch ms).
-function pngsIn(dir: string, since: number, depth = 3): number {
-  try {
-    return readdirSync(dir, { withFileTypes: true }).reduce((n, entry) => {
-      const path = join(dir, entry.name);
-      if (entry.isDirectory()) return depth > 0 ? n + pngsIn(path, since, depth - 1) : n;
-      return n + (entry.isFile() && entry.name.endsWith(".png") && statSync(path).mtimeMs >= since ? 1 : 0);
-    }, 0);
-  } catch {
-    return 0;
-  }
 }
 
 // e9g log [--label "merge 27"] "What changed, what's running, what's next."

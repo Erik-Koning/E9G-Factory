@@ -27,7 +27,6 @@ import { die, parseArgs, writeJson } from "../util.ts";
 import { answers, BUSY, ensureWatchdog, keptWorktrees, watchOnce } from "./watchdog.ts";
 import { machineName } from "../machine.ts";
 import { isLead, multiMachine } from "../tasks/machines.ts";
-import { CLAIMS } from "../tasks/model.ts";
 
 const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : text);
 
@@ -80,7 +79,8 @@ function registerTeam(home: string, { force, version: target, worker = false }: 
   if (!existsSync(join(home, ".e9g", ".gitignore")))
     console.warn("  note: .e9g/.gitignore is missing; add one with run/ so the team's runtime stays out of git");
 
-  // A worker machine of a team on several machines runs its builders and testers only; the lead runs the rest.
+  // A worker machine of a team on several machines runs builders only: the lead runs the rest, the team's environment
+  // with it, which testers test against.
   if (worker && !(multiMachine(team) && !isLead(team)))
     die(
       `--worker is for a machine other than the lead of a team whose tasks are in Mongo (team.json tasks.lead${team.tasks.lead ? ` is ${team.tasks.lead}, and this is ${machineName()}` : " isn't set"})`
@@ -101,7 +101,7 @@ function registerTeam(home: string, { force, version: target, worker = false }: 
   if (!project) die(`couldn't add ${home} as a T3 Code project; add it in T3 Code and put its id in team.json t3ProjectId`);
 
   const instances: Record<string, t3.ProviderInstance> = {};
-  const roles = Object.keys(team.roles).filter((role) => !worker || CLAIMS[role]);
+  const roles = Object.keys(team.roles).filter((role) => !worker || role === "builder");
   for (const role of roles) {
     const prompt = writePrompt(team, role, run);
     const flags = [
@@ -147,7 +147,7 @@ function registerTeam(home: string, { force, version: target, worker = false }: 
   writeJson(registryFile(team.name), entry);
   console.info(`e9g: registered ${team.name} (E9G Factory ${version}; T3 project ${project}; run folder ${run})`);
   console.info(
-    `  roles${worker ? " (a worker: builders and testers only)" : ""}: ${roles.map((role) => `${role} (${instanceId(team, role)})`).join(", ")}`
+    `  roles${worker ? " (a worker: builders only; testers test on the lead, where the environment runs)" : ""}: ${roles.map((role) => `${role} (${instanceId(team, role)})`).join(", ")}`
   );
   if (existsSync(join(run, "planner-thread")))
     console.info(`  a planner is running; it keeps the flags it started with until e9g rotate ${team.name} (members started from now get the new ones)`);

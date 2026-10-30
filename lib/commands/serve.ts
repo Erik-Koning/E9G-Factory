@@ -19,7 +19,7 @@ import { claimOrder, type FeatureRequest, type Stakeholder, STATUSES, type Statu
 import { openTeamStore } from "../tasks/ops.ts";
 import { Refused, type Store } from "../tasks/store.ts";
 import { parseArgs, text as optionText } from "../util.ts";
-import { addRequest, stakeholderFor } from "./request.ts";
+import { addRequest, keyHash, stakeholderFor } from "./request.ts";
 
 export const USAGE = "usage: e9g serve [--port 4600] [--host 127.0.0.1] [--team <name>]   (the token: E9G_SERVE_TOKEN, or one made for you)";
 
@@ -223,14 +223,21 @@ export async function startServer({ home, run, team, host, port, token }: ServeO
     // name at 127.0.0.1 (DNS rebinding) is refused, since it would otherwise count as this page's own origin.
     const hostHeader = req.headers.host ?? "";
     if (!token && !isLoopback(hostOfHeader(hostHeader))) return refuse(403, "e9g serve answers to its loopback address only (127.0.0.1, localhost)");
+    // Who's asking: the operator, by the page's own token, or a stakeholder, by a link of their own (e9g request
+    // stakeholders add), which opens only the request form and their own requests.
+    let stakeholder: Stakeholder | null = null;
     if (token) {
       const fromQuery = where.searchParams.get("token");
       const header = req.headers["x-e9g-token"];
       const given = fromQuery ?? (typeof header === "string" ? header : undefined) ?? cookiesOf(req).get(cookie);
-      if (given === undefined || !sameSecret(given, token))
-        return refuse(401, "e9g serve needs its token: open the page once with ?token=<token>, or send x-e9g-token");
+      const operator = given !== undefined && sameSecret(given, token);
+      if (!operator && given !== undefined) {
+        const hash = keyHash(given);
+        stakeholder = (await store.stakeholders.all()).find((s) => typeof s.key === "string" && sameSecret(hash, s.key)) ?? null;
+      }
+      if (!operator && !stakeholder) return refuse(401, "e9g serve needs its token: open the page once with ?token=<token>, or send x-e9g-token");
       // The first visit's token is kept in a cookie the page's scripts can't read and other sites can't send.
-      if (fromQuery !== null) headers["set-cookie"] = `${cookie}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/`;
+      if (fromQuery !== null) headers["set-cookie"] = `${cookie}=${encodeURIComponent(fromQuery)}; HttpOnly; SameSite=Strict; Path=/`;
     }
     // A change comes from this page or from no browser at all (curl sends no Origin).
     if (method === "POST" && req.headers.origin !== undefined) {
@@ -238,6 +245,25 @@ export async function startServer({ home, run, team, host, port, token }: ServeO
       if (!own.has(req.headers.origin)) return refuse(403, `a change comes from this page (${url}), not ${req.headers.origin}`);
     }
 
+    if (stakeholder) {
+      const own = stakeholder;
+      if (method === "GET" && path === "/") return sendPage(res, 200, headers, (nonce) => stakeholderPage(store, team, own, { nonce }));
+      if (method === "POST" && path === "/requests") {
+        const fields = fieldsOf(req, await readBody(req));
+        const problem = requestProblem(fields, { named: false });
+        if (problem) return sendPage(res, 400, headers, (nonce) => stakeholderPage(store, team, own, { nonce, form: fields, problem }));
+        await addRequest(store, team.name, {
+          title: (fields["title"] ?? "").trim(),
+          body: (fields["body"] ?? "").trim(),
+          from: own.id,
+          by: "stakeholder",
+        });
+        res.writeHead(303, { ...SECURITY_HEADERS, ...headers, location: "/" });
+        res.end();
+        return;
+      }
+      return refuse(403, "this link sends feature requests; the rest of this page is the operator's");
+    }
     if (method === "GET" && path === "/") return sendPage(res, 200, headers, (nonce) => page(store, team, { nonce }));
     if (method === "POST" && path === "/requests") {
       const fields = fieldsOf(req, await readBody(req));
@@ -328,12 +354,15 @@ function asOperator(home: string, run: string, args: string[]): Promise<{ ok: bo
 }
 
 // Why a request from the form can't be taken, or null.
-function requestProblem(fields: Record<string, string>): string | null {
+// A stakeholder's own link says who it's from; the operator's form asks.
+function requestProblem(fields: Record<string, string>, { named = true }: { named?: boolean } = {}): string | null {
   const title = (fields["title"] ?? "").trim();
   const name = (fields["name"] ?? "").trim();
   const email = (fields["email"] ?? "").trim();
   if (!title) return "Give the request a title: what should be possible.";
   if (title.length > 200) return "Keep the title under 200 characters; the rest goes in the description.";
+  if ((fields["body"] ?? "").length > 20_000) return "Keep the description under 20,000 characters.";
+  if (!named) return null;
   if (!name || name.length > 120) return "Say who it's from: a name.";
   if (!EMAIL.test(email) || email.length > 254) return "Give an email address the planner's questions can reach (name@example.com).";
   if ((fields["role"] ?? "").trim().length > 80) return "Keep the role short (customer, sales, support…).";
@@ -369,7 +398,7 @@ async function page(
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const people = new Map(stakeholders.map((s) => [s.id, s]));
   const proposals = tasks
-    .filter((t) => PROPOSALS.includes(t.status))
+    .filter((t) => PROPOSALS.includes(t.status) && t.kind !== "journey")
     .sort((a, b) => (b.priority ?? -1) - (a.priority ?? -1) || Number(a.id) - Number(b.id));
   const open = requests.filter((r) => isOpen(r, byId)).reverse();
   const inFlight = tasks.filter((t) => !["done", "rejected"].includes(t.status)).length;
@@ -433,23 +462,65 @@ function proposalsSection(proposals: Task[]): string {
 </section>`;
 }
 
-function formSection(form: Record<string, string>, problem: string | null): string {
+function formSection(form: Record<string, string>, problem: string | null, { named = true }: { named?: boolean } = {}): string {
   const value = (key: string): string => esc(form[key] ?? "");
+  const who = named
+    ? `<div class="row">
+      <label>Their name <input name="name" required maxlength="120" value="${value("name")}"></label>
+      <label>Email <input name="email" type="email" required maxlength="254" value="${value("email")}"></label>
+    </div>
+    <label>Role <input name="role" maxlength="80" value="${value("role")}" placeholder="customer, sales, support…"></label>`
+    : "";
   return `<section>
   <h2>Request a feature</h2>
   ${problem ? `<p class="problem" role="alert">${esc(problem)}</p>` : ""}
   <form method="post" action="/requests" class="stack">
     <label>Title <input name="title" required maxlength="200" value="${value("title")}" placeholder="What should be possible"></label>
-    <label>Description <textarea name="body" rows="4" placeholder="Who needs it, what they do today, and why it matters">${value("body")}</textarea></label>
-    <div class="row">
-      <label>Your name <input name="name" required maxlength="120" value="${value("name")}"></label>
-      <label>Email <input name="email" type="email" required maxlength="254" value="${value("email")}"></label>
-    </div>
-    <label>Role <input name="role" maxlength="80" value="${value("role")}" placeholder="customer, sales, support…"></label>
+    <label>Description <textarea name="body" rows="4" maxlength="20000" placeholder="Who needs it, what they do today, and why it matters">${value("body")}</textarea></label>
+    ${who}
     <div><button>Send the request</button></div>
-    <p class="muted small">Your name and email stay on this page. The team's agents see your role and what you write here, never who you are.</p>
+    <p class="muted small">${named ? "Names and email addresses stay on this page." : "Your name and email stay with the operator."} The team's agents see the role and what's written here, never who it's from.</p>
   </form>
 </section>`;
+}
+
+// A stakeholder's own page: the form, and the requests they sent with how each is going. Nothing else of the team's.
+async function stakeholderPage(
+  store: Store,
+  team: Team,
+  stakeholder: Stakeholder,
+  { nonce, form = {}, problem = null }: { nonce: string; form?: Record<string, string>; problem?: string | null }
+): Promise<string> {
+  const [tasks, requests] = await Promise.all([store.tasks.all(), store.requests.all()]);
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const mine = requests.filter((r) => r.from === stakeholder.id).reverse();
+  const item = (r: FeatureRequest): string => {
+    const built = r.tasks.map((id) => byId.get(id)?.status ?? "missing");
+    const state = r.status === "promoted" ? (built.every((status) => status === "done") ? "built" : "being built") : r.status;
+    return `<li class="request"><div class="head"><span class="id">${esc(r.id)}</span> <span class="title">${esc(r.title)}</span> <span class="chip">${esc(state)}</span></div></li>`;
+  };
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(team.title)}: requests</title>
+<style nonce="${esc(nonce)}">${CSS}</style>
+</head>
+<body>
+<main>
+<header><h1>${esc(team.title)}</h1><p class="muted">Signed in as ${esc(stakeholder.name)} (${esc(stakeholder.role)})</p></header>
+<div class="two">
+${formSection(form, problem, { named: false })}
+<section>
+  <h2>Your requests</h2>
+  ${mine.length ? `<ul class="plain">${mine.map(item).join("\n")}</ul>` : `<p class="muted">None yet.</p>`}
+</section>
+</div>
+</main>
+</body>
+</html>
+`;
 }
 
 function requestsSection(open: FeatureRequest[], people: Map<string, Stakeholder>, byId: Map<string, Task>): string {

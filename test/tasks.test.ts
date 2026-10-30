@@ -13,6 +13,12 @@ import {
   claimRefusal,
   DEFAULT_WEIGHTS,
   journeyDue,
+  MERGE,
+  moveRefusal,
+  STATUSES,
+  type Via,
+  WATCHDOG,
+  type ApprovalRules,
   newTask,
   nextClaim,
   OPERATOR,
@@ -102,7 +108,10 @@ describe("the task model", () => {
     assert.match(statusRefusal(proposed, "approved", "planner") ?? "", /doesn't approve its own/);
     assert.equal(statusRefusal(proposed, "approved", OPERATOR), null, "the operator may");
     assert.match(statusRefusal(task({ id: "2", status: "review" }), "done", "planner") ?? "", /merge queue/);
-    assert.equal(statusRefusal(task({ id: "3", status: "verify", kind: "journey" }), "done", "planner"), null);
+    const journey = task({ id: "3", status: "approved", kind: "journey" });
+    assert.match(statusRefusal(journey, "done", "planner", [journey]) ?? "", /done once it's verified/, "an empty journey isn't due");
+    const child = task({ id: "9", status: "done", parent: "3" });
+    assert.equal(statusRefusal(journey, "done", "planner", [journey, child]), null, "its tasks done, the planner verifies and closes it");
     assert.equal(
       statusRefusal(task({ id: "4", status: "approved", kind: "research" }), "done", "planner"),
       null,
@@ -113,6 +122,57 @@ describe("the task model", () => {
     assert.equal(statusRefusal(unblocked, "approved", "planner"), null, "a task approved before goes back to approved");
     assert.match(statusRefusal(task({ id: "7", status: "blocked" }), "approved", "planner") ?? "", /never approved/);
     assert.match(statusRefusal(task({ id: "8", status: "proposed" }), "rejected", "builder") ?? "", /only the planner/);
+  });
+
+  test("the move table, walked whole, keeps the rules nobody may break", () => {
+    const VIAS: Via[] = ["status", "approve", "reject", "research", "escalate", "claim", "release", "submit", "changes", "merge", "expire"];
+    const ACTORS = ["planner", "approver", "builder", "tester", "reviewer", "ux-specialist", OPERATOR, MERGE, WATCHDOG];
+    const approval: ApprovalRules = { mode: "full", maxSize: "XL", findings: "planner" };
+    const allowed: string[] = [];
+    for (const kind of ["feature", "bug", "journey"] as const)
+      for (const from of STATUSES)
+        for (const approved of [false, true]) {
+          const t = task({
+            id: "1",
+            kind,
+            status: from,
+            severity: "major",
+            score: { pain: 1, reach: 1, revenue: 1, wow: 1, distribution: 1, leverage: 1, urgency: 1, risk: 1, confidence: "data", size: "S", why: "x" },
+            approval: approved ? { by: "approver", at: "x", note: "" } : null,
+            by: "tester",
+            claim: { role: "builder", machine: "m", worktree: "/w", at: "x", until: new Date(0).toISOString() },
+          });
+          const ctx = { all: [t], approval, machine: "m", worktree: "/w", now: Date.now() };
+          for (const via of VIAS)
+            for (const actor of ACTORS)
+              for (const to of STATUSES)
+                if (moveRefusal(t, to, via, actor, ctx) === null) allowed.push(`${kind} ${from}${approved ? "+" : ""} -${via}/${actor}-> ${to}`);
+        }
+    const moves = (pattern: RegExp) => allowed.filter((m) => pattern.test(m));
+    assert.deepEqual(
+      moves(/-> building$/).filter((m) => !/-claim\/(builder|tester)->/.test(m)),
+      [],
+      "only a claim builds"
+    );
+    assert.deepEqual(
+      moves(/^(feature|bug) .* -> done$/).filter((m) => !/-(merge\/merge-queue|status\/operator)->/.test(m)),
+      [],
+      "code is done when it merges"
+    );
+    assert.deepEqual(
+      moves(/^journey .* -> done$/).filter((m) => /merge/.test(m)),
+      [],
+      "a journey isn't closed by a merge"
+    );
+    assert.deepEqual(
+      moves(/-> approved$/).filter((m) => /\/planner->/.test(m) && !/^\S+ \S+\+ /.test(m) && !/^bug (triage|proposed) -approve/.test(m)),
+      [],
+      "the planner approves only what was approved before, and others' findings"
+    );
+    assert.deepEqual(moves(/-(approve|reject|research|escalate)\/(builder|tester|reviewer|ux-specialist)->/), [], "members don't decide proposals");
+    // Nothing gets stuck: from every status but done and rejected, someone on the team can move a task on.
+    for (const from of STATUSES.filter((s) => s !== "done" && s !== "rejected"))
+      assert.ok(moves(new RegExp(`^feature ${from}\\+? -\\w+/(?!operator)`)).length > 0, `a feature in ${from} can move on without the operator`);
   });
 
   test("claims follow kind, dependencies and files, in severity then priority order", () => {
@@ -260,7 +320,10 @@ describe("e9g task, from proposal to merge", () => {
 
     // The merge queue closes it.
     await store().tasks.replace({ ...((await store().tasks.get("1")) as Task), status: "review", claim: null });
-    assert.equal((await e9g(["verdict", "review", "e9g/b1-resume-a-paused-recording", "approve", "--sha", sha], as("reviewer"))).code, 0);
+    assert.equal(
+      (await e9g(["verdict", "review", "e9g/b1-resume-a-paused-recording", "approve", "--sha", sha, "--risk", "medium"], as("reviewer"))).code,
+      0
+    );
     const merged = await e9g(["merge", "e9g/b1-resume-a-paused-recording"], as("planner"));
     assert.equal(merged.code, 0, merged.out);
     t = await store().tasks.get("1");
@@ -269,7 +332,7 @@ describe("e9g task, from proposal to merge", () => {
     assert.ok(existsSync(join(home, "src/resume.ts")));
   });
 
-  test("approval: thresholds hold large work and new journeys for the operator; the operator approves anything", async () => {
+  test("approval: thresholds hold large work for the operator; a journey needs no approval; the operator approves anything", async () => {
     const { as, store } = setup();
     for (const [title, kind, size] of [
       ["Small", "feature", "S"],
@@ -281,8 +344,9 @@ describe("e9g task, from proposal to merge", () => {
       await e9g(["task", "score", id, ...SCORE, ...GATE, "--confidence", "data", "--size", size, "--why", "x"], as("planner"));
     }
     assert.equal((await e9g(["task", "approve", "1"], as("approver"))).code, 0);
-    assert.match((await e9g(["task", "approve", "2"], as("approver"))).out, /over this team's M .*escalate/);
-    assert.match((await e9g(["task", "approve", "3"], as("approver"))).out, /a new journey is the operator's/);
+    assert.match((await e9g(["task", "approve", "2"], as("approver"))).out, /over this team's M.*escalate/);
+    assert.match((await e9g(["task", "list"], as("planner"))).out, /#3 .*journey/);
+    assert.doesNotMatch((await e9g(["task", "show", "3"], as("planner"))).out, /approved by/, "nobody had to approve the journey");
     assert.equal((await e9g(["task", "escalate", "2", "--reason", "it changes scope"], as("approver"))).code, 0);
     assert.equal((await store().tasks.get("2"))?.status, "question");
     assert.equal((await e9g(["task", "approve", "2"], as(null))).code, 0, "the operator answers it");
@@ -298,6 +362,22 @@ describe("e9g task, from proposal to merge", () => {
     await e9g(["task", "add", "Thing"], full.as("planner"));
     await e9g(["task", "score", "1", ...SCORE, ...GATE, "--confidence", "data", "--size", "XL", "--why", "x"], full.as("planner"));
     assert.equal((await e9g(["task", "approve", "1"], full.as("approver"))).code, 0);
+  });
+
+  test("the planner approves a finding another member filed, never its own proposal", async () => {
+    const { as, store } = setup();
+    const body = ["--body", "Steps: open /x, press Save. Nothing happens; it should save."];
+    await e9g(["task", "add", "Save does nothing", "--sev", "major", ...body], as("tester"));
+    assert.equal((await e9g(["task", "approve", "1", "--note", "real"], as("planner"))).code, 0);
+    assert.deepEqual([(await store().tasks.get("1"))?.status, (await store().tasks.get("1"))?.approval?.by], ["approved", "planner"]);
+    await e9g(["task", "add", "My idea"], as("planner"));
+    await e9g(["task", "score", "2", ...SCORE, ...GATE, "--confidence", "data", "--size", "S", "--why", "x"], as("planner"));
+    assert.match((await e9g(["task", "approve", "2"], as("planner"))).out, /doesn't approve its own/);
+    await e9g(["task", "add", "Bug the planner saw", "--kind", "bug", "--sev", "minor"], as("planner"));
+    assert.match((await e9g(["task", "approve", "3"], as("planner"))).out, /doesn't approve its own/, "nor a finding it filed itself");
+    const strict = setup(team({ approval: { findings: "approver" } }));
+    await e9g(["task", "add", "Save does nothing", "--sev", "major", ...body], strict.as("tester"));
+    assert.match((await e9g(["task", "approve", "1"], strict.as("planner"))).out, /approver decides findings too/);
   });
 
   test("findings go to triage with a severity and a body; members can't shape tasks", async () => {
@@ -316,7 +396,7 @@ describe("e9g task, from proposal to merge", () => {
     assert.match((await e9g(["task", "edit", "1", "--after", "1"], as("planner"))).out, /other than this one/);
   });
 
-  test("a journey moves to verify when its last task merges", async () => {
+  test("a journey is due its verification when its last task merges", async () => {
     const { run } = setup();
     const store = fileStore(run, "fixture");
     await store.tasks.createAs("1", newTask({ team: "fixture", title: "journey", kind: "journey", status: "approved", by: "planner" }));
@@ -338,7 +418,8 @@ describe("e9g task, from proposal to merge", () => {
       skipped: ["#4 is being built by the builder on m"],
     });
     assert.equal((await store.tasks.get("4"))?.status, "building", "a task someone is building isn't closed out from under them");
-    assert.equal((await store.tasks.get("1"))?.status, "verify");
+    const all = await store.tasks.all();
+    assert.equal(journeyDue(all.find((t) => t.id === "1") as Task, all), true);
   });
 
   test("a graph for BetterDiagrams: a band per journey, columns by dependency", async () => {
@@ -464,13 +545,15 @@ describe("the planner's summary and the guard", () => {
           claim: { role: "builder", machine: "studio", worktree: "/w", at: "x", until: new Date(Date.now() + 30 * 60_000).toISOString() },
         }),
         task({ id: "2", status: "review", branch: "e9g/b2-x" }),
-        task({ id: "3", status: "verify", kind: "journey" }),
+        task({ id: "3", status: "approved", kind: "journey" }),
+        task({ id: "6", status: "done", parent: "3" }),
         task({ id: "4", status: "proposed" }),
         task({ id: "5", status: "triage" }),
       ],
       { approval: "thresholds" }
     );
-    assert.match(text, /building 1, review 1, verify 1/);
+    assert.match(text, /approved 1, building 1, review 1/);
+    assert.match(text, /Journeys due their verification: #3 task 3/);
     assert.match(text, /#1 task 1 \(builder@studio, lease (29|30) min\)/);
     assert.match(text, /Waiting for review: #2 task 2 \[e9g\/b2-x\]/);
     assert.match(text, /Proposals for the approver: 1 \(#4 unscored\)/);
@@ -487,7 +570,8 @@ describe("the planner's summary and the guard", () => {
       bash(home, "approver", "e9g task approve 3 --note fits", "allow"),
       bash(home, "approver", "e9g task status 3 approved", "refuse"),
       bash(home, "planner", "e9g task status 3 rejected --reason dup", "allow"),
-      bash(home, "planner", "e9g task approve 3", "refuse"),
+      bash(home, "planner", "e9g task approve 3", "allow"),
+      bash(makeRepo(team({ approval: { findings: "approver" } })), "planner", "e9g task approve 3", "refuse"),
       bash(home, "reviewer", "e9g task claim", "refuse"),
       bash(home, "tester", "e9g task list --all", "allow"),
       // Without its instance's E9G_TEAM a command takes the caller for the operator: nobody unsets or clears it.
@@ -500,54 +584,42 @@ describe("the planner's summary and the guard", () => {
   });
 });
 
-describe("view checks", () => {
-  test("a UI change beyond a few lines is approved only with the screenshots the reviewer read", async () => {
+describe("review: risk and looking", () => {
+  test("an approval says its risk; a UI change approved without screenshots is said so, not refused", async () => {
     const { home, as } = setup();
     git(home, "checkout", "-q", "-b", "e9g/b1-panel");
     const panel = Array.from({ length: 20 }, (_, i) => `export const line${i} = ${i};`).join("\n");
-    const big = commit(home, { "src/components/Panel.tsx": `${panel}\n` });
-    git(home, "checkout", "-q", "-b", "e9g/b2-copy", "e9g/next");
-    const small = commit(home, { "src/components/Copy.tsx": "export const copy = 'Save';\n" });
-    git(home, "checkout", "-q", "e9g/next");
-    const refused = await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", big], as("reviewer"));
-    assert.equal(refused.code, 2);
-    assert.match(refused.out, /changes 20 lines of UI \(src\/components\/Panel\.tsx\); approve it with --shots/);
-    const empty = tmp("e9g-shots-");
-    assert.match((await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", big, "--shots", empty], as("reviewer"))).out, /holds no PNGs/);
-    write(empty, { "desktop/panel-light.png": "png" });
-    const approved = await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", big, "--shots", empty], as("reviewer"));
-    assert.equal(approved.code, 0, approved.out);
-    assert.equal(JSON.parse(readFileSync(join(home, ".e9g/run/state/reviews/e9g_b1-panel.json"), "utf8")).shots, empty);
-    assert.equal(
-      (await e9g(["verdict", "review", "e9g/b2-copy", "approve", "--sha", small], as("reviewer"))).code,
-      0,
-      "a one-line copy change needs none"
-    );
-    assert.equal((await e9g(["verdict", "review", "e9g/b1-panel", "changes", "--sha", big, "--note", "x"], as("reviewer"))).code, 0, "changes need none");
-  });
-
-  test("screenshots count from when the task was handed in, whatever the commit's date says", async () => {
-    const { home, as, store } = setup();
-    git(home, "checkout", "-q", "-b", "e9g/b1-panel");
-    const panel = Array.from({ length: 20 }, (_, i) => `export const line${i} = ${i};`).join("\n");
-    // Handed in an hour ago: screenshots from two hours ago are an earlier round's, though taken after the commit.
     const sha = commit(home, { "src/components/Panel.tsx": `${panel}\n` });
     git(home, "checkout", "-q", "e9g/next");
-    const handed = newTask({ team: "fixture", title: "panel", kind: "feature", status: "review", by: "planner", branch: "e9g/b1-panel", sha });
-    handed.history.push({
-      at: new Date(Date.now() - 3600_000).toISOString(),
-      by: "builder@m",
-      what: `building → review: e9g/b1-panel at ${sha.slice(0, 9)}`,
-    });
-    await store().tasks.createAs("1", handed);
-    const shots = tmp("e9g-shots-");
-    write(shots, { "desktop.png": "png" });
-    const earlier = new Date(Date.now() - 2 * 3600_000);
-    utimesSync(join(shots, "desktop.png"), earlier, earlier);
-    assert.match((await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", sha, "--shots", shots], as("reviewer"))).out, /no PNGs taken since/);
-    const now = new Date();
-    utimesSync(join(shots, "desktop.png"), now, now);
-    assert.equal((await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", sha, "--shots", shots], as("reviewer"))).code, 0);
+    assert.match((await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", sha], as("reviewer"))).out, /--risk low\|medium\|high/);
+    const approved = await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", sha, "--risk", "low"], as("reviewer"));
+    assert.equal(approved.code, 0, approved.out);
+    assert.match(approved.out, /approved without screenshots, though e9g\/b1-panel changes 20 lines of UI/);
+    assert.equal(JSON.parse(readFileSync(join(home, ".e9g/run/state/reviews/e9g_b1-panel.json"), "utf8")).risk, "low");
+    assert.equal(
+      (await e9g(["verdict", "review", "e9g/b1-panel", "changes", "--sha", sha, "--note", "x"], as("reviewer"))).code,
+      0,
+      "changes say no risk"
+    );
+  });
+
+  test("a change the reviewer judges high-risk merges only with its tests in the same branch", async () => {
+    const { home, as, store } = setup();
+    await store().tasks.createAs("1", newTask({ team: "fixture", title: "pay", kind: "feature", status: "review", by: "planner", branch: "e9g/b1-pay" }));
+    git(home, "checkout", "-q", "-b", "e9g/b1-pay");
+    const bare = commit(home, { "src/billing/pay.ts": "export const pay = (cents: number) => cents;\n" });
+    git(home, "checkout", "-q", "e9g/next");
+    assert.equal((await e9g(["verdict", "review", "e9g/b1-pay", "approve", "--sha", bare, "--risk", "high"], as("reviewer"))).code, 0);
+    assert.equal((await store().tasks.get("1"))?.risk, "high");
+    const refused = await e9g(["merge", "e9g/b1-pay"], as(null));
+    assert.equal(refused.code, 2, refused.out);
+    assert.match(refused.out, /high-risk, and it changes no tests/);
+    git(home, "checkout", "-q", "e9g/b1-pay");
+    const tested = commit(home, { "src/billing/pay.test.ts": "import { pay } from './pay.ts';\nif (pay(1) !== 1) throw new Error('pay');\n" });
+    git(home, "checkout", "-q", "e9g/next");
+    await e9g(["verdict", "review", "e9g/b1-pay", "approve", "--sha", tested, "--risk", "high"], as("reviewer"));
+    const merged = await e9g(["merge", "e9g/b1-pay"], as(null));
+    assert.equal(merged.code, 0, merged.out);
   });
 
   test("submit records whether the task touched UI and the team's critical paths", async () => {
@@ -626,7 +698,7 @@ describe("the audit's findings stay fixed", () => {
     assert.match((await e9g(["task", "status", "1", "building"], as(null))).out, /only when a builder or tester claims it/, "not even the operator");
   });
 
-  test("an approved task edited in what it is goes back for approving; a journey's tasks wait for the journey", async () => {
+  test("an approved task edited in what it is goes back for approving; a journey needs no approval of its own", async () => {
     const { as, store } = setup(team({ approval: { mode: "full" } }));
     await e9g(["task", "add", "Thing"], as("planner"));
     await e9g(["task", "score", "1", ...SCORE, ...GATE, "--confidence", "data", "--size", "S", "--why", "x"], as("planner"));
@@ -639,18 +711,29 @@ describe("the audit's findings stay fixed", () => {
       (await e9g(["task", "score", "1", ...SCORE, "--asked", "x", "--confidence", "data", "--size", "S", "--why", "x"], as("planner"))).out,
       /all three/
     );
-    // A journey's tasks are approved with or after it; one approved late, its tasks done, is due at once.
+    // A journey only groups tasks: its tasks are approved on their own, and it's done once they are and it's verified.
     await e9g(["task", "add", "Checkout", "--kind", "journey"], as("planner"));
-    await e9g(["task", "score", "2", ...SCORE, ...GATE, "--confidence", "data", "--size", "M", "--why", "x"], as("planner"));
     await e9g(["task", "add", "Pay", "--parent", "2"], as("planner"));
     await e9g(["task", "score", "3", ...SCORE, ...GATE, "--confidence", "data", "--size", "S", "--why", "x"], as("planner"));
-    assert.match((await e9g(["task", "approve", "3"], as("approver"))).out, /journey 2, which isn't approved yet/);
-    assert.match((await e9g(["task", "status", "2", "verify"], as("planner"))).out, /never approved/);
-    assert.equal((await e9g(["task", "approve", "3"], as(null))).code, 0, "the operator may");
+    assert.equal((await e9g(["task", "approve", "3"], as("approver"))).code, 0, "no journey approval first");
+    assert.match((await e9g(["task", "status", "2", "done"], as("planner"))).out, /done once it's verified/);
     await update(store().tasks, "3", (t) => ({ ...t, status: "done" as const }));
-    assert.equal((await e9g(["task", "approve", "2"], as("approver"))).code, 0);
-    assert.equal((await store().tasks.get("2"))?.status, "verify");
+    assert.equal((await e9g(["task", "status", "2", "done"], as("planner"))).code, 0, "its task done, the planner closes it");
     assert.match((await e9g(["task", "edit", "2", "--kind", "feature"], as("planner"))).out, /has tasks/);
+  });
+
+  test("text that starts with -- is text; --help prints the usage; the rules name CLAUDE.md only when there is one", async () => {
+    const { home, as, store } = setup();
+    assert.equal((await e9g(["task", "add", "--skip-common leaves out common words"], as("planner"))).code, 0);
+    assert.equal((await store().tasks.get("1"))?.title, "--skip-common leaves out common words");
+    const help = await e9g(["task", "add", "--help"], as("planner"));
+    assert.deepEqual([help.code, /usage: e9g task/.test(help.out)], [0, true]);
+    assert.equal((await e9g(["request", "list", "--help"], as("planner"))).code, 0);
+    const { compile } = await import("../lib/prompts.ts");
+    const { loadTeam } = await import("../lib/config.ts");
+    assert.doesNotMatch(compile(loadTeam(home), "builder"), /`CLAUDE\.md`/, "this checkout has none");
+    writeFileSync(join(home, "CLAUDE.md"), "# Rules\n");
+    assert.match(compile(loadTeam(home), "builder"), /`CLAUDE\.md` \(the repository's own rules/);
   });
 
   test("options a subcommand doesn't read are refused; an agent's graph stays in the run folder", async () => {

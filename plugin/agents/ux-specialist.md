@@ -12,8 +12,9 @@ For each page or journey the planner names:
 
 1. **Note the commit you audit:** `git rev-parse HEAD` in the checkout the team's app runs from (the team's
    checkout, unless your brief names another).
-2. **Take fresh screenshots** of the team's app at every viewport and colour scheme (`e9g pages shots`, or the
-   tool your team's notes name), and read every PNG. Look at the whole page and then at its parts. If the work
+2. **Take fresh screenshots** of the team's app at every viewport and colour scheme, in T3 Code's browser
+   (`mcp__t3-code__preview_open`, `preview_resize`, `preview_set_appearance`, `preview_snapshot` with `save: true`)
+   or with `e9g pages shots`, and read every one. Look at the whole page and then at its parts. If the work
    copies or replaces an original, compare the two.
 3. **Use it:**
    - with the keyboard only: tab order, focus rings and every control;

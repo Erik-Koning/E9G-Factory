@@ -45,7 +45,7 @@ review changes, then the task is blocked for the planner to split or decide.
               ▲                                                                          │ reviewer (skill),
               └──────── researching ◀── approver asks for research                       │ e9g verdict review
                                                      merge queue (lead machine) ◀────────┘
-                                                        │ done; last child done → journey verify
+                                                        │ done; last child done → journey due
                                                         ▼
                                                journey polish cycle → done → cycle report
 ```
@@ -121,8 +121,7 @@ review changes, then the task is blocked for the planner to split or decide.
 | building → review                                    | the claimant                                          | `e9g task submit` (branch, commit, UI and critical paths; a rework must be a new commit)            |
 | review → approved (rework)                           | reviewer                                              | `e9g verdict review … changes` (rounds + 1; blocked past `review.maxRounds`); only a task in review |
 | review (or an approved task `--closes` names) → done | merge queue                                           | `e9g merge --closes`; not a task being built, a journey, or one never approved                      |
-| journey: approved → verify                           | code                                                  | when its last child is done or rejected (one at least done); the summary flags one with none left   |
-| verify → done                                        | planner                                               | after the journey's polish cycle                                                                    |
+| journey: approved → done                             | planner                                               | once it's due (its tasks all done or rejected, one done: worked out, never stored) and verified     |
 | any → blocked, question, rejected; reopen            | planner                                               | `e9g task status` (never building or approved; done only for research, and journeys from verify)    |
 | back to triage, proposed or researching; a new score | —                                                     | the approval is cleared: it's approved again before it's built                                      |
 
@@ -180,7 +179,7 @@ loopback it requires the token.
 `team.json` `approval: { "mode": "operator" | "thresholds" | "full", "maxSize": "M" }`, default thresholds.
 
 - **operator:** proposals wait for the operator (`e9g task approve` run by a person, or `e9g serve`).
-- **thresholds:** the approver role approves proposals up to `maxSize` that start no new journey; anything larger it
+- **thresholds:** the approver role approves proposals up to `maxSize` (a journey only groups tasks and needs no approval of its own); anything larger it
   escalates (status question), which reaches the operator in the planner's next message.
 - **full:** the approver approves anything, scope included. Never delegable: privacy and personal data, policy
   unlocks, promotion to production, changes to the rules or the constitution.
@@ -197,16 +196,21 @@ regressions, consolidate `decisions.md` and lessons, and close the cycle with `e
 records it and drafts the cycle report for the operator. When nothing is approved, proposed or requested, the planner
 writes `$E9G_RUN/idle` and the watchdog drops to the done-tick until a request or a task arrives.
 
-A journey is a task of kind `journey`; its children name it as `parent`. When the merge queue closes the last child,
-the journey moves to `verify` and the planner's wake context lists it as due.
+A journey is a task of kind `journey`; its children name it as `parent`. When its last child is done, the journey is due
+its verification, worked out from its children wherever it's shown (the planner's context, `e9g task list`, the
+graph) rather than stored; polish is more children; the planner marks it done once verified.
 
 ## Review
 
 - `plugin/skills/review/SKILL.md` (the reviewer loads it as `e9g:review`): blast radius first, then the ticket's
   goals, edge cases, tangential code (read and run the tests of what imports the change), tests that fail without the
   change, and for UI a before-and-after look at every affected page at desktop and phone, light and dark.
-- **View checks in code:** `e9g verdict review … approve` refuses a change whose blast radius says UI (beyond
-  `review.viewCheckMinLines`, 10 changed lines) without `--shots <dir>` holding the screenshots the reviewer read.
+- **View checks are the reviewer's judgment** (operator, 2026-10-28): the skill says when to look (anything that
+  could change what a person sees, however few lines); `--shots <dir>` records what it read, and an approval of a UI
+  change without it is said so.
+- **Risk, judged after the work is done:** the reviewer says how much the change could break with its approval
+  (`--risk low|medium|high`, required). A high-risk change carries its own tests in the same branch, and the merge
+  queue refuses it otherwise.
 - **Rounds:** `review.maxRounds` (3). A changes verdict on a task's branch counts a round; at the limit the task is
   blocked for the planner.
 
@@ -224,7 +228,8 @@ machine (the connection string in the Keychain; the machine's name in `~/.e9g/ma
 
 - **The lead** runs the planner, approver, reviewer, UX specialist and the merge queue. `e9g merge` refuses on any
   other machine. After each merge the lead pushes the integration branch, so workers build on it.
-- **Workers** register with `e9g register --worker`: builder and tester instances only, no planner. Their watchdog
+- **Workers** register with `e9g register --worker`: builders only (testers test on the lead, where the environment
+  runs), no planner. Exactly one lead, by setup discipline (operator, 2026-10-28). Their watchdog
   fills free slots from approved tasks (`t3 thread start --worktree`), each member claiming its own. `e9g task
 submit` on a worker pushes the task's branch; the lead fetches it for review and merge.
 
@@ -245,9 +250,9 @@ Interrupting members; GitHub-native merging; per-role models; a hosted request f
 ### Phase 1: the task store and commands
 
 - [x] `lib/tasks/model.ts`, `store.ts`, `files.ts`; `lib/commands/task.ts`
-- [x] `team.json`: `board: "tasks"` (`"files"` is the same), `tasks`, `priorities`, `approval`, `mode`, `review.maxRounds`, `review.viewCheckMinLines`, `critical`; schema
+- [x] `team.json`: `board: "tasks"` (`"files"` is the same), `tasks`, `priorities`, `approval`, `mode`, `review.maxRounds`, `critical`; schema
 - [x] guard: task, request and blast commands per role; `serve` is the operator's
-- [x] merge queue closes tasks; journeys move to verify; verdict counts rounds
+- [x] merge queue closes tasks; journeys come due; verdict counts rounds
 - [x] heartbeat renews claims; watchdog expires them; wake and session context summarise the graph
 - [x] import of a files board; `e9g task graph` (BetterDiagrams)
 - [x] prompts: the board section, commands; planner, builder, tester, reviewer, UX, innovator prompts
@@ -330,3 +335,72 @@ checked every claim above. Fixed, each with a test:
   modules and SVGs are UI; critical paths are reached through importers too; screenshots count only from when the
   task was handed in; the skill's "fails without the change" step starts from the merge base and handles renames and
   deletions.
+
+## Revisions (operator, 2026-10-28)
+
+- **Tests travel with risky code.** The reviewer judges each approved change's risk; a high-risk branch merges only
+  with its own tests. No separate test tasks after the merge.
+- **View checks** are the reviewer's judgment, by the skill, not a line count in code.
+- **One lead** by setup discipline: no lease or machines collection.
+- **Workers** run builders only.
+- **Findings** other members file are the planner's to approve (`approval.findings`).
+- **`e9g task migrate`** moves a graph between stores; a file store moved from is refused afterwards.
+- **Stakeholder links:** each stakeholder's own link opens only the form and their own requests; the operator's token
+  is the only one that approves or shows names.
+- **Architecture:** every move is one table (`RULES` in `lib/tasks/model.ts`, walked whole by a test); history events
+  record from, to and the commit; a journey's due date is computed; on several machines the lead reviews and merges
+  the remote's copy of a branch and keeps none of its own. Not adopted: proving the operator by a terminal (agents'
+  commands and yours run without one; the guard refuses a command that changes the `E9G_` variables instead).
+
+## Spin test (2026-10-29)
+
+A real team on a throwaway CLI (`tally`: --top, --csv, Unicode words, a stakeholder's request for leaving out common
+words), factory 0.4.0, on this Mac's T3 Code. It ran unattended to done in 47 minutes:
+
+- **What it did:** 18 agents, 216 model requests, about 121k output tokens, 44 agent-minutes. Eight tasks:
+  - the brief's journey and its three tasks;
+  - three findings members filed, one of them major (files that aren't UTF-8 were silently miscounted);
+  - the tester's end-to-end spec of the journey.
+
+  The finish line held, and the team stopped on its own. The planner recorded eight product decisions and kept
+  polish to one round. The reviewer rated the critical path's changes high-risk, each with tests that fail without
+  them. The guard refused agents once (email with no owner set).
+
+- **What got in the way, now changed:**
+  - The approver couldn't approve the brief's own journey, so the whole brief waited for the operator (8 minutes
+    here; hours in a digest). A journey only groups tasks, so it needs no approval or score of its own; each of its
+    tasks is approved as before.
+  - `init` gave a command-line tool an environment, so every merge printed a failed restart. A tool with no app now
+    gets none.
+  - The rules named `CLAUDE.md` though the repository had none.
+  - `--help` on a subcommand was refused.
+  - A title starting with `--` was read as a flag.
+- **Not changed:** the prompts. The planner, builders and reviewer made good calls on their own, and nothing in the
+  run came from a prompt being too strict. Two planner lines that restated what the code enforces are gone.
+
+## T3 Code 0.1.4 (2026-10-29)
+
+T3 Code now delegates to linked machines, runs scheduled tasks and webhooks, gives agents a preview browser and
+devices, and links and watches pull requests. The factory leans on it where that's simpler, and keeps what's its own:
+
+- **Done:**
+  - Members look at pages in T3 Code's browser.
+  - The planner watches its pull request.
+  - T3's tools are allowed by role, from a list.
+  - The factory requires T3 Code 0.1.4 or newer.
+- **Kept, with reasons:**
+  - **Mongo stays the shared graph** for several machines and for a web view where others follow and contribute work
+    (operator, 2026-10-29). Starting workers' builders through `delegate_task`'s `target.environmentId` instead of
+    the workers' watchdog is the next step, to be tried on two machines.
+  - **The watchdog keeps the planner's ticks.** They depend on the planner's state:
+    - none while it's busy;
+    - every 10 minutes when it's quiet;
+    - the idle team woken by new work;
+    - nightly when it's idle or done;
+    - environment and stuck-member notes.
+
+    A T3 scheduled task fires on a timer, and launchd has to stay anyway to watch T3 itself, the outbox and claims.
+
+  - **The adapter keeps reading T3's database** for live threads and running members. `t3 thread … --json` now
+    covers the same fields, but a CLI read that failed for a moment once started a second planner. `e9g doctor`'s
+    contract check catches a schema change first.

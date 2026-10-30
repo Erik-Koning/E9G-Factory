@@ -85,13 +85,14 @@ export function parseArgs(
       options["--"] = argv.slice(i + 1);
       break;
     }
-    if (!arg.startsWith("--")) {
+    // An argument with a space in it is text, never a flag (a title like "--skip-common leaves out common words").
+    if (!arg.startsWith("--") || /\s/.test(arg.split("=")[0] ?? "")) {
       positional.push(arg);
       continue;
     }
     const [key = "", inline] = arg.slice(2).split(/=(.*)/s, 2);
     let value: string | true | undefined = inline;
-    if (value === undefined) value = booleans.includes(key) || i + 1 >= argv.length || argv[i + 1]?.startsWith("--") ? true : (argv[++i] as string);
+    if (value === undefined) value = booleans.includes(key) || i + 1 >= argv.length || /^--\S*$/.test(argv[i + 1] ?? "") ? true : (argv[++i] as string);
     if (repeat.includes(key)) {
       const list = options[key];
       options[key] = [...(Array.isArray(list) ? list : []), String(value)];

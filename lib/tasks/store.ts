@@ -3,7 +3,7 @@
 // Both replace a document only if it's still at the version the writer read, so two members claiming at once can't
 // both win.
 import type { Team } from "../config.ts";
-import type { Cycle, Doc, FeatureRequest, Stakeholder, Task } from "./model.ts";
+import { type Cycle, type Doc, type FeatureRequest, Refused, type Stakeholder, type Task } from "./model.ts";
 
 export interface Collection<T extends Doc> {
   all(): Promise<T[]>;
@@ -27,8 +27,7 @@ export interface Store {
   close(): Promise<void>;
 }
 
-// What a change refuses with; the commands print it as it is.
-export class Refused extends Error {}
+export { Refused } from "./model.ts";
 
 // Applies `change` to the document `id`, reading it again and retrying when someone else changed it first. `change`
 // throws a Refused to stop.
@@ -49,6 +48,13 @@ export async function openStore(team: Pick<Team, "name" | "tasks">, run: string)
     const { mongoStore } = await import("./mongo.ts");
     return mongoStore(team);
   }
+  // A file store whose graph was moved to Mongo is never written again: team.json says where it lives now.
+  const { movedTo } = await import("./migrate.ts");
+  const moved = movedTo(run);
+  if (moved)
+    throw new Refused(
+      `this team's task graph moved to ${moved.to}${moved.at ? ` on ${moved.at.slice(0, 10)}` : ""} (e9g task migrate): set team.json tasks.store to "${moved.to}"`
+    );
   const { fileStore } = await import("./files.ts");
   return fileStore(run, team.name);
 }

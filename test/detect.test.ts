@@ -78,5 +78,18 @@ describe("detect", () => {
     assert.deepEqual(team.board, { type: "tasks" }, "no GitHub remote, so the task graph");
     assert.equal(team.environment.needsDocker, true, "Supabase runs in Docker");
     assert.equal(team.worktreeSetup, "pnpm install --frozen-lockfile --prefer-offline");
+    assert.equal(team.environment.script, ".e9g/adapters/env.sh", "an app gets an environment");
+  });
+
+  test("a library or command-line tool gets no environment and nothing to restart after a merge; a page of HTML does", () => {
+    const cli = tmp("e9g-detect-");
+    write(cli, { "package.json": { name: "tally", bin: { tally: "bin/tally.js" }, scripts: { test: "node --test" } }, "bin/tally.js": "\n" });
+    git(cli, "init", "-q", "-b", "main");
+    git(cli, "add", "-A");
+    const draft = draftTeam(detect(cli), { name: "tally", branch: "e9g/next" });
+    assert.deepEqual([draft.environment?.script, draft.afterMerge], [null, null]);
+    write(cli, { "public/index.html": "<h1>Tally</h1>\n" });
+    git(cli, "add", "-A");
+    assert.equal(draftTeam(detect(cli), { name: "tally", branch: "e9g/next" }).environment?.script, ".e9g/adapters/env.sh");
   });
 });

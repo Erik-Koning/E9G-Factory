@@ -265,9 +265,9 @@ describe("the teams on this machine load as they did before this review", () => 
               approval: null,
               critical: null,
             });
-            // review.maxRounds and viewCheckMinLines are new in 0.4.0.
+            // review.maxRounds is new in 0.4.0.
             function reviewThen(review: unknown) {
-              const { maxRounds: _rounds, viewCheckMinLines: _lines, ...rest } = review as Record<string, unknown>;
+              const { maxRounds: _rounds, ...rest } = review as Record<string, unknown>;
               return raw.review?.removedPattern === undefined ? { ...rest, removedPattern: "the default" } : rest;
             }
             assert.deepEqual(differences(comparable({ ...now }), comparable(then.team)), [], which);

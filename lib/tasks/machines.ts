@@ -1,11 +1,10 @@
 // A team on several machines (team.json tasks: store "mongo" with a lead): the lead, the always-on machine, runs the
 // planner, the reviews and the merge queue; workers run builders and testers that claim from the same task graph.
 // Code moves between them through the team's remote: a worker's claim builds its branch from the remote integration
-// branch, its submit pushes the task's branch, the lead fetches that branch for review and merge, and pushes the
+// branch, its submit pushes the task's branch, the lead reviews and merges the remote's copy of it, and pushes the
 // integration branch after each merge. These run inside the factory's own commands, never as an agent's git command.
 import { spawnSync } from "node:child_process";
 import type { Team } from "../config.ts";
-import { roleForBranch } from "../config.ts";
 import { machineName } from "../machine.ts";
 
 export const multiMachine = (team: Pick<Team, "tasks">): boolean => team.tasks.store === "mongo" && team.tasks.lead !== null;
@@ -42,42 +41,19 @@ function holderOf(cwd: string, branch: string): string | undefined {
 }
 const dirty = (cwd: string): boolean => Boolean(run(cwd, "status", "--porcelain", "--untracked-files=normal").stdout.trim());
 
-// The lead: a team branch a worker pushed, made locally, or moved forward to the remote's tip, so the reviewer and the
-// merge queue see what was submitted. Only a member's branch (one its role's pattern names), never a protected one, and
-// never backwards or sideways. A finished worktree that has it checked out is detached from it first (its files stay).
-// `said` is what happened (null when there was nothing to do, or the team is on one machine); `stale` is true when the
-// branch here couldn't be made the remote's, so what's reviewed or merged here isn't what was submitted.
-export function syncBranch(
+// The ref a member's branch is reviewed and merged from. On a team on several machines that's the remote's copy, where
+// every submit pushes it, fetched now: the lead never keeps its own copies of members' branches, so there's nothing
+// to bring up to date or to hold back. On one machine, the branch itself.
+export function branchRef(
   home: string,
-  team: Pick<Team, "tasks" | "push" | "roles" | "protectedBranches" | "branch">,
+  team: Pick<Team, "tasks" | "push">,
   branch: string
-): { said: string | null; stale: boolean } {
-  const nothing = { said: null, stale: false };
-  if (!multiMachine(team)) return nothing;
-  if (!roleForBranch(team as Team, branch) || team.protectedBranches.includes(branch) || branch === team.branch) return nothing;
+): { ok: true; ref: string; said: string | null } | { ok: false; said: string } {
+  if (!multiMachine(team)) return { ok: true, ref: `refs/heads/${branch}`, said: null };
   const remote = remoteOf(team);
   const tip = fetchRemote(home, remote, branch);
-  if (!tip) return nothing;
-  const local = run(home, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
-  if (local.status === 0) {
-    const mine = local.stdout.trim();
-    if (mine === tip) return nothing;
-    if (run(home, "merge-base", "--is-ancestor", mine, tip).status !== 0)
-      return { said: `${branch} here has commits ${remote}'s doesn't (${mine.slice(0, 9)} vs ${tip.slice(0, 9)}), so it wasn't moved`, stale: true };
-  }
-  const holder = holderOf(home, branch);
-  if (holder) {
-    if (dirty(holder))
-      return {
-        said: `${branch} is checked out at ${holder}, which has uncommitted work, so it wasn't moved to ${remote}'s ${tip.slice(0, 9)}`,
-        stale: true,
-      };
-    run(holder, "switch", "--detach", "--quiet");
-  }
-  const moved = run(home, "update-ref", `refs/heads/${branch}`, tip);
-  return moved.status === 0
-    ? { said: `${branch} is now ${remote}'s ${tip.slice(0, 9)}`, stale: false }
-    : { said: `couldn't update ${branch}: ${said(moved)}`, stale: true };
+  if (!tip) return { ok: false, said: `${branch} isn't on ${remote}: on a team on several machines it's reviewed and merged as the submit pushed it` };
+  return { ok: true, ref: `refs/remotes/${remote}/${branch}`, said: `${remote}/${branch} is at ${tip.slice(0, 9)}` };
 }
 
 // The lead, before a merge: the remote's integration branch has nothing this machine's doesn't (only the lead pushes

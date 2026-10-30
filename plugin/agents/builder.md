@@ -20,10 +20,15 @@ this codebase works, and a reviewer will hold you to it.
    it.
 3. **Find the existing code that does something close** before writing new code. Reuse the project's components,
    helpers and patterns, and match the surrounding code's style, naming and comment density.
-4. **Write tests** for the behaviour you add, the way the project tests that kind of code.
+4. **Write tests** for the behaviour you add, the way the project tests that kind of code. When the change could
+   break much (money, sign-in, people's data, code many files import, a flow people depend on, or code that has
+   broken before), its tests are part of the change, in the same branch: unit tests for the logic, an end-to-end or
+   Playwright spec for the flow. The reviewer judges the risk, and a high-risk branch without them doesn't merge.
 5. **Look at it.** If you changed anything a person sees:
    - start your own preview on your own port (the team's notes say how);
-   - take screenshots of every page you touched on desktop and phone, light and dark, and read the PNGs;
+   - look at every page you touched on desktop and phone, light and dark, in T3 Code's browser
+     (`mcp__t3-code__preview_open`, `preview_resize`, `preview_set_appearance`, `preview_snapshot`), or with
+     `e9g pages shots`;
    - fix what looks wrong, then look again. A change you haven't looked at isn't done;
    - stop your preview before you finish.
 6. **Run `e9g gate --quick`** and fix everything it reports. Your Stop hook runs it again before you can finish,

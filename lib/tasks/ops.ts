@@ -1,5 +1,5 @@
 // What the factory's own processes do to the task graph, besides the commands members run: the merge queue closes
-// what it merged and moves finished journeys to verify, a review that asks for changes sends its task back, the
+// what it merged, a review that asks for changes sends its task back, the
 // heartbeat renews a member's claim and the watchdog returns expired ones, a files board is imported, and the
 // planner's context gets a summary.
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, utimesSync } from "node:fs";
@@ -14,25 +14,24 @@ import {
   KINDS,
   type Kind,
   MERGE,
+  move,
+  moveRefusal,
   nowIso,
   newTask,
   SEVERITIES,
   type Severity,
   type Status,
   type Task,
-  UNAPPROVED,
   WATCHDOG,
-  withEvent,
 } from "./model.ts";
 import type { Team } from "../config.ts";
 import { machineName } from "../machine.ts";
 import { boardDir } from "../paths.ts";
 import { openStore, type Store, update } from "./store.ts";
 
-// The merge queue: each task the merge closes is done, and a journey whose children are all done moves to verify.
-// What it doesn't close is named in `skipped`, with why: a task someone is building (not closed out from under them),
-// a journey (done once verified) and a task never approved (approved before it's built). Ids that aren't tasks are
-// passed over.
+// The merge queue: each task the merge closes is done. What it doesn't close is named in `skipped`, with why (the move
+// table in model.ts): a task someone is building, a journey (done once verified), a task never approved or rejected,
+// and the branch's own task when what merged isn't what it submitted. Ids that aren't tasks are passed over.
 export async function closeMerged(
   store: Store,
   ids: string[],
@@ -40,50 +39,20 @@ export async function closeMerged(
 ): Promise<{ closed: string[]; skipped: string[] }> {
   const closed: string[] = [];
   const skipped: string[] = [];
-  const parents = new Set<string>();
   for (const id of ids) {
     if (!(await store.tasks.get(id))) continue;
+    const all = await store.tasks.all();
+    const ctx = { all, branch, ...(tip ? { tip } : {}) };
     let why: string | null = null;
     const task = await update(store.tasks, id, (t) => {
-      why =
-        t.status === "building"
-          ? `#${t.id} is being built by the ${t.claim?.role ?? "a member"}${t.claim ? ` on ${t.claim.machine}` : ""}`
-          : t.kind === "journey"
-            ? `#${t.id} is a journey, done once it's verified`
-            : UNAPPROVED.includes(t.status)
-              ? `#${t.id} is ${t.status}, never approved`
-              : t.status === "rejected"
-                ? `#${t.id} was rejected`
-                : // The branch's own task is done when what it submitted is what merged.
-                  tip && t.branch === branch && t.sha && t.sha !== tip
-                  ? `#${t.id} was submitted at ${t.sha.slice(0, 9)}, and ${tip.slice(0, 9)} merged`
-                  : null;
+      why = t.status === "done" ? null : moveRefusal(t, "done", "merge", MERGE, ctx);
       if (why || t.status === "done") return t;
-      return withEvent({ ...t, status: "done", sha, branch: t.branch ?? branch, claim: null }, MERGE, `${t.status} → done: merged ${branch} at ${sha}`);
+      return move(t, "done", "merge", MERGE, ctx, { fields: { sha, branch: t.branch ?? branch }, why: `merged ${branch} at ${sha}`, sha });
     });
     if (why) skipped.push(why);
     else closed.push(task.id);
-    if (task.parent) parents.add(task.parent);
   }
-  await moveDueJourneys(store, [...parents]);
   return { closed, skipped };
-}
-
-// Journeys whose tasks are all done or rejected, at least one done, move to verify.
-export async function moveDueJourneys(store: Store, ids: string[], by: Actor = MERGE): Promise<string[]> {
-  const moved: string[] = [];
-  for (const id of ids) {
-    const all = await store.tasks.all();
-    const journey = all.find((t) => t.id === id);
-    if (!journey || !journeyDue(journey, all)) continue;
-    let due = false;
-    await update(store.tasks, id, (t) => {
-      due = journeyDue(t, all);
-      return due ? withEvent({ ...t, status: "verify" }, by, `${t.status} → verify: every task in the journey is done or rejected`) : t;
-    });
-    if (due) moved.push(id);
-  }
-  return moved;
 }
 
 // A review that asks for changes: the task in review goes back to be claimed again on the same branch, one round
@@ -95,23 +64,24 @@ export async function changesRequested(
   { branch, note, maxRounds, by }: { branch: string; note: string; maxRounds: number; by: Actor }
 ): Promise<{ task: Task | null; skipped: string | null }> {
   if (!(await store.tasks.get(id))) return { task: null, skipped: null };
+  const all = await store.tasks.all();
   let skipped: string | null = null;
   const task = await update(store.tasks, id, (t) => {
-    skipped =
-      t.status !== "review"
-        ? `task ${t.id} is ${t.status}, not in review`
-        : t.branch && t.branch !== branch
-          ? `task ${t.id} was submitted on ${t.branch}, not ${branch}`
-          : null;
-    if (skipped) return t;
     const rounds = t.rounds + 1;
-    const blocked = rounds > maxRounds;
-    const to: Status = blocked ? "blocked" : "approved";
+    const to: Status = rounds > maxRounds ? "blocked" : "approved";
+    skipped = moveRefusal(t, to, "changes", by, { all, branch });
+    if (skipped) return t;
     const text = `changes requested (round ${rounds} of ${maxRounds}): ${note}`;
-    return withEvent(
-      { ...t, status: to, rounds, branch, claim: null, notes: [...t.notes, { at: nowIso(), by, text }] },
+    return move(
+      t,
+      to,
+      "changes",
       by,
-      `${t.status} → ${to}: ${blocked ? `more than ${maxRounds} rounds of changes; split it or decide` : text}`
+      { all, branch },
+      {
+        fields: { rounds, branch, notes: [...t.notes, { at: nowIso(), by, text }] },
+        why: to === "blocked" ? `more than ${maxRounds} rounds of changes; split it or decide` : text,
+      }
     );
   });
   return { task, skipped };
@@ -144,8 +114,8 @@ export async function renewClaims(openStore: () => Promise<Store>, run: string, 
   try {
     for (const id of ids) {
       const task = await store.tasks.get(id);
-      if (!task || task.status !== "building" || !heldHere(task.claim, worktree, machine)) continue;
-      const claim = task.claim;
+      const claim = task?.claim;
+      if (!task || !claim || task.status !== "building" || !heldHere(claim, worktree, machine)) continue;
       const written = await store.tasks.replace({ ...task, claim: { ...claim, until: new Date(Date.now() + leaseMin * 60_000).toISOString() } });
       // Changed meanwhile (released, expired, submitted): the next heartbeat looks again.
       if (written) renewed++;
@@ -162,14 +132,10 @@ export async function expireClaims(store: Store, now = Date.now(), run?: string)
   const expired: string[] = [];
   for (const task of await store.tasks.all()) {
     const claim = task.claim;
-    if (task.status !== "building" || !claim || Date.parse(claim.until) > now) continue;
+    if (!claim || moveRefusal(task, "approved", "expire", WATCHDOG, { all: [], now })) continue;
     // Renewed or handed in since it was read: left as it is.
     const written = await store.tasks.replace(
-      withEvent(
-        { ...task, status: "approved", claim: null },
-        WATCHDOG,
-        `building → approved: ${claim.role}@${claim.machine}'s claim ran out without a heartbeat`
-      )
+      move(task, "approved", "expire", WATCHDOG, { all: [], now }, { why: `${claim.role}@${claim.machine}'s claim ran out without a heartbeat` })
     );
     if (!written) continue;
     expired.push(task.id);
@@ -286,7 +252,7 @@ export function summary(
   { now = Date.now(), approval, requests = [] }: { now?: number; approval: string; requests?: FeatureRequest[] }
 ): string {
   const by = (status: Status) => all.filter((t) => t.status === status);
-  const counts = (["triage", "proposed", "researching", "approved", "building", "review", "verify", "question", "blocked"] as Status[])
+  const counts = (["triage", "proposed", "researching", "approved", "building", "review", "question", "blocked"] as Status[])
     .map((s) => [s, by(s).length] as const)
     .filter(([, n]) => n > 0)
     .map(([s, n]) => `${s} ${n}`)
@@ -305,12 +271,12 @@ export function summary(
     );
   const review = by("review");
   if (review.length) parts.push(`Waiting for review: ${review.map((t) => `${line(t)}${t.branch ? ` [${t.branch}]` : ""}`).join("; ")}.`);
-  const verify = by("verify");
-  if (verify.length) parts.push(`Journeys due their verification: ${verify.map(line).join("; ")}.`);
+  const due = all.filter((j) => journeyDue(j, all));
+  if (due.length) parts.push(`Journeys due their verification: ${due.map(line).join("; ")}.`);
   // An approved journey with nothing left open and nothing done never comes due by itself: it needs tasks or an end.
   const OPEN: Status[] = ["triage", "proposed", "researching", "approved", "building", "review", "blocked", "question"];
-  const empty = by("approved").filter(
-    (j) => j.kind === "journey" && !all.some((t) => t.parent === j.id && (OPEN.includes(t.status) || t.status === "done"))
+  const empty = all.filter(
+    (j) => j.kind === "journey" && OPEN.includes(j.status) && !all.some((t) => t.parent === j.id && (OPEN.includes(t.status) || t.status === "done"))
   );
   if (empty.length) parts.push(`Journeys with no tasks left (add tasks or reject them): ${empty.map(line).join("; ")}.`);
   const fresh = requests.filter((r) => r.status === "new");
@@ -321,7 +287,8 @@ export function summary(
         .map((r) => `${r.id} ${r.title.slice(0, 50)}`)
         .join("; ")}${fresh.length > 8 ? ` and ${fresh.length - 8} more` : ""} (e9g request list).`
     );
-  const proposed = [...by("proposed"), ...by("researching")];
+  // Journeys only group tasks: nobody approves one.
+  const proposed = [...by("proposed"), ...by("researching")].filter((t) => t.kind !== "journey");
   if (proposed.length)
     parts.push(
       `${approval === "operator" ? "Proposals waiting for the operator" : "Proposals for the approver"}: ${proposed.length} (${proposed

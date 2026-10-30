@@ -15,7 +15,7 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { normalize, TEAM_NAME } from "../config.ts";
-import { detect, draftTeam } from "../detect.ts";
+import { detect, draftTeam, hasApp } from "../detect.ts";
 import { FACTORY_ROOT, PACKAGE, versionDir } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
 import * as t3 from "../t3.ts";
@@ -64,7 +64,8 @@ export function init(argv: string[]): number {
   const port = 9300 + (Number.parseInt(hash(name), 16) % 90);
   const draft = draftTeam(found, { name, branch, owner: optionText(options["owner"]) });
   draft.base = base;
-  draft.environment = { ...draft.environment, health: [`http://localhost:${port}/`] };
+  const app = hasApp(found);
+  if (app) draft.environment = { ...draft.environment, health: [`http://localhost:${port}/`] };
   // Refuse a draft that couldn't load (a protected integration branch, a bad owner) before making anything.
   const { problems: draftProblems } = normalize(draft, repo);
   if (draftProblems.length) die(`the team can't be set up like that:\n  - ${draftProblems.join("\n  - ")}`);
@@ -133,7 +134,9 @@ export function init(argv: string[]): number {
   write(
     "notes.md",
     fill("notes.md", {
-      ENVIRONMENT: `The app runs on http://localhost:${port}/ (.e9g/adapters/env.sh).`,
+      ENVIRONMENT: app
+        ? `The app runs on http://localhost:${port}/ (.e9g/adapters/env.sh).`
+        : "No app was found to run (no UI, no dev or start script, no HTML), so team.json names no environment and no after-merge step. If there is one, fill in .e9g/adapters/env.sh and set environment.script, its health URL and afterMerge.",
       COMMANDS: Object.keys(found.scripts).length
         ? Object.entries(found.scripts)
             .map(([script, command]) => `- \`${runner} ${script}\`: \`${command}\``)
@@ -156,6 +159,7 @@ export function init(argv: string[]): number {
     }),
     0o755
   );
+  // Written either way, ready to fill in: team.json names them only when there's an app to run.
   write(
     "adapters/env.sh",
     fill("adapters/env.sh", {

@@ -3,7 +3,7 @@
 # touches the real T3 Code.
 echo "t3 $*" >> "${FAKE_T3_LOG:-/dev/null}"
 case "$1 $2" in
-  "--version "*) echo "t3 v${FAKE_T3_VERSION:-0.1.2}" ;;
+  "--version "*) echo "t3 v${FAKE_T3_VERSION:-0.1.4}" ;;
   "thread show") cat "${FAKE_T3_SHOW:-/dev/null}"; exit "${FAKE_T3_SHOW_CODE:-0}" ;;
   "thread start") echo '{"threadId":"mcp:new-planner"}' ;;
   "thread send") exit 0 ;;

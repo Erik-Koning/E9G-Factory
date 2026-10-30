@@ -145,8 +145,8 @@ journey, columns by dependency) to open with `npx @mosphere/better-diagrams`.
  members ─ e9g task add (findings) ─▶ triage ─ planner ──────────────────▶ proposed
                                                   approver, or you (team.json approval) ▼
                                        approved ─ e9g task claim ─▶ building ─ e9g task submit ─▶ review
-                                                  reviewer (the review skill) ─▶ merge queue ─▶ done
-                                                  a journey's last task done ─▶ verify ─ polish ─▶ done
+                                                  reviewer (the review skill, a risk) ─▶ merge queue ─▶ done
+                                                  a journey's tasks all done: due its verification ─ polish ─▶ done
 ```
 
 - **Proposals.** The planner passes new work through a gate (who asked and why, what could be deleted or simplified
@@ -154,20 +154,24 @@ journey, columns by dependency) to open with `npx @mosphere/better-diagrams`.
   risk, with a confidence and a size. The command computes the priority from your weights (`priorities`).
 - **Approval.** The planner never approves its own proposals. With `approval.mode` `"thresholds"` (the default, when
   the team has an approver; without one, every approval is yours) the approver approves work up to
-  `approval.maxSize` and escalates larger work and new journeys to you; `"operator"` keeps
+  `approval.maxSize` and escalates larger work and changes of scope to you; `"operator"` keeps
   every approval yours; `"full"` gives the approver all of it, scope included. Privacy, policy unlocks, promotion and
-  rule changes stay yours whatever the mode.
+  rule changes stay yours whatever the mode. The bug, UX and test findings other members file are the planner's to
+  approve (`approval.findings`, `"approver"` to send them with the proposals), since they aren't its own. Every move
+  of a task, by whom and from where, is one table in `lib/tasks/model.ts`.
 - **Claims.** Builders and testers claim the next approved task their role builds (blockers, then majors, then
   priority), never two on the same files, under a lease their heartbeats renew; the watchdog returns a claim whose
   member went quiet. The Stop hook won't let a member finish holding one: it submits or releases it.
 - **Review.** The reviewer follows the review skill (`plugin/skills/review/`): the change's blast radius
   (`e9g blast`: importers, files that usually change with it, their tests, UI, critical paths), goals, edge cases,
-  tangential code, tests that fail without the change, and a before-and-after look at every affected page. A UI change
-  beyond a few lines is approved only with the screenshots the reviewer read. Changes send the task back, up to
-  `review.maxRounds` rounds.
-- **Journeys.** A journey is a task with child tasks. When its last child merges it's due its verification: a UX
-  audit at every viewport, an end-to-end spec of the whole journey, then polish.
-- **Feature requests.** `e9g request add` takes a stakeholder's request; `e9g serve` gives them a form. Agents see a
+  tangential code, tests that fail without the change, and a before-and-after look at anything a person sees, which
+  the reviewer judges is due. It says how much the change could break with its approval (`--risk`), and a high-risk
+  change merges only with its own tests, in the same branch. Changes send the task back, up to `review.maxRounds`
+  rounds.
+- **Journeys.** A journey is a task with child tasks. When its children are all done it's due its verification (worked
+  out from them, never stored): a UX audit at every viewport, an end-to-end spec of the whole journey, then polish,
+  which is more tasks in it. The planner marks it done.
+- **Feature requests.** `e9g request add` takes a stakeholder's request; `e9g serve` gives each a form. Agents see a
   stakeholder's id and role, never a name or address. The planner researches each request and promotes it into tasks
   (`e9g task add --request`) or rejects it with a reason.
 - **Cycles.** With `"mode": "cycles"` a team has no finish line: it builds, verifies journeys, sweeps for regressions
@@ -176,8 +180,10 @@ journey, columns by dependency) to open with `npx @mosphere/better-diagrams`.
 `e9g serve` is your page for one team, on the machine it runs on: the request form, the proposals to approve or
 reject, the board and the graph. It listens on 127.0.0.1 and always asks for a token, so the team's own agents on
 this machine can't use it: one made at start and printed in the address to open, or yours in `E9G_SERVE_TOKEN`.
-Whoever has the token can approve work and see stakeholders' names, so share the form with stakeholders through
-someone who does, rather than the token itself.
+That token is yours alone: it approves work and shows stakeholders' names. Give a stakeholder a link of their own
+with `e9g request stakeholders add --name "…" --email "…" --role "…"`: it opens only the request form and their own
+requests, and what they send is attributed to them; `e9g request stakeholders revoke <sN>` ends it. For people on
+other machines, serve on an address they can reach (`--host`).
 
 ### Across machines
 
@@ -188,7 +194,9 @@ running as you can read your Keychain, so give the factory a database user that 
 database. The lead, an always-on machine, runs the planner, the approver, the reviews and the merge queue, and pushes
 the integration branch after each merge; `e9g merge` refuses anywhere else, and refuses while the remote's integration
 branch has commits the lead's doesn't (only the lead pushes it). A merge whose push fails leaves its tasks open until
-one pushes. Other machines run `e9g register --worker`: builders and testers only, started by their watchdog while
+one pushes. Name exactly one lead, and change `tasks.lead` before you move it: two leads would both merge. Other
+machines run `e9g register --worker`: builders only (testers test on the lead, where the environment runs), started
+by their watchdog while
 approved work is free. A worker's claim makes its branch from the remote, and its submit pushes it for the lead to
 review and merge.
 
@@ -198,6 +206,8 @@ On a team on several machines:
 - **Builders on a worker** use their own previews: the team's shared environment runs on the lead (only the planner
   starts it).
 - **After changing `tasks` in `team.json`,** run `e9g register` again on each machine, as for `contact`.
+- **A team that started on one machine** moves its graph with `e9g task migrate --to mongo` (`--dry-run` first): every
+  task, request, stakeholder and cycle keeps its id, and the file store is marked so nothing writes to it again.
 
 ## The two places you edit
 
@@ -248,7 +258,7 @@ T3 Code is a dependency, not a fork:
 
 - Everything that depends on its internals is in one file, `lib/t3.ts`: its data paths, the tables and columns
   the factory reads, the CLI commands it runs, the settings it writes, and the planner's tool names.
-- `package.json` declares the T3 Code versions this release supports (`"e9g": {"t3code": ">=0.1.2 <0.2.0"}`), and
+- `package.json` declares the T3 Code versions this release supports (`"e9g": {"t3code": ">=0.1.4 <0.2.0"}`), and
   the Claude Code versions it's tested with.
 - `e9g doctor` and `e9g register` check the installed T3 Code against that range and against what the adapter
   reads (its contract).

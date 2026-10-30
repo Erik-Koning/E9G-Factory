@@ -49,14 +49,17 @@ describe("the review of the engine fixes", { concurrency: 4 }, () => {
     commit(home, { "src/x.ts": "export const x = 1;\n" });
     git(home, "checkout", "-q", "e9g/next");
     for (const name of ["e9g/b1-x", "HEAD", "refs/heads/e9g/b1-x"]) {
-      const result = await e9g(["verdict", "review", "e9g/b1-x", "approve", "--sha", name, "--note", "ok"], as(home, "reviewer"));
+      const result = await e9g(["verdict", "review", "e9g/b1-x", "approve", "--sha", name, "--risk", "low", "--note", "ok"], as(home, "reviewer"));
       assert.equal(result.code, 2, `${name}: ${result.out}`);
       assert.match(result.out, /takes the id of the commit you judged/);
     }
     const ux = await e9g(["verdict", "ux", "landing", "pass", "--ref", "e9g/next"], as(home, "ux-specialist"));
     assert.equal(ux.code, 2, ux.out);
     const sha = git(home, "rev-parse", "e9g/b1-x");
-    assert.equal((await e9g(["verdict", "review", "e9g/b1-x", "approve", "--sha", sha.slice(0, 12), "--note", "ok"], as(home, "reviewer"))).code, 0);
+    assert.equal(
+      (await e9g(["verdict", "review", "e9g/b1-x", "approve", "--sha", sha.slice(0, 12), "--risk", "low", "--note", "ok"], as(home, "reviewer"))).code,
+      0
+    );
   });
 
   test("5: rotate refuses a planner that is waiting for an answer", async () => {
@@ -110,7 +113,10 @@ describe("the review of the engine fixes", { concurrency: 4 }, () => {
     git(home, "checkout", "-q", "-b", "e9g/b1-x");
     const approved = commit(home, { "src/x.ts": "reviewed\n" });
     git(home, "checkout", "-q", "e9g/next");
-    assert.equal((await e9g(["verdict", "review", "e9g/b1-x", "approve", "--sha", approved, "--note", "ok"], as(home, "reviewer"))).code, 0);
+    assert.equal(
+      (await e9g(["verdict", "review", "e9g/b1-x", "approve", "--sha", approved, "--risk", "low", "--note", "ok"], as(home, "reviewer"))).code,
+      0
+    );
     git(home, "branch", "-D", "e9g/b1-x");
     git(home, "checkout", "-q", "-b", "e9g/b1-x", "e9g/next");
     commit(home, { "src/x.ts": "something else\n" });

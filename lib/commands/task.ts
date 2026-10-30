@@ -18,8 +18,11 @@ import {
   heldHere,
   DIMENSIONS,
   type Dimension,
+  journeyDue,
   KINDS,
   type Kind,
+  move,
+  moveRefusal,
   newTask,
   nextClaim,
   nowIso,
@@ -34,12 +37,12 @@ import {
   statusRefusal,
   type Task,
   ticketOf,
-  UNAPPROVED,
+  type Via,
   withEvent,
 } from "../tasks/model.ts";
 import { blastRadius } from "../blast.ts";
-import { isLead, multiMachine, prepareBranch, pushTaskBranch, remoteOf, syncBranch } from "../tasks/machines.ts";
-import { claimMark, importBoard, leaseMinutes, markClaim, moveDueJourneys, openTeamStore } from "../tasks/ops.ts";
+import { branchRef, isLead, multiMachine, prepareBranch, pushTaskBranch, remoteOf } from "../tasks/machines.ts";
+import { claimMark, importBoard, leaseMinutes, markClaim, openTeamStore } from "../tasks/ops.ts";
 import { openStore, Refused, type Store, update } from "../tasks/store.ts";
 import { git, gitOk, list, type Options, parseArgs, text as optionText } from "../util.ts";
 
@@ -53,7 +56,8 @@ export const USAGE = `usage: e9g task <command>
              --confidence hunch|asks|data --size S|M|L|XL --why "…" [--asked "…" --simplify "…" --simplest "…"]
   status <id> <status> [--reason "…"]   ·   import
   approve <id> [--note "…"]   ·   reject <id> --reason "…"   ·   research <id> --note "…"   ·   escalate <id> --reason "…"
-  claim [<id>] [--kind k]   ·   release <id> [--blocked "…"]   ·   submit <id>   ·   fetch <id> (a worker's branch, on the lead)`;
+  claim [<id>] [--kind k]   ·   release <id> [--blocked "…"]   ·   submit <id>   ·   fetch <id> (a worker's branch, on the lead)
+  migrate --to mongo|files [--dry-run]   (yours: the whole graph into the other store)`;
 
 // Who's acting: the member's role (its instance's E9G_ROLE), or the operator when a person runs it.
 const actor = (): string => (inTeam() ? process.env.E9G_ROLE || "unknown" : OPERATOR);
@@ -115,9 +119,10 @@ const oneOf = <T extends string>(value: string | undefined, values: readonly T[]
 // --- Showing tasks ----------------------------------------------------------------------------------------------
 
 const pad = (text: string, n: number) => (text.length >= n ? text : `${text}${" ".repeat(n - text.length)}`);
-export function line(t: Task): string {
+export function line(t: Task, all: Task[] = []): string {
   const claim = t.claim ? ` [${t.claim.role}@${t.claim.machine}]` : "";
-  return `#${pad(t.id, 4)} ${pad(t.status, 11)} ${pad(t.kind, 10)} ${pad(t.severity ?? "", 7)} ${pad(t.priority === null ? "" : `p${t.priority}`, 4)} ${t.title}${claim}`;
+  const due = journeyDue(t, all) ? " (due its verification)" : "";
+  return `#${pad(t.id, 4)} ${pad(t.status, 11)} ${pad(t.kind, 10)} ${pad(t.severity ?? "", 7)} ${pad(t.priority === null ? "" : `p${t.priority}`, 4)} ${t.title}${claim}${due}`;
 }
 
 export function detail(t: Task): string {
@@ -190,26 +195,29 @@ const add: Handler = async ({ team, store, who }, positional, options) => {
   const task = await store.tasks.create(fields);
   if (request)
     await update(store.requests, request, (r) =>
-      withEvent({ ...r, status: "promoted", tasks: [...new Set([...r.tasks, task.id])] }, who, `${r.status} → promoted: task ${task.id}`)
+      withEvent({ ...r, status: "promoted", tasks: [...new Set([...r.tasks, task.id])] }, who, `${r.status} → promoted: task ${task.id}`, {
+        from: r.status,
+        to: "promoted",
+      })
     );
   console.info(`task ${task.id} added (${task.status}): ${task.title}`);
   return 0;
 };
 
 const listTasks: Handler = async ({ store, who }, _positional, options) => {
-  let all = await store.tasks.all();
+  const everything = await store.tasks.all();
+  let all = everything;
   const statuses = commaList(options["status"]);
   if (statuses.length) all = all.filter((t) => statuses.includes(t.status));
   else if (!options["all"]) all = all.filter((t) => t.status !== "done" && t.status !== "rejected");
   const kind = optionText(options["kind"]);
   if (kind) all = all.filter((t) => t.kind === kind);
   if (options["claimable"]) {
-    const everything = await store.tasks.all();
     const role = CLAIMS[who] ? who : "builder";
     all = all.filter((t) => claimRefusal(t, role, everything) === null);
   }
   if (options["json"]) console.info(JSON.stringify(all, null, 2));
-  else console.info(all.length ? all.map(line).join("\n") : "no tasks");
+  else console.info(all.length ? all.map((t) => line(t, everything)).join("\n") : "no tasks");
   return 0;
 };
 
@@ -270,15 +278,12 @@ const edit: Handler = async ({ store, who }, [id], options) => {
   const moved = await update(store.tasks, task.id, (t) => {
     if (substance.length && ["building", "review"].includes(t.status))
       throw new Refused(`task ${t.id} is ${t.status}: its ${substance.join(", ")} stay as claimed; add a note (e9g task note) or move it back first`);
-    const back = substance.length > 0 && t.approval !== null;
-    return withEvent(
-      { ...t, ...changes, ...(back ? { approval: null, ...(t.status === "approved" ? { status: "proposed" as const } : {}) } : {}) },
-      who,
-      `edited ${Object.keys(changes).join(", ")}${back ? `; ${t.status === "approved" ? "approved → proposed" : "approval cleared"}, to be approved again` : ""}`
-    );
+    const edited = `edited ${Object.keys(changes).join(", ")}`;
+    if (!substance.length || t.approval === null) return withEvent({ ...t, ...changes }, who, edited);
+    // An approved task goes back among the proposals (a move, by the table); a blocked or questioned one keeps its status.
+    if (t.status === "approved") return move(t, "proposed", "status", who, { all }, { fields: changes, why: `${edited}, to be approved again` });
+    return withEvent({ ...t, ...changes, approval: null }, who, `${edited}; approval cleared, to be approved again`);
   });
-  // Its old journey may have lost its last open task.
-  if (task.parent && "parent" in changes) await moveDueJourneys(store, [task.parent], who);
   console.info(
     `task ${task.id}: edited ${Object.keys(changes).join(", ")}${moved.approval === null && task.approval !== null ? " (to be approved again)" : ""}`
   );
@@ -305,20 +310,20 @@ const score: Handler = async ({ team, store, who }, [id], options) => {
   if (given && given < 3) throw new Refused("the gate is all three: --asked, --simplify and --simplest");
   const gate = asked && simplify && simplest ? { asked, simplify, simplest } : task.gate;
   // Before new work is scored: who asked and why, what could go instead, and the simplest version (the score is for that).
-  if (!gate && ["feature", "journey"].includes(task.kind))
+  if (!gate && task.kind === "feature")
     throw new Refused(
       'new work passes the gate first: --asked "who asked, and why" --simplify "what could be deleted or simplified instead" --simplest "the simplest version that gets the outcome"'
     );
   const scored: Score = { ...values, confidence, size, why };
   const priority = priorityOf(scored, team.priorities.weights);
   // An approval is for the task as it was scored: a new score sends an approved task back for approving.
+  const all = await store.tasks.all();
   const moved = await update(store.tasks, task.id, (t) => {
-    const back = t.status === "approved" && t.approval !== null;
-    return withEvent(
-      { ...t, gate, score: scored, priority, approval: null, ...(back ? { status: "proposed" as const } : {}) },
-      who,
-      `scored: priority ${priority} (size ${size}, ${confidence})${back ? "; approved → proposed, to be approved again" : ""}`
-    );
+    const fields = { gate, score: scored, priority, approval: null };
+    const said = `scored: priority ${priority} (size ${size}, ${confidence})`;
+    return t.status === "approved"
+      ? move(t, "proposed", "status", who, { all }, { fields, why: `${said}, to be approved again` })
+      : withEvent({ ...t, ...fields }, who, said);
   });
   console.info(
     `task ${task.id}: priority ${priority}${moved.status === "proposed" && task.status === "approved" ? " (back to proposed, for approving again)" : ""}`
@@ -330,89 +335,51 @@ const setStatus: Handler = async ({ store, who }, [id, to], options) => {
   const target = oneOf(to, STATUSES, "the status");
   if (!target) throw new Refused(`which status? ${STATUSES.join(", ")}`);
   const task = await getTask(store, id);
-  const refusal = statusRefusal(task, target, who);
+  const all = await store.tasks.all();
+  const refusal = statusRefusal(task, target, who, all);
   if (refusal) throw new Refused(refusal);
   const reason = optionText(options["reason"]);
-  const moved = await update(store.tasks, task.id, (t) => {
-    const again = statusRefusal(t, target, who);
-    if (again) throw new Refused(again);
-    const notes = reason ? [...t.notes, { at: nowIso(), by: who, text: `${t.status} → ${target}: ${reason}` }] : t.notes;
-    // Back among the proposals, it needs approving again: an approval is for the task as it was.
-    const approval = UNAPPROVED.includes(target) ? null : t.approval;
-    return withEvent({ ...t, status: target, notes, approval, claim: null }, who, `${t.status} → ${target}${reason ? `: ${reason}` : ""}`);
-  });
-  // The last open task of a journey done or rejected, or a journey back to approved: the journey may be due its verification.
-  if (moved.parent && (target === "done" || target === "rejected")) await moveDueJourneys(store, [moved.parent], who);
-  if (moved.kind === "journey" && target === "approved") await moveDueJourneys(store, [moved.id], who);
+  await update(store.tasks, task.id, (t) =>
+    move(
+      t,
+      target,
+      "status",
+      who,
+      { all },
+      { fields: reason ? { notes: [...t.notes, { at: nowIso(), by: who, text: `${t.status} → ${target}: ${reason}` }] } : {}, why: reason }
+    )
+  );
   console.info(`task ${task.id}: ${task.status} → ${target}`);
   return 0;
 };
 
-// The approver's and the operator's verdicts on a proposal. The approver judges proposals only; a task it sent for
-// research comes back as a proposal once the planner has done it.
-const fromFor = (who: string, also: Status[]): Status[] => (who === OPERATOR ? ["proposed", "researching", "question", ...also] : ["proposed"]);
-const approverMay = (team: Team, who: string): void => {
-  if (who !== OPERATOR && team.approval.mode === "operator")
-    throw new Refused("this team's proposals are decided by the operator (team.json approval.mode); there's nothing for the approver to do");
-};
-
+// The verdicts on a proposal: the approver's and the operator's, and the planner's on a finding another member filed.
+// Who may give which, from where, is the move table's (lib/tasks/model.ts); each is checked again as it's written.
 const approve: Handler = async ({ team, store, who }, [id], options) => {
-  need(who, ["approver"], "approving a proposal");
-  approverMay(team, who);
   const text = optionText(options["note"]) ?? "";
-  const all = await store.tasks.all();
-  // Checked on the task as it is when it's written, not only as it was first read.
-  const check = (t: Task): void => {
-    if (!fromFor(who, ["triage", "blocked"]).includes(t.status)) throw new Refused(`task ${t.id} is ${t.status}; only a proposal is approved`);
-    if (!t.score && (["feature", "journey"].includes(t.kind) || !t.severity))
-      throw new Refused(`task ${t.id} isn't scored yet; the planner scores it first (e9g task score)`);
-    // A journey's tasks are approved with or after the journey, so it's due its verification when they're done.
-    const parent = t.parent ? all.find((p) => p.id === t.parent) : undefined;
-    if (who !== OPERATOR && parent && !parent.approval)
-      throw new Refused(`task ${t.id} belongs to journey ${parent.id}, which isn't approved yet; it's decided first (e9g task approve ${parent.id})`);
-    if (who !== OPERATOR && team.approval.mode === "thresholds") {
-      const over = t.score && SIZES[t.score.size] > SIZES[team.approval.maxSize];
-      if (t.kind === "journey" || over)
-        throw new Refused(
-          `${t.kind === "journey" ? "a new journey" : `size ${t.score?.size}, over this team's ${team.approval.maxSize}`} is the operator's to approve (team.json approval): e9g task escalate ${t.id} --reason "…"`
-        );
-    }
-  };
-  check(await getTask(store, id));
-  const task = await update(store.tasks, (await getTask(store, id)).id, (t) => {
-    check(t);
-    return withEvent(
-      { ...t, status: "approved", approval: { by: who, at: nowIso(), note: text } },
-      who,
-      `${t.status} → approved${text ? `: ${text}` : ""}`
-    );
-  });
-  // A journey approved after its tasks were done is due its verification now.
-  if (task.kind === "journey") await moveDueJourneys(store, [task.id], who);
+  const task = await getTask(store, id);
+  const ctx = { all: await store.tasks.all(), approval: team.approval };
+  const refusal = moveRefusal(task, "approved", "approve", who, ctx);
+  if (refusal) throw new Refused(refusal);
+  await update(store.tasks, task.id, (t) =>
+    move(t, "approved", "approve", who, ctx, { fields: { approval: { by: who, at: nowIso(), note: text } }, why: text || undefined })
+  );
   console.info(`task ${task.id}: approved`);
   return 0;
 };
 
 const proposalVerdict =
-  (to: Status, flag: "reason" | "note", verb: string): Handler =>
+  (to: Status, via: Via, flag: "reason" | "note"): Handler =>
   async ({ team, store, who }, [id], options) => {
-    need(who, ["approver"], `${verb} a proposal`);
-    approverMay(team, who);
+    const task = await getTask(store, id);
+    const ctx = { all: await store.tasks.all(), approval: team.approval };
+    const refusal = moveRefusal(task, to, via, who, ctx);
+    if (refusal) throw new Refused(refusal);
     const reason = optionText(options[flag]);
     if (!reason) throw new Refused(`say why: --${flag} "…"`);
-    const check = (t: Task): void => {
-      if (!fromFor(who, ["triage"]).includes(t.status)) throw new Refused(`task ${t.id} is ${t.status}; only a proposal is ${verb}`);
-    };
-    check(await getTask(store, id));
-    const task = await update(store.tasks, (await getTask(store, id)).id, (t) => {
-      check(t);
-      return withEvent(
-        { ...t, status: to, approval: UNAPPROVED.includes(to) ? null : t.approval, notes: [...t.notes, { at: nowIso(), by: who, text: reason }] },
-        who,
-        `${t.status} → ${to}: ${reason}`
-      );
-    });
-    if (task.parent && to === "rejected") await moveDueJourneys(store, [task.parent], who);
+    await update(store.tasks, task.id, (t) =>
+      move(t, to, via, who, ctx, { fields: { notes: [...t.notes, { at: nowIso(), by: who, text: reason }] }, why: reason })
+    );
     console.info(`task ${task.id}: ${to}`);
     return 0;
   };
@@ -459,7 +426,7 @@ const claim: Handler = async ({ home, team, run, store, who }, [id], options) =>
     const at = new Date();
     const lease = new Date(at.getTime() + leaseMin(team) * 60_000);
     const mine = { role: who, machine: machineName(), worktree, at: at.toISOString(), until: lease.toISOString() };
-    const written = await store.tasks.replace(withEvent({ ...target, status: "building", claim: mine }, `${who}@${mine.machine}`, "approved → building"));
+    const written = await store.tasks.replace(move(target, "building", "claim", who, { all }, { fields: { claim: mine }, by: `${who}@${mine.machine}` }));
     if (!written) continue;
     // Two claims on overlapping files at once: whoever sees the other after writing gives way (both may, and try
     // again after a pause), so two members never build on the same files.
@@ -469,10 +436,13 @@ const claim: Handler = async ({ home, team, run, store, who }, [id], options) =>
     );
     if (clash) {
       await store.tasks.replace(
-        withEvent(
-          { ...written, status: "approved", claim: null },
-          `${who}@${mine.machine}`,
-          `building → approved: #${clash.id} is being built on the same files`
+        move(
+          written,
+          "approved",
+          "release",
+          who,
+          { all, machine: mine.machine, worktree },
+          { by: `${who}@${mine.machine}`, why: `#${clash.id} is being built on the same files` }
         )
       );
       await new Promise((done) => setTimeout(done, 50 + Math.random() * 250));
@@ -512,26 +482,20 @@ const claim: Handler = async ({ home, team, run, store, who }, [id], options) =>
 const release: Handler = async ({ run, store, who }, [id], options) => {
   const blocked = optionText(options["blocked"]);
   const to: Status = blocked ? "blocked" : "approved";
-  const here = toplevelOrNull();
-  // The claimant hands it back; the planner may free one whose member is gone. Checked again as it's written.
-  const check = (t: Task): string => {
-    if (t.status !== "building" || !t.claim) throw new Refused(`task ${t.id} isn't claimed (${t.status})`);
-    const claimant = Boolean(CLAIMS[who]) && heldHere(t.claim, here, machineName());
-    if (!claimant && !may(who, ["planner"])) throw new Refused(`task ${t.id} is claimed by the ${t.claim.role} on ${t.claim.machine}, not you`);
-    return t.claim.worktree;
-  };
+  // The claimant hands it back; the planner may free one whose member is gone (the move table).
+  const ctx = { all: [], machine: machineName(), worktree: toplevelOrNull() };
   const task = await getTask(store, id);
-  check(task);
+  const refusal = moveRefusal(task, to, "release", who, ctx);
+  if (refusal) throw new Refused(refusal);
   let worktree = "";
   await update(store.tasks, task.id, (t) => {
-    worktree = check(t);
-    return withEvent(
-      { ...t, status: to, claim: null, notes: blocked ? [...t.notes, { at: nowIso(), by: who, text: `blocked: ${blocked}` }] : t.notes },
-      who,
-      `building → ${to}${blocked ? `: ${blocked}` : ""}`
-    );
+    worktree = t.claim?.worktree ?? "";
+    return move(t, to, "release", who, ctx, {
+      fields: blocked ? { notes: [...t.notes, { at: nowIso(), by: who, text: `blocked: ${blocked}` }] } : {},
+      why: blocked,
+    });
   });
-  rmSync(claimMark(run, worktree), { force: true });
+  if (worktree) rmSync(claimMark(run, worktree), { force: true });
   console.info(`task ${task.id}: ${to}`);
   return 0;
 };
@@ -546,12 +510,10 @@ const toplevelOrNull = (): string | null => {
 const submit: Handler = async ({ team, run, store, who }, [id]) => {
   if (!CLAIMS[who]) throw new Refused(`builders and testers submit what they built; you're the ${who}`);
   const worktree = toplevel();
-  const mine = (t: Task): void => {
-    if (t.status !== "building" || !heldHere(t.claim, worktree, machineName()))
-      throw new Refused(`task ${t.id} isn't claimed from this worktree (${t.status}${t.claim ? `, the ${t.claim.role} on ${t.claim.machine}` : ""})`);
-  };
+  const ctx = { all: [], machine: machineName(), worktree };
   const task = await getTask(store, id);
-  mine(task);
+  const refusal = moveRefusal(task, "review", "submit", who, ctx);
+  if (refusal) throw new Refused(refusal);
   const branch = git(worktree, "rev-parse", "--abbrev-ref", "HEAD");
   const pattern = team.roles[who]?.branch;
   if (pattern && !new RegExp(pattern).test(branch))
@@ -577,20 +539,20 @@ const submit: Handler = async ({ team, run, store, who }, [id]) => {
     const problem = pushTaskBranch(worktree, team, branch);
     if (problem) throw new Refused(`${problem}; the task stays yours, try again`);
   }
-  await update(store.tasks, task.id, (t) => {
-    mine(t);
-    return withEvent(
-      { ...t, status: "review", branch, sha, claim: null, ...touches },
-      `${who}@${machineName()}`,
-      `building → review: ${branch} at ${sha.slice(0, 9)}`
-    );
-  });
+  await update(store.tasks, task.id, (t) =>
+    move(t, "review", "submit", who, ctx, {
+      fields: { branch, sha, ...touches },
+      by: `${who}@${machineName()}`,
+      why: `${branch} at ${sha.slice(0, 9)}`,
+      sha,
+    })
+  );
   rmSync(claimMark(run, worktree), { force: true });
   console.info(`task ${task.id}: submitted ${branch} at ${sha.slice(0, 9)}; the planner has it reviewed and merged.`);
   return 0;
 };
 
-// The lead: a task's branch as a worker pushed it, before its review.
+// The lead: a task's branch as its submit pushed it, fetched for review, and the commit to review.
 const fetchBranch: Handler = async ({ home, team, store, who }, [id]) => {
   if (!may(who, ["planner", "reviewer"])) throw new Refused("the planner and the reviewer fetch a task's branch");
   const task = await getTask(store, id);
@@ -599,9 +561,13 @@ const fetchBranch: Handler = async ({ home, team, store, who }, [id]) => {
     console.info(`task ${task.id}: ${task.branch} is on this machine (the team runs on one)`);
     return 0;
   }
-  const synced = syncBranch(home, team, task.branch);
-  console.info(`task ${task.id}: ${synced.said ?? `${task.branch} is up to date`}`);
-  return synced.stale ? 2 : 0;
+  const from = branchRef(home, team, task.branch);
+  if (!from.ok) throw new Refused(from.said);
+  const tip = git(home, "rev-parse", from.ref);
+  console.info(
+    `task ${task.id}: review ${from.ref.replace("refs/remotes/", "")} at ${tip}${task.sha && task.sha !== tip ? ` (it was submitted at ${task.sha.slice(0, 9)}; review what's there now)` : ""}`
+  );
+  return 0;
 };
 
 const graph: Handler = async ({ home, team, run, store, who }, _positional, options) => {
@@ -623,6 +589,45 @@ const importTasks: Handler = async ({ home, run, team, store, who }) => {
   return 0;
 };
 
+// The operator's: the whole graph into the other store (lib/tasks/migrate.ts). The file store moved from is marked,
+// so it's never written again; team.json, which commands never edit, is the operator's to change after.
+const migrateTasks: Handler = async ({ team, run, store, who }, _positional, options) => {
+  if (who !== OPERATOR) throw new Refused("moving the task graph is the operator's");
+  const to = oneOf(optionText(options["to"]), ["mongo", "files"] as const, "--to");
+  if (!to) throw new Refused("which store? --to mongo or --to files");
+  if (to === store.kind) throw new Refused(`this team's task graph is in ${to} already (team.json tasks.store)`);
+  const { countsOf, markMoved, migrate, movedMark } = await import("../tasks/migrate.ts");
+  const target =
+    to === "mongo"
+      ? await (await import("../tasks/mongo.ts")).mongoStore({ name: team.name, tasks: { ...team.tasks, store: "mongo" } })
+      : (await import("../tasks/files.ts")).fileStore(run, team.name);
+  const said = (counts: Record<string, number>) =>
+    Object.entries(counts)
+      .map(([name, n]) => `${n} ${name}`)
+      .join(", ");
+  try {
+    if (options["dry-run"]) {
+      console.info(`would copy ${said(await countsOf(store))} from ${store.kind} to ${to}; ${to} has ${said(await countsOf(target))} of this team's now`);
+      return 0;
+    }
+    const copied = await migrate(store, target);
+    if (store.kind === "files") markMoved(run, to);
+    else rmSync(movedMark(run), { force: true });
+    console.info(
+      [
+        `copied ${said(copied)} from ${store.kind} to ${to}.`,
+        `Now set team.json "tasks": {"store": "${to}"${to === "mongo" && team.tasks.lead ? `, "lead": "${team.tasks.lead}"` : ""}} and run e9g register again${to === "mongo" ? " on each machine" : ""}.`,
+        store.kind === "files" ? "The file store is marked moved: commands refuse it from now on." : "",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    );
+    return 0;
+  } finally {
+    await target.close();
+  }
+};
+
 // The options each subcommand reads.
 const OPTIONS: Record<string, string[]> = {
   add: ["kind", "sev", "body", "body-file", "area", "files", "parent", "after", "request", "approved"],
@@ -642,6 +647,7 @@ const OPTIONS: Record<string, string[]> = {
   fetch: [],
   graph: ["out", "all"],
   import: [],
+  migrate: ["to", "dry-run"],
 };
 
 const COMMANDS: Record<string, Handler> = {
@@ -653,15 +659,16 @@ const COMMANDS: Record<string, Handler> = {
   score,
   status: setStatus,
   approve,
-  reject: proposalVerdict("rejected", "reason", "rejecting"),
-  research: proposalVerdict("researching", "note", "sending back for research"),
-  escalate: proposalVerdict("question", "reason", "escalating"),
+  reject: proposalVerdict("rejected", "reject", "reason"),
+  research: proposalVerdict("researching", "research", "note"),
+  escalate: proposalVerdict("question", "escalate", "reason"),
   claim,
   release,
   submit,
   graph,
   fetch: fetchBranch,
   import: importTasks,
+  migrate: migrateTasks,
 };
 
 export async function task(argv: string[]): Promise<number> {
@@ -671,7 +678,11 @@ export async function task(argv: string[]): Promise<number> {
     console.info(USAGE);
     return sub === "help" || sub === "--help" ? 0 : 2;
   }
-  const { positional, options } = parseArgs(rest, { booleans: ["all", "json", "claimable", "approved"] });
+  const { positional, options } = parseArgs(rest, { booleans: ["all", "json", "claimable", "approved", "dry-run", "help"] });
+  if (options["help"] === true) {
+    console.info(USAGE);
+    return 0;
+  }
   try {
     // An option a subcommand doesn't read is refused rather than dropped (e9g task status 3 proposed --sev minor would
     // otherwise change the status and nothing else).

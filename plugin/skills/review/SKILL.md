@@ -1,13 +1,14 @@
 ---
 name: review
-description: The E9G reviewer's procedure for one branch — blast radius first, then goals, edge cases, tangential code, tests and, for anything a person sees, a before-and-after look at every affected page — persisting until each holds or the branch goes back with a numbered list. Use for every review on an E9G team.
+description: The E9G reviewer's procedure for one branch — blast radius first, then goals, edge cases, tangential code, tests, a before-and-after look at anything a person sees, and a judgment of how much it could break — persisting until each holds or the branch goes back with a numbered list. Use for every review on an E9G team.
 ---
 
 # Reviewing a branch
 
 You approve a branch only when every section below holds. Persistence is the job: a check you skip is a defect you
 approve. Don't stop at the first problem: finish every section, then send the whole list back at once, so the next
-round is the last. Work from the exact commit you review (`git rev-parse <branch>`, noted before you start) in a
+round is the last. Work from the exact commit you review (`git rev-parse <branch>`, or the commit `e9g task fetch <id>` prints on a team on several machines, noted before
+you start) in a
 detached copy (`git worktree add --detach /tmp/review-<n> <sha>`), and remove the copy before you answer.
 
 ## 1. Know what it touches
@@ -56,10 +57,21 @@ connection, or changes a contract without updating every caller, is "changes", e
 
 ## 6. It looks right (anything a person sees)
 
-When the blast radius says it touches UI, look at it. Start the app from the detached copy on a port of your own (the
-team's notes say how), and take screenshots of every affected page, at the base and at the branch, on desktop and
-phone, light and dark (`e9g pages shots --base <url> --out <dir>` or the tool the notes name). Read every PNG, then
-compare the pairs:
+Whether to look is your call, and it's rarely "no": look whenever the change could alter what a person sees (a
+page, a component, styles, a theme or design tokens, copy, layout, an empty, loading or error state), however few
+lines it is, since a two-line token change can restyle every page. Skip it only when you can say why nothing
+visible changed (a comment, a test, server code no page renders differently), and say so in your note. Start the
+app from the detached copy on a port of your own (the team's notes say how), and look at every affected page at the
+base and at the branch, on desktop and phone, light and dark, in T3 Code's browser:
+
+- `mcp__t3-code__preview_open`, then `preview_navigate` with `target: {kind: "environment-port", port: <yours>}`;
+- `preview_resize` (`{mode: "freeform", width: 1280, height: 800}` for desktop, `{mode: "preset", …}` for a phone);
+- `preview_set_appearance` `"light"` and `"dark"`;
+- `preview_snapshot` with `save: true` for each, which returns the screenshot's path, and `preview_act` to reach
+  the states that need a click or typing.
+
+Without T3 Code's browser, `e9g pages shots --base <url> --out <dir>` takes the same screenshots. Look at every
+screenshot, then compare the pairs:
 
 - the change looks as the task and the rubric intend, pixel for pixel: alignment, spacing, type, colour and contrast
   in both themes, nothing clipped, overlapping or cut mid-word at any width;
@@ -67,8 +79,8 @@ compare the pairs:
 - states exist and read well: loading, empty, error, success, and long or missing content;
 - keyboard focus is visible and the tab order makes sense.
 
-Record the folder you read with your verdict: `e9g verdict review … approve --sha <sha> --shots <dir>`. The command
-refuses to approve a UI change beyond a few lines without it.
+Record what you looked at with your verdict (`--shots "<the screenshots' folder, or the pages, sizes and themes you
+checked>"`); an approval of a UI change without it is said so to the planner.
 
 ## 7. The repository's own rules
 
@@ -77,9 +89,24 @@ lane allows, no new dependencies unless the team allows them); the codebase's wa
 naming and comments like the code around them, no dead code, honest types); accessibility in the code (semantics,
 labels, keyboard handling, reduced motion).
 
+## 8. How much could break
+
+Judge the change's risk now that you've read it, and say it with your approval:
+
+- **high:** it touches money, sign-in or permissions, people's data or its migrations, concurrency or caching, code
+  many files import, one of the team's critical paths, a flow people depend on, or code that has broken before
+  (`git log` on it); or a mistake would be costly to notice late.
+- **medium:** ordinary feature or fix code with a few callers, where a mistake shows quickly.
+- **low:** copy, styles alone, a test, a comment, isolated code nothing else reads.
+
+A high-risk change carries its own tests in the same branch: unit tests for its logic and an end-to-end or Playwright
+spec for the flow, failing without the change (section 5). Without them it's "changes", and the merge queue refuses
+it anyway.
+
 ## The verdict
 
-- Every section holds: `e9g verdict review <branch> approve --sha <sha> [--shots <dir>] --note "<one line>"`.
+- Every section holds: `e9g verdict review <branch> approve --sha <sha> --risk low|medium|high [--shots <dir>] --note
+"<one line, with why that risk>"`.
 - Otherwise: `e9g verdict review <branch> changes --sha <sha> --note "<the gist>"`, and answer with `VERDICT: changes`
   and a numbered list: each item with the file and line, what's wrong, why it matters, and what would fix it in the
   codebase's own terms. Order it by severity. Optional suggestions go after it, marked as such; don't ask for changes

@@ -313,6 +313,9 @@ const namesEnvFile: Matcher = {
   },
 };
 
+// The variables a member is known by, which its T3 instance sets.
+const IDENTITY = String.raw`E9G_(?:TEAM|ROLE|HOME_DIR|RUN|SETUP|HOME|VERSION)`;
+
 // Never unlocked.
 export const CORE: [Matcher, string][] = [
   // git takes an unambiguous start of an option for the whole of it (--mir is --mirror, --del is --delete).
@@ -337,11 +340,11 @@ export const CORE: [Matcher, string][] = [
     OPERATOR_COMMANDS,
     "the operator runs the factory's own commands; the team uses merge, verdict, log, lock, gate, env, finish, pages, pr, task, request, cycle and blast.",
   ],
-  // Who a member is comes from its instance's E9G_ variables; without E9G_TEAM the factory's commands take the caller
-  // for the operator (e9g task status … done, e9g task add … --approved).
+  // Who a member is comes from its instance's E9G_ variables (the commands take a caller with none of them for the
+  // operator): nothing sets, unsets or clears them, by an assignment, env, exec -c or cross-env.
   [
     new RegExp(
-      String.raw`(?:^|[;&|(\x60]|\$\()\s*(?:(?:(?:env|exec|nohup)\s+(?:-\S+\s+)*)?(?:\w+=\S*\s+)*E9G_\w*=|(?:export|unset|declare|typeset|readonly)\s+(?:\S+\s+)*E9G_|env\s+(?:\S+\s+)*?(?:-i\b|--ignore-environment\b|-(?=\s)|-u\s*E9G_|--unset=E9G_))`
+      String.raw`(?:^|[\s;&|(\x60=]|\$\()(?:${IDENTITY}=|(?:export|unset|declare|typeset|readonly)\s+(?:\S+\s+)*${IDENTITY}\b)|(?:^|[;&|(\x60]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?(?:env\s+(?:(?:-u\s*|--unset[=\s])\S+\s+|-\S+\s+)*?(?:-i\b|--ignore-environment\b|-(?=\s)|-u\s*${IDENTITY}|--unset(?:=|\s+)${IDENTITY})|exec\s+(?:-\S*\s+)*-\w*c)`
     ),
     "a member's identity is its instance's E9G_ variables; no command sets, unsets or clears them.",
   ],

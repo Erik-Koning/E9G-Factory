@@ -86,6 +86,7 @@ const COLUMNS: Record<string, string[]> = {
     "deleted_at",
   ],
   orchestration_v2_projection_provider_turns: ["thread_id", "started_at", "completed_at", "payload_json"],
+  orchestration_v2_projection_runs: ["thread_id", "ordinal", "status"],
 };
 const RUNNING = "('running','starting','pending','queued','waiting')";
 const STOPPED = "('interrupted','failed','cancelled')";
@@ -174,15 +175,18 @@ export const quietChildren = (parent: string, quietMin: number): string[] =>
 
 // Worktrees of the project's members that are done with them: every thread that used one finished long enough ago,
 // completedAfterMin after it completed, and stoppedAfterMin after it was interrupted, failed or was cancelled (T3 can
-// resume an interrupted thread, and a failed one is often retried in place). Whether a worktree still holds work is
-// for the caller to check.
+// resume an interrupted thread, and a failed one is often retried in place). A member is a thread a planner started
+// (a subagent row says how it ended) or one the watchdog started on a worker machine (on the team's own instances, its
+// latest run says); a person's own threads in the project aren't. Whether a worktree still holds work is for the
+// caller to check.
 export const finishedWorktrees = (
   project: string,
+  team: string,
   { completedAfterMin, stoppedAfterMin }: { completedAfterMin: number; stoppedAfterMin: number }
 ): string[] =>
   (
     query<{ path: string }>(
-      `select json_extract(t.payload_json, '$.worktreePath') as path from orchestration_v2_projection_threads t left join orchestration_v2_projection_subagents s on s.child_thread_id = t.thread_id where t.project_id = '${q(project)}' and json_extract(t.payload_json, '$.worktreePath') is not null group by 1 having count(s.child_thread_id) > 0 and sum(case when (s.status = 'completed' or s.child_thread_id is null) and t.updated_at < ${ago(completedAfterMin)} then 0 when s.status in ${STOPPED} and t.updated_at < ${ago(stoppedAfterMin)} then 0 else 1 end) = 0`
+      `select json_extract(t.payload_json, '$.worktreePath') as path from orchestration_v2_projection_threads t left join orchestration_v2_projection_subagents s on s.child_thread_id = t.thread_id left join orchestration_v2_projection_runs r on r.thread_id = t.thread_id and r.ordinal = (select max(x.ordinal) from orchestration_v2_projection_runs x where x.thread_id = t.thread_id) where t.project_id = '${q(project)}' and json_extract(t.payload_json, '$.worktreePath') is not null and (s.child_thread_id is not null or t.provider_instance_id like 'e9g-${q(team)}-%') group by 1 having sum(case when coalesce(s.status, r.status) = 'completed' and t.updated_at < ${ago(completedAfterMin)} then 0 when coalesce(s.status, r.status) in ${STOPPED} and t.updated_at < ${ago(stoppedAfterMin)} then 0 else 1 end) = 0`
     ) ?? []
   ).map((row) => row.path);
 
@@ -302,6 +306,8 @@ export function withTeam(
     branchNamePrefix: branchPrefix,
     sidebarAutoSettleOnMerge: false,
     continueThreadsAfterServerUpdate: true,
+    // The factory removes members' worktrees itself, keeping any that hold work no branch has (e9g status lists them).
+    worktreeCleanup: { mode: "off" },
   });
   // The project's scripts as T3 resolves them (its own list, else the older per-project list, else the defaults),
   // with only the factory's entry changed.

@@ -25,8 +25,8 @@ approve only when all of these hold, and you finish every one before you answer:
 8. **Risk:** how much it could break (`--risk low|medium|high`); a high-risk change carries its own tests.
 
 The brief names a branch. Note the commit you review: `git rev-parse <branch>`. On a team on several machines the
-lead keeps no copy of members' branches: `e9g task fetch <id>` fetches it as its submit pushed it and prints the
-commit to review. You work in the team's shared
+lead keeps no copy of members' branches: run `e9g task fetch <id>`, which fetches it as its submit pushed it and
+prints the commit to review, and use `origin/<branch>` wherever these steps say `<branch>`. You work in the team's shared
 checkout, so don't check out, switch, stash, edit, commit or push there; the guard refuses it. Run everything in a
 detached copy of the commit: `git worktree add --detach /tmp/review-<n> <sha>`, and remove it before you answer
 (`git worktree remove --force /tmp/review-<n>`): each copy holds the whole repository and its build output.

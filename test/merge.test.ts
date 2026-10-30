@@ -145,4 +145,22 @@ describe("merge queue", { concurrency: true }, () => {
     assert.equal(result.code, 0, result.out);
     assert.equal(await taskStatus(home, "7"), "done");
   });
+
+  test("a branch that conflicts sends its task back to be rebased; e9g merge --push closes what a failed push held", async () => {
+    const home = makeRepo(baseTeam(), { ".e9g/run/board/4-four.md": "status: review\n", "src/shared.ts": "0\n" });
+    branch(home, "e9g/b4-four", { "src/shared.ts": "from the branch\n" });
+    await approve(home, "e9g/b4-four");
+    commit(home, { "src/shared.ts": "from the integration branch\n" }, "a change the branch conflicts with");
+    const result = await merge(home, "e9g/b4-four");
+    assert.equal(result.code, 3, result.out);
+    assert.match(result.out, /task 4 went back to be claimed and rebased/);
+    const task = await fileStore(`${home}-run`, "fixture").tasks.get("4");
+    assert.deepEqual([task?.status, task?.sha], ["approved", null]);
+    assert.match(task?.notes.at(-1)?.text ?? "", /rebase e9g\/b4-four onto it/);
+    // Held open by a merge whose push failed: closed once a push goes through.
+    write(`${home}-run`, { "unpushed.json": [{ ids: ["4"], branch: "e9g/b4-four", sha: "abc", tip: "abc" }] });
+    const pushed = await merge(home, "--push");
+    assert.equal(pushed.code, 0, pushed.out);
+    assert.equal(await taskStatus(home, "4"), "done");
+  });
 });

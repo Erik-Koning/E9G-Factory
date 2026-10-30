@@ -23,6 +23,9 @@ export interface HookInput {
 }
 
 export const inTeam = (): boolean => Boolean(process.env.E9G_TEAM);
+// The operator, for the commands that give them more than a member: a person runs them with none of a member's
+// identity set, so a member that clears one of these (env -u E9G_TEAM) is still a member.
+export const asOperator = (): boolean => !process.env.E9G_TEAM && !process.env.E9G_ROLE && !process.env.E9G_HOME_DIR;
 export const inSetup = (): boolean => process.env.E9G_SETUP === "1";
 
 // The operator's own commands (init, register, start, pause, …) refuse an agent on a team, as merge and verdict

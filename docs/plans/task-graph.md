@@ -119,10 +119,10 @@ review changes, then the task is blocked for the planner to split or decide.
 | approved → building                                  | builder or tester                                     | `e9g task claim` (atomic; best eligible task; whoever sees a clash on the same files gives way)     |
 | building → approved, blocked                         | the claimant, or the planner for a member that's gone | `e9g task release [--blocked "…"]`; the Stop hook releases as blocked when it lets a member stop    |
 | building → review                                    | the claimant                                          | `e9g task submit` (branch, commit, UI and critical paths; a rework must be a new commit)            |
-| review → approved (rework)                           | reviewer                                              | `e9g verdict review … changes` (rounds + 1; blocked past `review.maxRounds`); only a task in review |
+| review → approved (rework)                           | reviewer (or the operator)                            | `e9g verdict review … changes` (rounds + 1; blocked past `review.maxRounds`); only a task in review |
 | review (or an approved task `--closes` names) → done | merge queue                                           | `e9g merge --closes`; not a task being built, a journey, or one never approved                      |
 | journey: approved → done                             | planner                                               | once it's due (its tasks all done or rejected, one done: worked out, never stored) and verified     |
-| any → blocked, question, rejected; reopen            | planner                                               | `e9g task status` (never building or approved; done only for research, and journeys from verify)    |
+| any → blocked, question, rejected; reopen            | planner                                               | `e9g task status` (never building or approved; done only for research, and journeys once due)       |
 | back to triage, proposed or researching; a new score | —                                                     | the approval is cleared: it's approved again before it's built                                      |
 
 The planner never approves its own proposals and never marks code done: approval is the approver's or the
@@ -318,7 +318,7 @@ checked every claim above. Fixed, each with a test:
 
 - **Separation of duties:** a member can't pose as the operator by clearing its `E9G_` variables; an approved task
   edited in what it is goes back for approving; a journey's tasks are approved after the journey (an approver can't
-  release the tasks of a journey it may not approve), and a journey reaches `verify` by hand only once approved;
+  release the tasks of a journey it may not approve), and a journey is done only once its tasks are and it's verified;
   `--closes` never closes a journey or a task never approved, and closes a branch's task only at the commit it
   submitted.
 - **Journeys, requests and cycles:** a journey approved or unblocked after its tasks are done is due at once; one
@@ -404,3 +404,34 @@ devices, and links and watches pull requests. The factory leans on it where that
   - **The adapter keeps reading T3's database** for live threads and running members. `t3 thread … --json` now
     covers the same fields, but a CLI read that failed for a moment once started a second planner. `e9g doctor`'s
     contract check catches a schema change first.
+
+## Third audit (2026-10-29)
+
+Two reviews (the multi-machine path run end to end with a bare remote, two machine names and a fake Mongo; the core
+rules against the commit before). Fixed, each with a test:
+
+- **Separation of duties:**
+  - a finding the planner rewrote is its own proposal;
+  - nobody counts as the operator while any of a member's identity variables is set, and the guard's rule covers
+    `/usr/bin/env`, `--unset`, `exec -c` and `cross-env` (and only the identity variables);
+  - the approver has nothing to decide about a journey;
+  - the operator setting a task approved approves it.
+- **Work kept, never lost:**
+  - a task being built or reviewed isn't re-scored;
+  - releasing a claim always returns it;
+  - on several machines every claim prepares its branch from the remote, and a rework refuses a copy that diverged;
+  - submit builds on the last round;
+  - conflicts go back as reworks;
+  - approvals record their commit, so a merge after a re-review closes its task;
+  - `e9g merge --push` closes what a failed push held.
+- **Workers:**
+  - their checkout catches up on claim;
+  - their watchdog-started members' worktrees are pruned;
+  - T3's own worktree cleanup is off for team projects;
+  - delegating to another machine is refused until it's built.
+- **Detection and docs:**
+  - `init` drafts an environment unless a package says it's a tool or library;
+  - tests in Go, Python, Ruby and Java count;
+  - a document in a test folder doesn't;
+  - a stakeholder link is made only for the person already on file at that address;
+  - the prompts point the lead at `origin/<branch>` and describe the new conflict flow.

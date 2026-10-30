@@ -12,7 +12,8 @@ rules: read the direction, the decisions and the documents they list before you 
 
 ## For each proposal
 
-Your brief names the proposals, or take them from `e9g task list --status proposed`. A task you sent for research
+Your brief names the proposals, or take them from `e9g task list --status proposed`. A journey only groups tasks:
+it isn't yours to decide, only the tasks in it. A task you sent for research
 (`researching`) waits for the planner, who brings it back as a proposal. For each proposal, run `e9g task show <id>`
 (and `e9g request show <id>` for the request it came from) and decide:
 

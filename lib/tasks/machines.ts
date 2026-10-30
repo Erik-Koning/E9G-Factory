@@ -113,7 +113,15 @@ export function prepareBranch(
   // A branch of this name here already, with work the base doesn't have (a member whose claim ran out before it handed
   // the task in, or a rework not yet pushed): continued, never reset.
   const local = run(worktree, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
-  if (local.status === 0 && Number(run(worktree, "rev-list", "--count", `${base}..refs/heads/${branch}`).stdout.trim()) > 0) {
+  const ahead = local.status === 0 && Number(run(worktree, "rev-list", "--count", `${base}..refs/heads/${branch}`).stdout.trim()) > 0;
+  // A rework continues a local copy only when it holds the remote's (the latest round) too: one that went its own way
+  // would push over a round another machine made.
+  if (ahead && rework && run(worktree, "merge-base", "--is-ancestor", base, `refs/heads/${branch}`).status !== 0)
+    return {
+      ok: false,
+      said: `${branch} here and ${remote}'s copy have gone different ways (${local.stdout.trim().slice(0, 9)} vs ${base.slice(0, 9)}); the remote's has the latest round, so start from it (git checkout -B ${branch} ${remote}/${branch}) and bring over anything of yours`,
+    };
+  if (ahead) {
     const kept = run(worktree, "checkout", "--quiet", branch);
     return kept.status === 0
       ? { ok: true, said: `your worktree is on ${branch}, which has an earlier member's work on it (${local.stdout.trim().slice(0, 9)}); continue it` }
@@ -126,7 +134,20 @@ export function prepareBranch(
 }
 
 // A worker's submit: the task's branch goes to the remote, for the lead to review and merge.
+// It replaces the remote's copy only if that's still what the claim fetched (git's lease, on the remote-tracking ref):
+// a round another machine pushed meanwhile is never pushed over.
 export function pushTaskBranch(worktree: string, team: Pick<Team, "push">, branch: string): string | null {
-  const pushed = run(worktree, "push", "--quiet", "--force-with-lease", remoteOf(team), `HEAD:refs/heads/${branch}`);
+  const pushed = run(worktree, "push", "--quiet", `--force-with-lease=refs/heads/${branch}`, remoteOf(team), `HEAD:refs/heads/${branch}`);
   return pushed.status === 0 ? null : `couldn't push ${branch} to ${remoteOf(team)}: ${said(pushed)}`;
+}
+
+// A worker's own checkout of the team, brought up to the remote's integration branch when it's clean and only behind:
+// the team's rules (team.json, the adapters) reach the worker the next time a member claims there.
+export function refreshCheckout(home: string, team: Pick<Team, "tasks" | "push" | "branch">): string | null {
+  const remote = remoteOf(team);
+  const tip = fetchRemote(home, remote, team.branch);
+  if (!tip || dirty(home)) return null;
+  if (run(home, "symbolic-ref", "--quiet", "--short", "HEAD").stdout.trim() !== team.branch) return null;
+  const moved = run(home, "merge", "--quiet", "--ff-only", tip);
+  return moved.status === 0 ? null : `the checkout couldn't move to ${remote}'s ${team.branch}: ${said(moved)}`;
 }

@@ -47,7 +47,8 @@ members and merges wake you.
 2. **Handle what finished:**
    - **A builder or tester submitted** (its task is in `review`). Check `git log <integration>..<branch>` has
      commits and its report says the gate passed, then start a reviewer on the branch. On a team on several
-     machines, fetch a branch a worker built first (`e9g task fetch <id>`). Test branches need no review
+     machines the branch is the remote's: `e9g task fetch <id>` fetches it and names the commit, and
+     `git log <integration>..origin/<branch>` shows it. Test branches need no review
      unless one removes a line that matches `review.removedPattern` (by default, an assertion call); queue those
      directly.
    - **A member stopped without submitting.** Read why. If its task is still `building`, release it
@@ -59,9 +60,10 @@ members and merges wake you.
    - **Changes requested.** The verdict sent the task back to `approved` with the reviewer's list as a note, one
      round more; the next builder that claims it works on the same branch. At your rules' limit of rounds it's
      `blocked` instead: split it, or decide what done means and say so in a note.
-   - **Conflict.** Start a builder to rebase the branch onto the integration branch. Then queue it with
-     `--rebased-from <the approved commit>`; it merges without another review only if `git range-diff` shows
-     the same change.
+   - **Conflict.** The queue sent the branch's task back to `approved` with a note to rebase. Start a builder: it
+     claims the task (the same branch), rebases it onto the integration branch and submits. Then queue it with
+     `--rebased-from <the commit the review approved>` (`e9g verdict show review <branch>`); it merges without
+     another review only if `git range-diff` shows the same change.
    - **UX specialist done.** Its verdicts are recorded and its findings are tasks in `triage`.
    - **Innovator done.** Its proposals are tasks in `triage`.
    - **Approver done.** Approved tasks are ready to claim; researching ones need you; escalated ones are

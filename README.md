@@ -155,7 +155,7 @@ journey, columns by dependency) to open with `npx @mosphere/better-diagrams`.
 - **Approval.** The planner never approves its own proposals. With `approval.mode` `"thresholds"` (the default, when
   the team has an approver; without one, every approval is yours) the approver approves work up to
   `approval.maxSize` and escalates larger work and changes of scope to you; `"operator"` keeps
-  every approval yours; `"full"` gives the approver all of it, scope included. Privacy, policy unlocks, promotion and
+  every proposal yours; `"full"` gives the approver all of it, scope included. Privacy, policy unlocks, promotion and
   rule changes stay yours whatever the mode. The bug, UX and test findings other members file are the planner's to
   approve (`approval.findings`, `"approver"` to send them with the proposals), since they aren't its own. Every move
   of a task, by whom and from where, is one table in `lib/tasks/model.ts`.

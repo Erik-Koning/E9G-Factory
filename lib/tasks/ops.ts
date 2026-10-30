@@ -35,14 +35,14 @@ import { openStore, type Store, update } from "./store.ts";
 export async function closeMerged(
   store: Store,
   ids: string[],
-  { branch, sha, tip }: { branch: string; sha: string; tip?: string }
+  { branch, sha, tip, rebasedFrom }: { branch: string; sha: string; tip?: string; rebasedFrom?: string | undefined }
 ): Promise<{ closed: string[]; skipped: string[] }> {
   const closed: string[] = [];
   const skipped: string[] = [];
   for (const id of ids) {
     if (!(await store.tasks.get(id))) continue;
     const all = await store.tasks.all();
-    const ctx = { all, branch, ...(tip ? { tip } : {}) };
+    const ctx = { all, branch, ...(tip ? { tip } : {}), ...(rebasedFrom ? { rebasedFrom } : {}) };
     let why: string | null = null;
     const task = await update(store.tasks, id, (t) => {
       why = t.status === "done" ? null : moveRefusal(t, "done", "merge", MERGE, ctx);
@@ -53,6 +53,32 @@ export async function closeMerged(
     else closed.push(task.id);
   }
   return { closed, skipped };
+}
+
+// A merge that conflicts: the branch's task goes back to be claimed again on its branch and rebased. The round it went
+// back with is cleared, since a rebase rewrites it. Resolves to why it wasn't sent back, or null.
+export async function sendBackToRebase(
+  store: Store,
+  id: string,
+  { branch, integration }: { branch: string; integration: string }
+): Promise<string | null> {
+  if (!(await store.tasks.get(id))) return `no task ${id}`;
+  const all = await store.tasks.all();
+  let why: string | null = null;
+  await update(store.tasks, id, (t) => {
+    why = moveRefusal(t, "approved", "conflict", MERGE, { all, branch });
+    if (why) return t;
+    const text = `conflicts with ${integration}: rebase ${branch} onto it (git rebase ${integration}), run the gate, and submit`;
+    return move(
+      t,
+      "approved",
+      "conflict",
+      MERGE,
+      { all, branch },
+      { fields: { sha: null, notes: [...t.notes, { at: nowIso(), by: MERGE, text }] }, why: text }
+    );
+  });
+  return why;
 }
 
 // A review that asks for changes: the task in review goes back to be claimed again on the same branch, one round

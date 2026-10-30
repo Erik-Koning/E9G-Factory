@@ -1079,6 +1079,9 @@ export function check(input: HookInput): void {
   function checkDelegate(): void {
     if (paused()) refuse(PAUSED);
     const target = args.target;
+    // Members on another machine are started by that machine's watchdog, which holds its own limits.
+    if (typeof target === "object" && target !== null && (target as Record<string, unknown>).environmentId !== undefined)
+      refuse("members start on this machine; a worker machine's watchdog starts its own builders (e9g register --worker).");
     const named = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
     const instance =
       named(typeof target === "object" && target !== null ? (target as Record<string, unknown>).providerInstanceId : undefined) ??

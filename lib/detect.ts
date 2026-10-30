@@ -8,6 +8,9 @@ import { PACKAGE } from "./paths.ts";
 import { gitOk, git as gitRaw } from "./util.ts";
 
 interface PackageJson {
+  bin?: unknown;
+  main?: unknown;
+  exports?: unknown;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   scripts?: Record<string, string>;
@@ -195,6 +198,8 @@ export function detect(root: string) {
     packageManager,
     installCommand,
     scripts: pkg.scripts ?? {},
+    // A command-line tool or a library by its package.json: it names a bin, or only what it exports.
+    library: pkg.bin !== undefined || pkg.main !== undefined || pkg.exports !== undefined,
     workspaces: Boolean(pkg.workspaces) || has(root, "pnpm-workspace.yaml"),
     engines: pkg.engines ?? null,
     ci: workflows(root),
@@ -221,10 +226,12 @@ export function detect(root: string) {
 // version that drafted it, and keeps tickets on the machine (the task graph, in the run folder): a GitHub board posts
 // issues where people read them, so the setup interview offers it rather than assuming it. An approver decides on
 // the planner's proposals within the default thresholds.
-// Whether the repository has an app to run for the team (a UI, or a script that serves something), so it gets an
-// environment and a restart after each merge. A library or a command-line tool has neither.
+// Whether the repository has an app to run for the team, so it gets an environment and a restart after each merge.
+// Only a package that says it's a command-line tool or a library (a bin, a main or exports) and has no UI, no page and
+// no script that serves anything goes without: anything else (a Python, Go or Rails server, an app in a folder detect
+// doesn't read) gets the environment to fill in.
 export const hasApp = (found: Detected): boolean =>
-  found.ui.length > 0 || found.html || ["dev", "start", "serve", "preview"].some((script) => found.scripts[script]);
+  !found.library || found.ui.length > 0 || found.html || ["dev", "start", "serve", "preview"].some((script) => found.scripts[script]);
 
 export function draftTeam(found: Detected, { name, branch, owner }: { name: string; branch: string; owner?: string | null | undefined }): RawTeam {
   const policies: Record<string, string> = {};

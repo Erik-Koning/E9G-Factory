@@ -28,7 +28,7 @@ import { machineName } from "../machine.ts";
 import { isTest } from "../blast.ts";
 import { branchRef, integrationDiverged, isLead, pushIntegration } from "../tasks/machines.ts";
 import { ticketOf } from "../tasks/model.ts";
-import { closeMerged, openTeamStore } from "../tasks/ops.ts";
+import { closeMerged, openTeamStore, sendBackToRebase } from "../tasks/ops.ts";
 import { threadSend } from "../t3.ts";
 import { list, localTime, parseArgs, readJson, text as optionText, writeJson } from "../util.ts";
 import { pruneWorktrees } from "./watchdog.ts";
@@ -112,9 +112,43 @@ export function symlinkProblem(team: Team, role: string, path: string, target: s
 
 class GitFailed extends Error {}
 
+// e9g merge --push: the lead, once the remote takes pushes again after a merge whose push failed. It pushes the
+// integration branch and closes the tasks those merges were holding open.
+async function pushWaiting(): Promise<number> {
+  if (inTeam() && process.env.E9G_ROLE !== "planner") {
+    console.error("merge: only the planner merges");
+    return 2;
+  }
+  const { home, team, run } = teamSession();
+  if (!isLead(team)) {
+    console.error(`merge: merges happen on the team's lead machine, ${team.tasks.lead}`);
+    return 2;
+  }
+  const unpushed = join(run, "unpushed.json");
+  const waiting = readJson<{ ids: string[]; branch: string; sha: string; tip: string; rebasedFrom?: string }[]>(unpushed, []);
+  const pushed = pushIntegration(home, team);
+  if (!pushed.ok) {
+    console.error(`merge: ${pushed.said}`);
+    return 1;
+  }
+  const closed: string[] = [];
+  if (waiting.length && team.board.type === "tasks") {
+    const store = await openTeamStore(team, run, home);
+    try {
+      for (const merge of waiting) closed.push(...(await closeMerged(store, merge.ids, merge)).closed);
+    } finally {
+      await store.close();
+    }
+  }
+  rmSync(unpushed, { force: true });
+  console.info(`merge: ${pushed.said ?? `${team.branch} needs no push`}.${closed.length ? ` Closed: ${closed.join(" ")}.` : ""}`);
+  return 0;
+}
+
 export async function run(argv: string[]): Promise<number> {
-  const { positional, options } = parseArgs(argv, { booleans: ["queue", "light", "no-journeys", "no-after", "skip-after"], repeat: ["closes"] });
+  const { positional, options } = parseArgs(argv, { booleans: ["queue", "light", "no-journeys", "no-after", "skip-after", "push"], repeat: ["closes"] });
   const branch = positional[0];
+  if (!branch && options["push"] === true) return pushWaiting();
   if (!branch) {
     console.error(`usage: ${usage}`);
     return 2;
@@ -388,7 +422,8 @@ async function mergeLocked({
         return fail(2, "refused", `${branch} isn't only a rebase of the approved ${approved} (git range-diff shows changes); have it reviewed again`);
     }
     // A change the reviewer judged high-risk merges with its tests: they come in the same branch, not after it.
-    if (review.risk === "high" && !changed.some(isTest))
+    // Tests added or changed, that is: deleting one isn't testing the change.
+    if (review.risk === "high" && !paths("--diff-filter=AM", `${integration}...${tip}`).some(isTest))
       return fail(
         2,
         "refused",
@@ -407,7 +442,22 @@ async function mergeLocked({
     });
     if (merged.status !== 0) {
       spawnSync("git", ["merge", "--abort"], { cwd: scratch });
-      return fail(3, "conflict", `${branch} conflicts with ${integration}; rebase it onto ${integration}`);
+      // Its task goes back to be claimed and rebased, on whichever machine claims it (the branch is on the remote).
+      let back = "";
+      const id = ticketOf(branch, team.branchPrefix);
+      if (team.board.type === "tasks" && id)
+        try {
+          const store = await openTeamStore(team, run, home);
+          try {
+            const why = await sendBackToRebase(store, id, { branch, integration });
+            back = why ? ` (task ${id} wasn't sent back: ${why})` : `; task ${id} went back to be claimed and rebased`;
+          } finally {
+            await store.close();
+          }
+        } catch (error) {
+          back = ` (task ${id} couldn't be sent back: ${(error as Error).message})`;
+        }
+      return fail(3, "conflict", `${branch} conflicts with ${integration}; rebase it onto ${integration}${back}`);
     }
     if (team.gate.full) {
       const gateLog = join(state, "merges", `${safe}.gate.log`);
@@ -494,22 +544,27 @@ async function mergeLocked({
   // failed close theirs with the next one that pushes, since only then can a worker build on them.
   const fromName = ticketOf(branch, team.branchPrefix);
   const unpushed = join(run, "unpushed.json");
-  const waiting = readJson<{ ids: string[]; branch: string; sha: string; tip: string }[]>(unpushed, []);
+  const waiting = readJson<{ ids: string[]; branch: string; sha: string; tip: string; rebasedFrom?: string }[]>(unpushed, []);
   const ids = [...new Set([...closes, ...(fromName ? [fromName] : [])])];
   const closed: string[] = [];
   const skipped: string[] = [];
   if (!pushed.ok) {
-    writeJson(unpushed, [...waiting, { ids, branch, sha, tip }]);
+    writeJson(unpushed, [...waiting, { ids, branch, sha, tip, ...(rebasedFrom ? { rebasedFrom: commit(rebasedFrom) ?? rebasedFrom } : {}) }]);
     console.error(
-      `merge: merged here, but ${pushed.said}. Its tasks (${ids.join(" ") || "none"}) stay open until a merge pushes; the operator sorts out the remote.`
+      `merge: merged here, but ${pushed.said}. Its tasks (${ids.join(" ") || "none"}) stay open until a merge pushes, or e9g merge --push once the remote takes pushes again; the operator sorts out the remote.`
     );
   } else if (team.board.type === "tasks") {
     // The merge happened; a task graph that can't be reached doesn't undo it, and the planner hears why.
     try {
       const store = await openTeamStore(team, run, home);
       try {
-        for (const earlier of [...waiting, { ids, branch, sha, tip }]) {
-          const result = await closeMerged(store, earlier.ids, { branch: earlier.branch, sha: earlier.sha, tip: earlier.tip });
+        for (const earlier of [...waiting, { ids, branch, sha, tip, ...(rebasedFrom ? { rebasedFrom: commit(rebasedFrom) ?? rebasedFrom } : {}) }]) {
+          const result = await closeMerged(store, earlier.ids, {
+            branch: earlier.branch,
+            sha: earlier.sha,
+            tip: earlier.tip,
+            rebasedFrom: earlier.rebasedFrom,
+          });
           closed.push(...result.closed);
           skipped.push(...result.skipped);
         }

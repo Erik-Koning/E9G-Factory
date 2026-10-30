@@ -3,7 +3,7 @@
 // sends it with the next message the team's contact setting allows.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { inTeam, teamSession } from "../session.ts";
+import { asOperator, teamSession } from "../session.ts";
 import { OPERATOR } from "../tasks/model.ts";
 import { openTeamStore } from "../tasks/ops.ts";
 import { parseArgs, text as optionText, writeFileAtomic } from "../util.ts";
@@ -11,7 +11,7 @@ import { parseArgs, text as optionText, writeFileAtomic } from "../util.ts";
 export async function cycle(argv: string[]): Promise<number> {
   const [sub = "list", ...rest] = argv;
   const { positional, options } = parseArgs(rest);
-  const who = inTeam() ? process.env.E9G_ROLE || "unknown" : OPERATOR;
+  const who = asOperator() ? OPERATOR : process.env.E9G_ROLE || "unknown";
   const { home, team, run } = teamSession();
   if (team.board.type !== "tasks" || team.mode !== "cycles") {
     console.error('cycle: this team works to a finish line (team.json mode); cycles are for "mode": "cycles"');
@@ -44,7 +44,9 @@ export async function cycle(argv: string[]): Promise<number> {
     }
     const since = cycles.at(-1)?.at ?? "";
     // Done in this cycle: moved to done since the last one closed (a later note on it doesn't count it again).
-    const done = (await store.tasks.all()).filter((t) => t.status === "done" && t.history.some((e) => e.at > since && e.to === "done")).map((t) => t.id);
+    const done = (await store.tasks.all())
+      .filter((t) => t.status === "done" && t.history.some((e) => e.at > since && (e.to === "done" || (e.to === undefined && / → done\b/.test(e.what)))))
+      .map((t) => t.id);
     const closed = await store.cycles.create({ team: team.name, report, done, at: new Date().toISOString() });
     const number = closed.id.replace(/^c/, "");
     const firstLine =

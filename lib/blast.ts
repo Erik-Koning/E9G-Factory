@@ -36,7 +36,10 @@ const MIN_SHARED = 3;
 const MIN_SHARE_PERCENT = 30;
 
 const TEST_DIR = /(^|\/)(__tests__|e2e|tests?|spec)\//;
-const TEST_NAME = /[._-](test|spec)\.[cm]?[jt]sx?$/;
+// Test files by each language's convention: foo.test.ts, foo_test.go, test_foo.py, foo_spec.rb, FooTest.java.
+const TEST_NAME = /([._-](test|spec)\.[cm]?[jt]sx?|_test\.(go|py)|_spec\.rb|Tests?\.(java|kt|swift|cs))$|(^|\/)test_[^/]+\.py$/;
+// A document in a test folder (its README) isn't a test.
+const DOC = /\.(md|mdx|txt|rst)$/;
 // UI: view files by their extension (a SvelteKit or Remix page under routes/ included); what styles every page (a
 // theme, design tokens, the Tailwind config, a styles module); plain JavaScript components and server-side templates
 // in a view folder (app/views/x.html.erb). Never what's under an api or server folder, nor a route handler.
@@ -47,7 +50,7 @@ const UI_SEGMENT = /(^|\/)(app|pages|components|views|ui|styles|layouts|template
 const COMPONENT = /(^|\/)(pages|components|views|ui|layouts)\/.*\.[cm]?js$/;
 const SERVER = /(^|\/)(api|server)\/|(^|\/)\+?(route|server)\.[cm]?[jt]sx?$|\.server\.[cm]?[jt]sx?$/;
 
-export const isTest = (path: string): boolean => TEST_DIR.test(path) || TEST_NAME.test(path);
+export const isTest = (path: string): boolean => (TEST_DIR.test(path) && !DOC.test(path)) || TEST_NAME.test(path);
 const isUi = (path: string): boolean =>
   !isTest(path) &&
   !SERVER.test(path) &&

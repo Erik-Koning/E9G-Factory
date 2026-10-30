@@ -165,7 +165,9 @@ describe("the task model", () => {
       "a journey isn't closed by a merge"
     );
     assert.deepEqual(
-      moves(/-> approved$/).filter((m) => /\/planner->/.test(m) && !/^\S+ \S+\+ /.test(m) && !/^bug (triage|proposed) -approve/.test(m)),
+      moves(/-> approved$/).filter(
+        (m) => /\/planner->/.test(m) && !/^\S+ \S+\+ /.test(m) && !/-release\//.test(m) && !/^bug (triage|proposed) -approve/.test(m)
+      ),
       [],
       "the planner approves only what was approved before, and others' findings"
     );
@@ -362,6 +364,32 @@ describe("e9g task, from proposal to merge", () => {
     await e9g(["task", "add", "Thing"], full.as("planner"));
     await e9g(["task", "score", "1", ...SCORE, ...GATE, "--confidence", "data", "--size", "XL", "--why", "x"], full.as("planner"));
     assert.equal((await e9g(["task", "approve", "1"], full.as("approver"))).code, 0);
+  });
+
+  test("a finding the planner rewrote is its own; a journey isn't the approver's; a task being built isn't re-scored", async () => {
+    const { as, store } = setup(team({ approval: { mode: "full" } }));
+    const body = ["--body", "Steps: open /x, press Save. Nothing happens; it should save."];
+    await e9g(["task", "add", "Typo in the footer", "--kind", "bug", "--sev", "minor", ...body], as("builder"));
+    await e9g(["task", "edit", "1", "--title", "Rewrite billing for a new provider"], as("planner"));
+    assert.match((await e9g(["task", "approve", "1"], as("planner"))).out, /doesn't approve its own/, "rewritten, it's the planner's");
+    await e9g(["task", "add", "Checkout", "--kind", "journey"], as("planner"));
+    assert.match((await e9g(["task", "approve", "2"], as("approver"))).out, /is a journey/);
+    assert.match((await e9g(["task", "reject", "2", "--reason", "x"], as("approver"))).out, /is a journey/);
+    // The operator setting a task approved approves it, so a claim of it can be handed back.
+    await e9g(["task", "add", "Thing"], as("planner"));
+    assert.equal((await e9g(["task", "status", "3", "approved"], as(null))).code, 0);
+    assert.equal((await store().tasks.get("3"))?.approval?.by, OPERATOR);
+    await update(store().tasks, "3", (t) => ({
+      ...t,
+      status: "building" as const,
+      claim: { role: "builder", machine: "m", worktree: "/w", at: "x", until: "y" },
+    }));
+    assert.match(
+      (await e9g(["task", "score", "3", ...SCORE, ...GATE, "--confidence", "data", "--size", "S", "--why", "x"], as("planner"))).out,
+      /once it's back/
+    );
+    assert.equal((await e9g(["task", "release", "3"], as("planner"))).code, 0);
+    assert.equal((await store().tasks.get("3"))?.status, "approved");
   });
 
   test("the planner approves a finding another member filed, never its own proposal", async () => {
@@ -580,6 +608,11 @@ describe("the planner's summary and the guard", () => {
       bash(home, "planner", "unset E9G_TEAM; e9g task approve 3", "refuse"),
       bash(home, "builder", "env -i PATH=/usr/bin e9g task list", "refuse"),
       bash(home, "planner", 'touch "$E9G_RUN/idle"', "allow"),
+      bash(home, "builder", "/usr/bin/env -u E9G_TEAM e9g task list", "refuse"),
+      bash(home, "builder", "exec -c e9g task list", "refuse"),
+      bash(home, "builder", "npx cross-env E9G_TEAM= e9g task list", "refuse"),
+      bash(home, "builder", "E9G_DEBUG=1 npm test", "allow"),
+      [home, "planner", "mcp__t3-code__delegate_task", { target: { providerInstanceId: "e9g-fixture-builder", environmentId: "other-mac" } }, "refuse"],
     ]);
   });
 });
@@ -594,7 +627,7 @@ describe("review: risk and looking", () => {
     assert.match((await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", sha], as("reviewer"))).out, /--risk low\|medium\|high/);
     const approved = await e9g(["verdict", "review", "e9g/b1-panel", "approve", "--sha", sha, "--risk", "low"], as("reviewer"));
     assert.equal(approved.code, 0, approved.out);
-    assert.match(approved.out, /approved without screenshots, though e9g\/b1-panel changes 20 lines of UI/);
+    assert.match(approved.out, /approved without screenshots, though it changes 20 lines of UI/);
     assert.equal(JSON.parse(readFileSync(join(home, ".e9g/run/state/reviews/e9g_b1-panel.json"), "utf8")).risk, "low");
     assert.equal(
       (await e9g(["verdict", "review", "e9g/b1-panel", "changes", "--sha", sha, "--note", "x"], as("reviewer"))).code,
@@ -618,8 +651,10 @@ describe("review: risk and looking", () => {
     const tested = commit(home, { "src/billing/pay.test.ts": "import { pay } from './pay.ts';\nif (pay(1) !== 1) throw new Error('pay');\n" });
     git(home, "checkout", "-q", "e9g/next");
     await e9g(["verdict", "review", "e9g/b1-pay", "approve", "--sha", tested, "--risk", "high"], as("reviewer"));
+    assert.equal((await store().tasks.get("1"))?.sha, tested, "the approved commit is the task's round");
     const merged = await e9g(["merge", "e9g/b1-pay"], as(null));
     assert.equal(merged.code, 0, merged.out);
+    assert.equal((await store().tasks.get("1"))?.status, "done", "merging what was approved closes it");
   });
 
   test("submit records whether the task touched UI and the team's critical paths", async () => {
@@ -756,6 +791,11 @@ describe("the audit's findings stay fixed", () => {
     await e9g(["task", "claim", "1"], as("builder", tree));
     assert.match((await e9g(["task", "submit", "1"], as("builder", tree))).out, /the commit the reviewer asked changes on/);
     assert.equal(git(tree, "rev-parse", "HEAD"), sha);
+    // A rework that doesn't build on its last round (a branch started over beside it) isn't handed in.
+    git(tree, "checkout", "-q", "-B", "e9g/b1-a", "e9g/next");
+    commit(tree, { "src/a.ts": "started over\n" });
+    assert.match((await e9g(["task", "submit", "1"], as("builder", tree))).out, /doesn't hold the task's last round/);
+    git(tree, "checkout", "-q", "-B", "e9g/b1-a", sha);
     // Three refused stops: the fourth lets it go, and the task goes back as blocked.
     const stop = () =>
       spawnSync(process.execPath, [join(import.meta.dirname, "..", "plugin", "hooks", "stop.ts")], {

@@ -91,5 +91,10 @@ describe("detect", () => {
     write(cli, { "public/index.html": "<h1>Tally</h1>\n" });
     git(cli, "add", "-A");
     assert.equal(draftTeam(detect(cli), { name: "tally", branch: "e9g/next" }).environment?.script, ".e9g/adapters/env.sh");
+    // Without a package.json saying it's a tool, a server in another language gets the environment to fill in.
+    const flask = tmp("e9g-detect-");
+    write(flask, { "app.py": "from flask import Flask\n", "requirements.txt": "flask\n" });
+    git(flask, "init", "-q", "-b", "main");
+    assert.equal(draftTeam(detect(flask), { name: "site", branch: "e9g/next" }).environment?.script, ".e9g/adapters/env.sh");
   });
 });

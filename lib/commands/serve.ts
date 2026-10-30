@@ -15,7 +15,7 @@ import type { Team } from "../config.ts";
 import { entryOf, FACTORY_ROOT } from "../paths.ts";
 import { operatorOnly, teamSession } from "../session.ts";
 import { betterDiagram, layout } from "../tasks/graph.ts";
-import { claimOrder, type FeatureRequest, type Stakeholder, STATUSES, type Status, type Task } from "../tasks/model.ts";
+import { claimOrder, type FeatureRequest, journeyDue, type Stakeholder, STATUSES, type Status, type Task } from "../tasks/model.ts";
 import { openTeamStore } from "../tasks/ops.ts";
 import { Refused, type Store } from "../tasks/store.ts";
 import { parseArgs, text as optionText } from "../util.ts";
@@ -582,7 +582,7 @@ function graphSection(tasks: Task[]): string {
   let y = 0;
   for (const band of bands) {
     const h = BAND_TOP + band.rows * ROW_H - (ROW_H - BOX_H) + PAD;
-    const label = band.journey ? `${band.label} · ${band.journey.status}` : band.label;
+    const label = band.journey ? `${band.label} · ${journeyDue(band.journey, tasks) ? "due its verification" : band.journey.status}` : band.label;
     parts.push(`<rect class="band" x="0.5" y="${y + 0.5}" width="${width - 1}" height="${h - 1}" rx="8"/>`);
     parts.push(`<text class="band-label" x="${PAD}" y="${y + 22}">${esc(clip(label, 90))}</text>`);
     for (const p of placed.filter((p) => p.band === band.id)) where.set(p.task.id, { x: PAD + p.col * COL_W, y: y + BAND_TOP + p.row * ROW_H });

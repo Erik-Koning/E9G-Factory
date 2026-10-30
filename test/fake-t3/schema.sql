@@ -40,3 +40,14 @@ CREATE TABLE orchestration_v2_projection_provider_turns (
       completed_at TEXT,
       payload_json TEXT NOT NULL
     );
+CREATE TABLE orchestration_v2_projection_runs (
+      run_id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL,
+      ordinal INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      provider_thread_id TEXT,
+      status TEXT NOT NULL,
+      requested_at TEXT NOT NULL,
+      completed_at TEXT,
+      payload_json TEXT NOT NULL
+    , provider_instance_id TEXT);

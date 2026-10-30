@@ -110,21 +110,20 @@ export async function verdict(argv: string[]): Promise<number> {
   }
   // How much could break, as the reviewer judges it: a high-risk change merges only with its tests (e9g merge). Whether
   // to look at a change a person sees is the reviewer's call (the review skill); a UI change approved without
-  // screenshots is said so, for the planner to see.
+  // screenshots says so in the task's notes, for the planner to see.
   const risk = optionText(options["risk"]);
   if (kind === "review" && value === "approve" && !(RISKS as readonly string[]).includes(risk ?? "")) {
     console.error(`verdict: say how much this change could break: --risk ${RISKS.join("|")} (the review skill says how to judge it)\n${VERDICT_USAGE}`);
     return 2;
   }
   const shots = optionText(options["shots"]);
+  let unseen = "";
   if (kind === "review" && value === "approve" && !shots)
     try {
       const radius = blastRadius(home, { base: team.branch, ref: sha, touches: true });
-      if (radius.ui)
-        console.info(
-          `verdict: approved without screenshots, though ${name} changes ${radius.uiLines} lines of UI (${radius.uiFiles.slice(0, 3).join(", ")})`
-        );
+      if (radius.ui) unseen = `approved without screenshots, though it changes ${radius.uiLines} lines of UI (${radius.uiFiles.slice(0, 3).join(", ")})`;
     } catch {}
+  if (unseen) console.info(`verdict: ${unseen}`);
   const record = {
     kind,
     name,
@@ -158,10 +157,16 @@ export async function verdict(argv: string[]): Promise<number> {
             withEvent(
               {
                 ...t,
+                // The commit the review approved is the task's round now: what merging it closes.
+                sha: record.sha,
                 risk: (risk as Risk | undefined) ?? t.risk,
                 notes: [
                   ...t.notes,
-                  { at: nowIso(), by: record.by, text: `review approved ${record.sha.slice(0, 9)} (${risk ?? "risk not said"}): ${record.note}` },
+                  {
+                    at: nowIso(),
+                    by: record.by,
+                    text: `review approved ${record.sha.slice(0, 9)} (${risk ?? "risk not said"}${unseen ? `; ${unseen}` : ""}): ${record.note}`,
+                  },
                 ],
               },
               record.by,

@@ -34,7 +34,8 @@ Work out the following:
 - **The gate:** exactly what CI checks, in order, and how to run it locally. Also a quick subset, such as
   typecheck, lint and unit tests.
 - **The environment:** how to run the product for the team on its own ports, with its own data, apart from the
-  operator's own dev server and databases.
+  operator's own dev server and databases. A command-line tool or a library has none: `environment.script` and
+  `afterMerge` stay `null` (the draft says so when it found nothing to run; check it's right).
 - **The ways out:** every way this repository reaches outside the machine. That covers:
   - deploy targets and git-triggered deploys (on Vercel or Netlify, a push is a deploy);
   - hosted databases;
@@ -78,7 +79,7 @@ about a dozen questions at most, in this order:
 | Contact      | Who hears from the team, and what's worth an interruption                                                                                                                                                      | The operator's email: done, and the questions the direction doesn't settle, together in one message                   |
 | Taste        | A style guide, a rubric or reference pages                                                                                                                                                                     | The repository's design docs                                                                                          |
 | Dependencies | May the team add packages?                                                                                                                                                                                     | Allowed                                                                                                               |
-| Approval     | Who approves the planner's proposals: the operator, the approver up to a size, or the approver alone (`approval`)                                                                                              | The approver, up to size M; larger work and new journeys to the operator                                              |
+| Approval     | Who approves the planner's proposals: the operator, the approver up to a size, or the approver alone (`approval`)                                                                                              | The approver, up to size M; larger work to the operator                                                               |
 | Machines     | One machine, or several sharing a task graph in Mongo with an always-on lead that merges (`tasks`, `push`): then `e9g connect mongo --machine <name>` on each, and `e9g register --worker` on all but the lead | One machine                                                                                                           |
 | Critical     | Code whose every change gets the full review: auth, money, data, anything `CLAUDE.md` guards (`critical`)                                                                                                      | From `CLAUDE.md` and the docs                                                                                         |
 | Policies     | Show the deny list, with what you detected marked, and ask what to unlock                                                                                                                                      | Everything outward stays denied                                                                                       |

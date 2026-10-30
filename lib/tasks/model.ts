@@ -184,7 +184,7 @@ export const UNAPPROVED: Status[] = ["triage", "proposed", "researching"];
 // Every change of a task's status goes through move(), against one table: the command it comes from (via), who may
 // make it, from which statuses to which, and what else must hold. docs/plans/task-graph.md shows the same table.
 
-export type Via = "status" | "approve" | "reject" | "research" | "escalate" | "claim" | "release" | "submit" | "changes" | "merge" | "expire";
+export type Via = "status" | "approve" | "reject" | "research" | "escalate" | "claim" | "release" | "submit" | "changes" | "merge" | "conflict" | "expire";
 export interface ApprovalRules {
   mode: "operator" | "thresholds" | "full";
   maxSize: Size;
@@ -200,6 +200,8 @@ export interface MoveContext {
   // A changes verdict's or a merge's branch, and the commit a merge merged.
   branch?: string;
   tip?: string;
+  // A merge of a rebase: the commit the review approved, which the task may still name.
+  rebasedFrom?: string;
   now?: number;
 }
 type Check = (task: Task, to: Status, actor: Actor, ctx: MoveContext) => string | null;
@@ -221,6 +223,8 @@ const scored: Check = (t) =>
   t.kind !== "journey" && !t.score && (t.kind === "feature" || !t.severity)
     ? `task ${t.id} isn't scored yet; the planner scores it first (e9g task score)`
     : null;
+// A journey only groups tasks, each approved on its own: the approver has nothing to decide about it.
+const notJourney: Check = (t) => (t.kind === "journey" ? `#${t.id} is a journey: it only groups tasks, and each of them is decided on its own` : null);
 const approverActs: Check = (_t, _to, _actor, { approval }) =>
   approval?.mode === "operator"
     ? "this team's proposals are decided by the operator (team.json approval.mode); there's nothing for the approver to do"
@@ -230,9 +234,11 @@ const withinThresholds: Check = (t, _to, _actor, { approval }) => {
   if (t.score === null || SIZES[t.score.size] <= SIZES[approval.maxSize]) return null;
   return `size ${t.score.size}, over this team's ${approval.maxSize}, is the operator's to approve (team.json approval): e9g task escalate ${t.id} --reason "…"`;
 };
+// A finding the planner rewrote (its title, body or kind) is the planner's proposal now, not the member's finding.
+const rewrittenByPlanner = (t: Task): boolean => t.history.some((e) => e.by === "planner" && /\bedited\b[^;]*\b(title|body|kind)\b/.test(e.what));
 // The planner approves a finding another member filed, so nobody approves their own (team.json approval.findings).
 const othersFinding: Check = (t, _to, _actor, { approval }) => {
-  if (!FINDINGS.includes(t.kind) || t.by === "planner")
+  if (!FINDINGS.includes(t.kind) || t.by === "planner" || rewrittenByPlanner(t))
     return `the planner doesn't approve its own proposals: the approver or the operator does (e9g task approve ${t.id})`;
   if (approval?.findings === "approver") return "this team's approver decides findings too (team.json approval.findings)";
   if (!t.severity) return `give task ${t.id} its severity first (e9g task edit ${t.id} --sev …)`;
@@ -259,10 +265,10 @@ const holderOrPlanner: Check = (t, to, actor, ctx) => (actor === "planner" || ac
 const sameBranch: Check = (t, _to, _actor, { branch }) =>
   t.branch && branch && t.branch !== branch ? `task ${t.id} was submitted on ${t.branch}, not ${branch}` : null;
 // The merge queue closes the branch's task once what it submitted is what merged; never a journey.
-const merged: Check = (t, _to, _actor, { branch, tip }) =>
+const merged: Check = (t, _to, _actor, { branch, tip, rebasedFrom }) =>
   t.kind === "journey"
     ? `#${t.id} is a journey, done once the planner has verified it`
-    : tip && t.branch === branch && t.sha && t.sha !== tip
+    : tip && t.branch === branch && t.sha && t.sha !== tip && t.sha !== rebasedFrom
       ? `#${t.id} was submitted at ${t.sha.slice(0, 9)}, and ${tip.slice(0, 9)} merged`
       : null;
 const leaseOut: Check = (t, _to, _actor, { now = Date.now() }) =>
@@ -294,14 +300,14 @@ const RULES: Rule[] = [
   // The operator makes any move but one: a task is building only when a member claims it, so it has a claim to expire.
   { via: "status", by: [OPERATOR], from: EVERY, to: EVERY.filter((s) => s !== "building") },
 
-  { via: "approve", by: ["approver"], from: ["proposed"], to: ["approved"], check: first(approverActs, scored, withinThresholds) },
+  { via: "approve", by: ["approver"], from: ["proposed"], to: ["approved"], check: first(notJourney, approverActs, scored, withinThresholds) },
   { via: "approve", by: ["planner"], from: ["triage", "proposed"], to: ["approved"], check: othersFinding },
   { via: "approve", by: [OPERATOR], from: [...OPERATOR_FROM, "blocked"], to: ["approved"], check: scored },
-  { via: "reject", by: ["approver"], from: ["proposed"], to: ["rejected"], check: approverActs },
+  { via: "reject", by: ["approver"], from: ["proposed"], to: ["rejected"], check: first(notJourney, approverActs) },
   { via: "reject", by: [OPERATOR], from: OPERATOR_FROM, to: ["rejected"] },
-  { via: "research", by: ["approver"], from: ["proposed"], to: ["researching"], check: approverActs },
+  { via: "research", by: ["approver"], from: ["proposed"], to: ["researching"], check: first(notJourney, approverActs) },
   { via: "research", by: [OPERATOR], from: OPERATOR_FROM, to: ["researching"] },
-  { via: "escalate", by: ["approver"], from: ["proposed"], to: ["question"], check: approverActs },
+  { via: "escalate", by: ["approver"], from: ["proposed"], to: ["question"], check: first(notJourney, approverActs) },
   { via: "escalate", by: [OPERATOR], from: OPERATOR_FROM, to: ["question"] },
 
   { via: "claim", by: ["builder", "tester"], from: ["approved"], to: ["building"], check: (t, _to, actor, { all }) => claimRefusal(t, actor, all) },
@@ -310,11 +316,13 @@ const RULES: Rule[] = [
     by: ["builder", "tester", "planner", OPERATOR],
     from: ["building"],
     to: ["approved", "blocked"],
-    check: first(holderOrPlanner, wasApproved),
+    check: holderOrPlanner,
   },
   { via: "submit", by: ["builder", "tester"], from: ["building"], to: ["review"], check: holder },
   { via: "changes", by: ["reviewer", OPERATOR], from: ["review"], to: ["approved", "blocked"], check: sameBranch },
   { via: "merge", by: [MERGE], from: ["approved", "blocked", "question", "review"], to: ["done"], check: merged },
+  // A branch that conflicts goes back to be claimed again and rebased.
+  { via: "conflict", by: [MERGE], from: ["review"], to: ["approved"], check: sameBranch },
   { via: "expire", by: [WATCHDOG], from: ["building"], to: ["approved"], check: leaseOut },
 ];
 
@@ -329,6 +337,7 @@ const DOES: Record<Via, string> = {
   submit: "submit tasks; builders and testers submit what they built",
   changes: "ask for changes",
   merge: "merge",
+  conflict: "send a conflicting branch back",
   expire: "expire claims",
 };
 const DONE_TO: Partial<Record<Via, string>> = { approve: "approved", reject: "rejected", research: "sent back for research", escalate: "escalated" };
@@ -340,7 +349,9 @@ function notFrom(t: Task, to: Status, via: Via): string {
   if (via === "claim") return `task ${t.id} is ${t.status}, not approved`;
   if (via === "release") return `task ${t.id} isn't claimed (${t.status})`;
   if (via === "submit") return `task ${t.id} isn't claimed from this worktree (${t.status})`;
-  if (via === "changes") return `task ${t.id} is ${t.status}, not in review`;
+  if (via === "changes" || via === "conflict") return `task ${t.id} is ${t.status}, not in review`;
+  if (via === "merge" && t.kind === "journey") return `#${t.id} is a journey, done once the planner has verified it`;
+  if (to === "done" && t.kind === "journey") return `journey ${t.id} is ${t.status}; reopen it first (e9g task status ${t.id} proposed)`;
   if (via === "merge")
     return t.status === "building"
       ? `#${t.id} is being built by the ${t.claim?.role ?? "a member"}${t.claim ? ` on ${t.claim.machine}` : ""}`

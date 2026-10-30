@@ -5,7 +5,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { inTeam, teamSession } from "../session.ts";
+import { asOperator, teamSession } from "../session.ts";
 import { type FeatureRequest, nowIso, OPERATOR, REQUEST_STATUSES, type Stakeholder, withEvent } from "../tasks/model.ts";
 import { openTeamStore } from "../tasks/ops.ts";
 import { Refused, type Store, update } from "../tasks/store.ts";
@@ -17,7 +17,7 @@ export const USAGE = `usage: e9g request <command>
   note <id> "<text>"   ·   reject <id> --reason "…"   (the planner)
   stakeholders [add --name "…" --email "…" --role "…" | revoke <sN>]   (you: a stakeholder's own link to e9g serve's form)`;
 
-const actor = (): string => (inTeam() ? process.env.E9G_ROLE || "unknown" : OPERATOR);
+const actor = (): string => (asOperator() ? OPERATOR : process.env.E9G_ROLE || "unknown");
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // A stakeholder's link key, as kept: the hash, never the key itself.
@@ -122,10 +122,13 @@ export async function request(argv: string[]): Promise<number> {
         const email = optionText(options["email"]);
         if (!name || !email || !EMAIL.test(email)) throw new Refused('a stakeholder needs --name "…", an --email and a --role');
         const found = await stakeholderFor(store, team.name, { name, email, role: optionText(options["role"]) ?? "stakeholder" });
+        // An address already on file is that person: a new link for them replaces their old one, never a stranger's.
+        if (found.name.toLowerCase() !== name.toLowerCase())
+          throw new Refused(`${email} is ${found.id} ${found.name} already; give their name to make them a new link`);
         const key = randomBytes(18).toString("base64url");
         await update(store.stakeholders, found.id, (s) => ({ ...s, key: keyHash(key) }));
         console.info(
-          `${found.id} ${name} has a link of their own: e9g serve's address followed by /?token=${key}\nIt opens only the request form and their own requests. A new link replaces this one; e9g request stakeholders revoke ${found.id} ends it.`
+          `${found.id} ${found.name} has a link of their own: e9g serve's address followed by /?token=${key}\nIt opens only the request form and their own requests. A new link replaces this one; e9g request stakeholders revoke ${found.id} ends it.`
         );
         return 0;
       }

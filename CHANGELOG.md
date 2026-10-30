@@ -22,8 +22,8 @@
   (`watchdog.stuckAfter`) is renewed by the heartbeat hook and expired by the watchdog. `e9g task submit` hands it in
   for review; the Stop hook won't let a member finish holding a claim. The merge queue marks what it merges done, and a
   journey whose tasks are all done is due its verification (worked out from them, never stored). A task edited in what it is (its title,
-  body or kind) or scored again is approved again before it's built, and a journey's tasks wait for the journey's
-  approval.
+  body or kind) or scored again is approved again before it's built, and a finding the planner rewrote is its own
+  proposal, for the approver.
 - **Review persists.** A review skill ships in the plugin (`e9g:review`): blast radius first, then goals, edge cases,
   tangential code, tests that fail without the change, a before-and-after look at anything a person sees (the
   reviewer judges when; `--shots` records what it read), and how much the change could break. `e9g blast` computes the
@@ -50,9 +50,16 @@ add`), which opens only the form and their own requests and attributes what they
 - **T3 Code 0.1.4 or newer.** Its tools are allowed by role, from a list: every member may look with T3 Code's
   preview browser, devices and HTML previews (the review skill, the builder and the UX specialist look at pages
   there, at each size and theme, with `e9g pages shots` as the fallback); the planner also runs its members through
-  `delegate_task` and watches its pull request, so the operator's comments and reviews wake it and their merge
-  settles its thread. Nobody starts threads around the team's limits (`create_threads`, `t3_thread_launch`),
+  `delegate_task` and watches its pull request, so the operator's comments and reviews wake it. T3 Code's own
+  worktree cleanup is off for team projects: the factory keeps the worktrees that hold work. Nobody starts threads around the team's limits (`create_threads`, `t3_thread_launch`),
   schedules work, changes projects, environments or threads' settings, or asks the operator for a secret.
+- **On several machines,** every claim makes its branch from the remote, on the lead too, and a rework refuses a
+  local copy that went its own way; submit refuses a rework that doesn't build on its last round, and pushes only
+  over the copy the claim fetched. A branch that conflicts sends its task back to be claimed and rebased; a review
+  approval records the commit it approved, so merging it (or its rebase, `--rebased-from`) closes the task;
+  `e9g merge --push` closes what a failed push held open. A worker's claim brings its checkout up to the remote's
+  integration branch, and its watchdog's members' worktrees are pruned like any others. `e9g task migrate` wants
+  the team paused. The guard refuses `delegate_task` to another machine for now.
 - `e9g init` gives a library or command-line tool (no UI, no dev or start script, no HTML) no environment and no
   after-merge restart; the rules name `CLAUDE.md` only when the repository has one; `--help` works on every `e9g task`
   and `e9g request` command; and text that starts with `--` (a title like "--skip-common leaves out common words")

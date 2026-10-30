@@ -419,7 +419,7 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
           (t) =>
             t.updatedAt > since &&
             (["triage", "proposed", "approved", "review"].includes(t.status) ||
-              (t.status === "done" && all.some((j) => j.id === t.parent && journeyDue(j, all))))
+              ((t.status === "done" || t.status === "rejected") && all.some((j) => j.id === t.parent && journeyDue(j, all))))
         ).length;
         arrived = [
           requests ? `${requests} new feature request${requests === 1 ? "" : "s"}` : "",
@@ -635,7 +635,10 @@ export function pruneWorktrees(entry: RegistryEntry): void {
   const pruneAfter = entry.watchdog?.pruneAfterMin ?? 60;
   let freed = 0;
   const kept: string[] = [];
-  for (const path of t3.finishedWorktrees(entry.project, { completedAfterMin: pruneAfter, stoppedAfterMin: Math.max(pruneAfter, STOPPED_KEEP_MIN) })) {
+  for (const path of t3.finishedWorktrees(entry.project, entry.name, {
+    completedAfterMin: pruneAfter,
+    stoppedAfterMin: Math.max(pruneAfter, STOPPED_KEEP_MIN),
+  })) {
     if (!path.startsWith(`${entry.worktreesDir}/`) || !existsSync(path) || existsSync(join(run, "keep", basename(path)))) continue;
     const work = workIn(path);
     if (work) kept.push(`${basename(path)}: ${work}`);

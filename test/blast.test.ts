@@ -447,3 +447,10 @@ test("e9g blast runs from the CLI", { skip: wired ? false : "bin/e9g.ts doesn't 
   assert.equal(code, 0, out);
   assert.deepEqual(JSON.parse(out), blastRadius(worktree, { base: "e9g/next", critical: ["^src/billing/"] }));
 });
+
+test("tests by each language's convention, and not a document in a test folder", async () => {
+  const { isTest } = await import("../lib/blast.ts");
+  for (const file of ["src/a.test.ts", "pay_test.go", "tests/test_pay.py", "pay_test.py", "spec/pay_spec.rb", "src/PayTest.java", "test/pay.js"])
+    assert.equal(isTest(file), true, file);
+  for (const file of ["docs/test/README.md", "test/NOTES.txt", "src/testing.ts", "contest.py"]) assert.equal(isTest(file), false, file);
+});

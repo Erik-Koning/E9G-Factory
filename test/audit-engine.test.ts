@@ -4,7 +4,7 @@
 import { baseTeam, commit, e9g, git, makeRepo, ROOT, tmp, write } from "./helpers.ts";
 import { fakeWorld } from "./fake-t3.ts";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { uptime } from "node:os";
 import { join } from "node:path";
@@ -82,6 +82,31 @@ describe("the engine audit's findings stay fixed", { concurrency: 8 }, () => {
         read(join(w.run, "watchdog.log")),
         /kept 2 finished worktrees that may hold work: t3-(untracked|detached): .*; t3-(untracked|detached): /
       );
+    } finally {
+      await w.close();
+    }
+  });
+
+  test("a worker's watchdog-started members' worktrees are found by their last run; a person's own threads aren't", async () => {
+    const w = await fakeWorld();
+    try {
+      const run = (thread: string, status: string) =>
+        w.sql(
+          `insert into orchestration_v2_projection_runs (run_id, thread_id, ordinal, provider, status, requested_at, payload_json) values ('r-${thread}', '${thread}', 1, 'claudeAgent', '${status}', '2026-01-01', '{}')`
+        );
+      w.thread({ id: "worker-b1", instance: "e9g-fixture-builder", worktreePath: "/wt/b1" });
+      run("worker-b1", "completed");
+      w.thread({ id: "worker-b2", instance: "e9g-fixture-builder", worktreePath: "/wt/b2" });
+      run("worker-b2", "running");
+      w.thread({ id: "mine", instance: "codex", worktreePath: "/wt/mine" });
+      run("mine", "completed");
+      // The adapter reads the database T3CODE_HOME names when it loads: this world's, in a process of its own.
+      const script = `import { finishedWorktrees } from ${JSON.stringify(join(ROOT, "lib", "t3.ts"))}; console.log(JSON.stringify(finishedWorktrees("proj-1", "fixture", { completedAfterMin: 30, stoppedAfterMin: 60 })));`;
+      const out = execFileSync(process.execPath, ["--input-type=module", "-e", script], {
+        env: { ...process.env, T3CODE_HOME: w.t3Home },
+        encoding: "utf8",
+      });
+      assert.deepEqual(JSON.parse(out), ["/wt/b1"]);
     } finally {
       await w.close();
     }
@@ -414,6 +439,7 @@ process.exit(overlap ? 4 : 0);`;
     assert.deepEqual(ids(after.projectSettingsOverrides?.["p"]?.["defaultProjectScripts"]), ["e9g-setup", "dev"]);
     assert.deepEqual(ids(after.projectScriptOverrides?.["p"]), ["e9g-setup", "dev"]);
     assert.deepEqual(Object.keys(after.providerInstances ?? {}).sort(), ["e9g-app-builder", "mine"]);
+    assert.deepEqual(after.projectSettingsOverrides?.["p"]?.["worktreeCleanup"], { mode: "off" }, "the factory keeps worktrees that hold work");
     // Without a setup command, only the factory's own script goes; and a default model an earlier version pointed at
     // the planner is undone.
     const earlier = withTeam(

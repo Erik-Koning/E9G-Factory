@@ -1,13 +1,13 @@
 // e9g task …: the team's task graph (lib/tasks/). Every change goes through here, checked against the caller's role
 // and the task's status, written only if nobody changed the task meanwhile, and recorded in its history. Agents never
 // write the store themselves: it's in the run folder, which the guard refuses them.
-import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import type { Team } from "../config.ts";
 import { machineName } from "../machine.ts";
 import { boardDir, readRegistry } from "../paths.ts";
-import { inTeam, teamSession } from "../session.ts";
+import { asOperator, teamSession } from "../session.ts";
 import { betterDiagram } from "../tasks/graph.ts";
 import {
   branchFor,
@@ -41,7 +41,7 @@ import {
   withEvent,
 } from "../tasks/model.ts";
 import { blastRadius } from "../blast.ts";
-import { branchRef, isLead, multiMachine, prepareBranch, pushTaskBranch, remoteOf } from "../tasks/machines.ts";
+import { branchRef, isLead, multiMachine, prepareBranch, pushTaskBranch, refreshCheckout, remoteOf } from "../tasks/machines.ts";
 import { claimMark, importBoard, leaseMinutes, markClaim, openTeamStore } from "../tasks/ops.ts";
 import { openStore, Refused, type Store, update } from "../tasks/store.ts";
 import { git, gitOk, list, type Options, parseArgs, text as optionText } from "../util.ts";
@@ -60,7 +60,7 @@ export const USAGE = `usage: e9g task <command>
   migrate --to mongo|files [--dry-run]   (yours: the whole graph into the other store)`;
 
 // Who's acting: the member's role (its instance's E9G_ROLE), or the operator when a person runs it.
-const actor = (): string => (inTeam() ? process.env.E9G_ROLE || "unknown" : OPERATOR);
+const actor = (): string => (asOperator() ? OPERATOR : process.env.E9G_ROLE || "unknown");
 const may = (who: string, roles: string[]): boolean => who === OPERATOR || roles.includes(who);
 const need = (who: string, roles: string[], what: string): void => {
   if (!may(who, roles))
@@ -319,6 +319,9 @@ const score: Handler = async ({ team, store, who }, [id], options) => {
   // An approval is for the task as it was scored: a new score sends an approved task back for approving.
   const all = await store.tasks.all();
   const moved = await update(store.tasks, task.id, (t) => {
+    // Being built or reviewed, it stays as it was approved; a new score waits until it's back.
+    if (["building", "review"].includes(t.status))
+      throw new Refused(`task ${t.id} is ${t.status}: score it again once it's back (e9g task note it meanwhile)`);
     const fields = { gate, score: scored, priority, approval: null };
     const said = `scored: priority ${priority} (size ${size}, ${confidence})`;
     return t.status === "approved"
@@ -339,16 +342,12 @@ const setStatus: Handler = async ({ store, who }, [id, to], options) => {
   const refusal = statusRefusal(task, target, who, all);
   if (refusal) throw new Refused(refusal);
   const reason = optionText(options["reason"]);
-  await update(store.tasks, task.id, (t) =>
-    move(
-      t,
-      target,
-      "status",
-      who,
-      { all },
-      { fields: reason ? { notes: [...t.notes, { at: nowIso(), by: who, text: `${t.status} → ${target}: ${reason}` }] } : {}, why: reason }
-    )
-  );
+  await update(store.tasks, task.id, (t) => {
+    const notes = reason ? { notes: [...t.notes, { at: nowIso(), by: who, text: `${t.status} → ${target}: ${reason}` }] } : {};
+    // The operator setting a task approved approves it.
+    const approval = target === "approved" && who === OPERATOR && !t.approval ? { approval: { by: OPERATOR, at: nowIso(), note: reason ?? "" } } : {};
+    return move(t, target, "status", who, { all }, { fields: { ...notes, ...approval }, why: reason });
+  });
   console.info(`task ${task.id}: ${task.status} → ${target}`);
   return 0;
 };
@@ -450,14 +449,18 @@ const claim: Handler = async ({ home, team, run, store, who }, [id], options) =>
     }
     markClaim(run, worktree, [written.id]);
     const branch = written.branch ?? branchFor(written, who, team.branchPrefix);
-    // On a worker machine, the branch comes from the remote, where the lead pushes what it merges. Finished members'
-    // worktrees go first (the worker's watchdog can't read the checkout to prune them), freeing the branch if one held it.
-    const worker = multiMachine(team) && !isLead(team);
-    if (worker) {
+    // On a team on several machines, the branch comes from the remote, on every machine: the lead pushes what it
+    // merges there, and each submit pushes its round, so a rework continues the latest one wherever it was built. On a
+    // worker, finished members' worktrees go first (its watchdog can't read the checkout to prune them), freeing the
+    // branch if one held it, and the checkout catches up with the team's rules.
+    const remoteBranches = multiMachine(team);
+    if (remoteBranches && !isLead(team)) {
       const entry = readRegistry(team.name);
       if (entry?.home === home) (await import("./watchdog.ts")).pruneWorktrees(entry);
+      const stale = refreshCheckout(home, team);
+      if (stale) console.info(`Note: ${stale}.`);
     }
-    const prepared = worker ? prepareBranch(worktree, team, branch, Boolean(written.branch)) : null;
+    const prepared = remoteBranches ? prepareBranch(worktree, team, branch, Boolean(written.branch)) : null;
     // A branch of this name already here, from a member whose claim ran out before it handed the task in: its work
     // is on it, so the next member continues it rather than starting over.
     const leftover = !written.branch && !prepared && gitOk(worktree, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
@@ -525,6 +528,10 @@ const submit: Handler = async ({ team, run, store, who }, [id]) => {
   if (Number(git(worktree, "rev-list", "--count", `${base}..HEAD`)) === 0)
     throw new Refused(`${branch} has nothing beyond ${team.branch}; release the task instead (e9g task release ${task.id} --blocked "…")`);
   const sha = git(worktree, "rev-parse", "HEAD");
+  // A rework builds on the round it was sent back with, never beside it (a rebase after a conflict starts afresh: the
+  // merge queue clears the round it sent back).
+  if (task.sha && task.sha !== sha && !gitOk(worktree, "merge-base", "--is-ancestor", task.sha, "HEAD"))
+    throw new Refused(`this branch doesn't hold the task's last round (${task.sha.slice(0, 9)}); start from it, then submit`);
   if (task.rounds > 0 && task.sha === sha)
     throw new Refused(`this is the commit the reviewer asked changes on (${sha.slice(0, 9)}); make the changes in its notes, then submit`);
   // What it touches, for the reviewer and the planner: UI (a view check is due) and the team's critical paths.
@@ -596,6 +603,8 @@ const migrateTasks: Handler = async ({ team, run, store, who }, _positional, opt
   const to = oneOf(optionText(options["to"]), ["mongo", "files"] as const, "--to");
   if (!to) throw new Refused("which store? --to mongo or --to files");
   if (to === store.kind) throw new Refused(`this team's task graph is in ${to} already (team.json tasks.store)`);
+  // Nothing may write to the graph between the copy and the switch: the team waits, paused.
+  if (!existsSync(join(run, "paused"))) throw new Refused(`pause the team first (e9g pause ${team.name}), so nothing changes the graph while it moves`);
   const { countsOf, markMoved, migrate, movedMark } = await import("../tasks/migrate.ts");
   const target =
     to === "mongo"

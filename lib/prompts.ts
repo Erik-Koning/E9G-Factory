@@ -92,14 +92,14 @@ function commandsFor(team: Team, role: string): string {
     if (team.pages) lines.push("`e9g pages run [ids…]`: check the pages on the team's app and record the results.");
     if (team.push?.pullRequest)
       lines.push(
-        `\`e9g pr --title "<what it holds>" --body-file <file>\`: after a push, open the pull request from ${code(team.push.branch)} into ${code(team.push.pullRequest)}, or update the open one. Write the body to a file in \`.e9g/run/scratch/\`: what's in it since the operator last merged, how to see it, the product calls you made, and what's left. It's labelled and signed for you. The first time, watch it from your thread (\`mcp__t3-code__watch_pull_request\` with its URL): T3 Code wakes you on the operator's comments and reviews, failed checks and conflicts, and settles your thread when they merge it.`
+        `\`e9g pr --title "<what it holds>" --body-file <file>\`: after a push, open the pull request from ${code(team.push.branch)} into ${code(team.push.pullRequest)}, or update the open one. Write the body to a file in \`.e9g/run/scratch/\`: what's in it since the operator last merged, how to see it, the product calls you made, and what's left. It's labelled and signed for you. The first time, watch it from your thread (\`mcp__t3-code__watch_pull_request\` with its URL): T3 Code wakes you on the operator's comments and reviews, failed checks and conflicts.`
       );
   }
   if (team.board.type === "tasks") {
     lines.push("`e9g task list|show|note|graph`: the task graph (see The board).");
     if (role === "planner")
       lines.push(
-        '`e9g task add "<title>" [--kind] [--sev] [--body-file] [--parent <journey>] [--after <ids>] [--files <paths>] [--request <rN>]`, `edit <id> [--sev] [--area] [--files] …`, `score`, `status <id> <status> [--reason]`: shape, score and move tasks. `e9g task release <id>` frees a claim whose member is gone.',
+        '`e9g task add "<title>" [--kind] [--sev] [--body-file] [--parent <journey>] [--after <ids>] [--files <paths>] [--request <rN>]`, `edit <id> [--sev] [--area] [--files] …`, `score`, `status <id> <status> [--reason]`: shape, score and move tasks. `e9g task approve <id> [--note]` approves a finding another member filed, when your rules let you. `e9g task release <id>` frees a claim whose member is gone.',
         "`e9g request list|show|note|reject`: stakeholders' feature requests (promote one with `e9g task add … --request <id>`)."
       );
     if (role === "planner" && team.mode === "cycles")
@@ -119,7 +119,7 @@ function commandsFor(team: Team, role: string): string {
   }
   if (role === "reviewer")
     lines.push(
-      '`e9g verdict review <branch> approve|changes --sha <the commit you reviewed> [--risk low|medium|high] [--shots <dir>] --note "<one line>"`: record your verdict on exactly that commit; an approval says how much the change could break (`--risk`; a high-risk change merges only with its tests), and `--shots` names the screenshots you read when you looked. It\'s refused if the branch has moved past it; review what was added and record again. The merge queue merges only the commit you approved.'
+      '`e9g verdict review <branch> approve|changes --sha <the commit you reviewed> --note "<one line>"`: record your verdict on exactly that commit. An approval also takes `--risk low|medium|high`, how much the change could break (a high-risk change merges only with its tests), and `--shots "<what you looked at>"` when you looked. It\'s refused if the branch has moved past it; review what was added and record again. The merge queue merges only the commit you approved.'
     );
   if (role === "ux-specialist")
     lines.push(
@@ -148,7 +148,7 @@ function boardText(team: Team, role: string): string {
   const finding =
     'File each finding as `e9g task add "<what\'s wrong, in a few words>" --kind bug|ux|test-infra|feature --sev blocker|major|minor --body-file <file>` (steps, what happened, what should, the screenshot\'s path); it goes to triage. Search `e9g task list --all` first so you don\'t repeat one, and add to an existing task with `e9g task note <id> "…"`.';
   const byRole: Record<string, string> = {
-    planner: `You own it. Triage findings: give each its severity, area and files (\`e9g task edit <id> --sev … --area … --files …\`), then approve it (\`e9g task approve <id>\`) when your rules let you approve the findings other members file, or \`e9g task status <id> proposed\` for the approver (or rejected or question, with \`--reason\`). Shape work (\`e9g task add\`, \`edit\`: a journey as \`--kind journey\` with its tasks naming it as \`--parent\`, dependencies as \`--after\`, where it lands as \`--files\`), and score every proposal (\`e9g task score\`). ${approvalText(team)} The merge queue marks what it merges done; you never approve your own proposals or mark code done.`,
+    planner: `You own it. Triage findings: give each its severity, area and files (\`e9g task edit <id> --sev … --area … --files …\`), then approve it (\`e9g task approve <id>\`) when your rules let you approve the findings other members file, or \`e9g task status <id> proposed\` for the approver (or rejected or question, with \`--reason\`). Shape work (\`e9g task add\`, \`edit\`: a journey as \`--kind journey\` with its tasks naming it as \`--parent\`, dependencies as \`--after\`, where it lands as \`--files\`), and score every proposal but a journey, which only groups tasks (\`e9g task score\`). ${approvalText(team)} The merge queue marks what it merges done; you never approve your own proposals or mark code done.`,
     builder: `Take your task with \`e9g task claim\` (the next approved one, or the one your brief names), hand it in with \`e9g task submit <id>\` once it's committed and the gate passes, or hand it back with \`e9g task release <id> --blocked "<why>"\`. When what you change could break much (money, sign-in, data, code many files import, a flow people depend on), its tests come in the same branch: the reviewer judges the risk, and a high-risk change merges only with them. ${finding}`,
     tester: `Take your task with \`e9g task claim\` (the next approved test work, or the one your brief names), hand it in with \`e9g task submit <id>\`, or back with \`e9g task release <id> --blocked "<why>"\`. ${finding}`,
     approver: `You decide on proposals: \`e9g task approve <id> [--note]\`, \`reject <id> --reason\`, \`research <id> --note "<what to find out>"\`, or \`escalate <id> --reason\` (it goes to the operator). ${approvalText(team)}`,

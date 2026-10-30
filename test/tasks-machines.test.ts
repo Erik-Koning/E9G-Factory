@@ -6,7 +6,16 @@ import { describe, test } from "node:test";
 import type { RawTeam } from "../lib/config.ts";
 import { normalize } from "../lib/config.ts";
 import { fileStore } from "../lib/tasks/files.ts";
-import { branchRef, integrationDiverged, isLead, multiMachine, prepareBranch, pushIntegration, pushTaskBranch } from "../lib/tasks/machines.ts";
+import {
+  branchRef,
+  integrationDiverged,
+  isLead,
+  multiMachine,
+  prepareBranch,
+  pushIntegration,
+  pushTaskBranch,
+  refreshCheckout,
+} from "../lib/tasks/machines.ts";
 import { newTask, type Task, withEvent } from "../lib/tasks/model.ts";
 import { keyHash } from "../lib/commands/request.ts";
 import { markMoved, migrate } from "../lib/tasks/migrate.ts";
@@ -59,6 +68,11 @@ describe("feature requests", () => {
     assert.ok(key.length > 20, link.out);
     assert.equal((await store().stakeholders.get("s1"))?.key, keyHash(key));
     assert.doesNotMatch(JSON.stringify(await store().stakeholders.all()), new RegExp(key), "never the key itself");
+    assert.match(
+      (await e9g(["request", "stakeholders", "add", "--name", "Mallory", "--email", "dana@example.com", "--role", "customer"], as(null))).out,
+      /is s1 Dana Ruiz already/,
+      "an address on file is that person's"
+    );
     assert.equal((await e9g(["request", "stakeholders", "revoke", "s1"], as(null))).code, 0);
     assert.equal((await store().stakeholders.get("s1"))?.key, null);
     assert.match((await e9g(["request", "add", "x", "--name", "A", "--email", "a@b.co"], as("planner"))).out, /doesn't record people's names/);
@@ -192,6 +206,7 @@ describe("moving a task graph to Mongo", () => {
     const { as } = setup();
     assert.match((await e9g(["task", "migrate", "--to", "mongo"], as("planner"))).out, /operator's/);
     assert.match((await e9g(["task", "migrate", "--to", "files"], as(null))).out, /in files already/);
+    assert.match((await e9g(["task", "migrate", "--to", "mongo"], as(null))).out, /pause the team first/);
   });
 });
 
@@ -303,6 +318,12 @@ describe("a team on several machines", () => {
     git(tree, "checkout", "-q", "--detach");
     const missing = prepareBranch(tree, settings, "e9g/b6-lost", true);
     assert.deepEqual([missing.ok, /isn't on origin.*release the task/.test(missing.said)], [false, true]);
+    // A rework whose copy here went its own way from the remote's (which holds the latest round) isn't continued.
+    git(tree, "checkout", "-q", "-B", "e9g/b5-thing", "origin/e9g/b5-thing~1");
+    commit(tree, { "src/side.ts": "export const side = 1;\n" }, "a stale round's own commit");
+    git(tree, "checkout", "-q", "--detach");
+    const diverged = prepareBranch(tree, settings, "e9g/b5-thing", true);
+    assert.deepEqual([diverged.ok, /gone different ways/.test(diverged.said)], [false, true]);
     // A claim ran out before its member handed the task in, and the task is claimed again here: its work is continued.
     git(tree, "checkout", "-q", "-b", "e9g/b7-again", "origin/e9g/next");
     commit(tree, { "src/again.ts": "export const a = 1;\n" }, "work before the lease ran out");
@@ -317,6 +338,14 @@ describe("a team on several machines", () => {
     commit(tree, { "src/hotfix.ts": "export const h = 1;\n" }, "a hotfix pushed by hand");
     git(tree, "push", "-q", "origin", "HEAD:refs/heads/e9g/next");
     assert.match(integrationDiverged(lead, settings) ?? "", /has commits this machine's doesn't/);
+    // A worker's own checkout catches up with the remote's integration branch when it's clean.
+    git(lead, "push", "-q", "--force", "origin", "e9g/next:refs/heads/e9g/next");
+    const own = join(worker, "own");
+    git(worker, "clone", "-q", "-b", "e9g/next", remote, "own");
+    commit(lead, { "src/later.ts": "export const later = 1;\n" }, "merged later on the lead");
+    pushIntegration(lead, settings);
+    assert.equal(refreshCheckout(own, settings), null);
+    assert.equal(git(own, "rev-parse", "HEAD"), git(lead, "rev-parse", "e9g/next"));
   });
 
   test("merges happen only on the lead", async () => {

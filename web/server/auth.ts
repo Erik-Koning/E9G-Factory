@@ -21,6 +21,10 @@ import { config } from "./config.ts";
 import { mongo } from "./db.ts";
 import { sendMail } from "./mail.ts";
 
+// How long every sign-in-link answer takes, sent or not; the names of teams, as the factory makes them.
+const SEND_TIME_MS = 1500;
+const TEAM_NAME = /^[a-z][a-z0-9-]{0,30}$/;
+
 export const isAdminRole = (role: unknown): boolean => typeof role === "string" && role.split(",").includes("admin");
 
 // The paths whose new session began with a second factor (a passkey only when it verified the person).
@@ -92,10 +96,17 @@ function makeAuth() {
         // Only requests over HTTP: the app's own server code calls the API after its own checks.
         if (!ctx.request) return;
         if (SERVER_ONLY(ctx.path)) throw new APIError("FORBIDDEN", { message: "Not available." });
+        // A person's or a passkey's name is shown to the admin: short, whatever the endpoint lets through.
+        const name = (ctx.body as { name?: unknown } | undefined)?.name;
+        if (typeof name === "string" && name.length > 120) throw new APIError("BAD_REQUEST", { message: "Keep the name under 120 characters." });
         if (openWithoutSecondFactor(ctx.path)) return;
         const current = await getSessionFromCtx(ctx);
         if (current && isAdminRole(current.user.role) && current.session.secondFactor !== true)
           throw new APIError("FORBIDDEN", { message: "Sign in again with your authenticator or a passkey first." });
+        // A new passkey for an admin needs a sign-in from the last ten minutes, so a stolen session can't make itself last.
+        if (current && isAdminRole(current.user.role) && ctx.path.startsWith("/passkey/generate-register-options"))
+          if (Date.now() - new Date(current.session.createdAt).getTime() > 10 * 60_000)
+            throw new APIError("FORBIDDEN", { message: "Sign in again, then add the passkey within ten minutes." });
       }),
     },
     plugins: [
@@ -107,32 +118,65 @@ function makeAuth() {
         expiresIn: 15 * 60,
         storeToken: "hashed",
         sendMagicLink: async ({ email, url, metadata }, ctx) => {
-          const found = await ctx?.context.internalAdapter.findUserByEmail(email);
-          const user = found?.user as { role?: unknown; banned?: unknown } | undefined;
-          // Nobody unknown gets an email, and no admin a link; the answer to the browser is the same either way.
-          if (!user || user.banned === true || isAdminRole(user.role)) return;
-          const invitation = typeof metadata?.["team"] === "string" ? String(metadata["team"]) : null;
-          await sendMail(
-            invitation
-              ? {
-                  to: email,
-                  subject: `You're invited to follow ${invitation} on E9G`,
-                  text: `You've been invited to follow the team ${invitation} on E9G: send it requests and see how they're going.\n\nSign in with this link within 15 minutes: ${url}\n\nLater, sign in at ${baseURL}/sign-in with this address, and add a passkey from your account page.`,
-                  link: url,
-                }
-              : {
-                  to: email,
-                  subject: "Your E9G sign-in link",
-                  text: `Sign in to E9G with this link within 15 minutes: ${url}\n\nIf you didn't ask for it, ignore this email.`,
-                  link: url,
-                }
-          );
+          // Every answer takes the same time, so it doesn't say whether the address was invited.
+          const started = Date.now();
+          try {
+            await sendLink(email, url, metadata, ctx);
+          } finally {
+            await new Promise((done) => setTimeout(done, Math.max(0, SEND_TIME_MS - (Date.now() - started))));
+          }
         },
       }),
       // Last, so cookies set by auth.api calls in server actions reach the browser.
       nextCookies(),
     ],
   });
+
+  // Nobody unknown gets an email, nor a banned person, nor an admin a link, nor anyone a second within a minute. Only
+  // the app's own invite (a server call, never a request over HTTP) makes it an invitation, naming a real team.
+  async function sendLink(
+    email: string,
+    url: string,
+    metadata: Record<string, unknown> | undefined,
+    ctx: { request?: Request; context: { internalAdapter: { findUserByEmail(email: string): Promise<{ user: unknown } | null> } } } | undefined
+  ): Promise<void> {
+    const found = await ctx?.context.internalAdapter.findUserByEmail(email);
+    const user = found?.user as { role?: unknown; banned?: unknown } | undefined;
+    if (!user || user.banned === true || isAdminRole(user.role)) return;
+    const renewed = await client
+      .db(authDatabase)
+      .collection<{ _id: string; at: Date }>("magic_link_sends")
+      .findOneAndUpdate({ _id: email.toLowerCase(), at: { $lt: new Date(Date.now() - 60_000) } }, { $set: { at: new Date() } })
+      .catch(() => null);
+    if (!renewed) {
+      const fresh = await client
+        .db(authDatabase)
+        .collection<{ _id: string; at: Date }>("magic_link_sends")
+        .insertOne({ _id: email.toLowerCase(), at: new Date() })
+        .then(
+          () => true,
+          () => false
+        );
+      if (!fresh) return;
+    }
+    const team = metadata?.["team"];
+    const invitation = !ctx?.request && typeof team === "string" && TEAM_NAME.test(team) ? team : null;
+    await sendMail(
+      invitation
+        ? {
+            to: email,
+            subject: `You're invited to follow ${invitation} on E9G`,
+            text: `You've been invited to follow the team ${invitation} on E9G: send it requests and see how they're going.\n\nSign in with this link within 15 minutes: ${url}\n\nLater, sign in at ${baseURL}/sign-in with this address, and add a passkey from your account page.`,
+            link: url,
+          }
+        : {
+            to: email,
+            subject: "Your E9G sign-in link",
+            text: `Sign in to E9G with this link within 15 minutes: ${url}\n\nIf you didn't ask for it, ignore this email.`,
+            link: url,
+          }
+    );
+  }
 }
 
 export type Auth = ReturnType<typeof makeAuth>;

@@ -136,9 +136,11 @@ The operator deploys the app; teams never do (Article 7).
 1. **A database user for the app alone**, with a custom role that gives only what it needs (Database Access → Custom
    Roles). On the task graphs' database (`e9g`):
    - `find` on the whole database;
-   - `insert` and `update` on `requests`, `stakeholders` and `counters` (new ids come from the counters);
+   - `insert` on `requests` (the app only adds them; the planner changes them, through the factory's commands);
+   - `insert` and `update` on `stakeholders` (linking a person's account) and `counters` (new ids come from them);
    - `update` on `tasks` (decisions; the app's code changes only a task's status, approval and notes, through the
-     factory's move table: MongoDB can't scope a role to fields);
+     factory's move table). MongoDB can't scope a role to fields, so whoever holds this user's password can rewrite
+     any team's tasks, which agents then act on: keep it only in Vercel's environment, and rotate it if it leaks;
    - `createIndex` on `tasks`, `requests`, `stakeholders` and `cycles` (the store asks for its index; refused, it
      carries on).
 
@@ -160,6 +162,12 @@ The operator deploys the app; teams never do (Article 7).
    `RESEND_API_KEY`, `MAIL_FROM`. Don't set `MAIL_LOG`.
 3. In Resend, verify the domain `MAIL_FROM` sends from.
 4. Deploy, then run `npm run create-admin` locally against the production database for the first admin, and sign in.
+   It prints the password, the authenticator's secret and the backup codes once: run it in your own terminal, never
+   in CI or a recorded session, and delete the production values from `web/.env.local` afterwards.
+
+Sign-in rate limits (and the one-link-a-minute limit per address) count by the client's address, which Better Auth
+reads from `x-forwarded-for`. Vercel sets that header itself; if you ever host the app elsewhere, put it behind a
+proxy that overwrites it, or the limits can be dodged with made-up addresses.
 
 `next.config.ts` sets `turbopack.root` and `outputFileTracingRoot` to the repository, so the factory's files compile
 and nothing outside `web/` is traced into the function. Passkeys are bound to `BETTER_AUTH_URL`'s host: changing the

@@ -1,6 +1,6 @@
 # Plan: the web app (requests, decisions and the team's state)
 
-Status: proposed, not built. Decisions marked **(to decide)** are the operator's.
+Status: built and tested locally (phases 0–5); not deployed. Hosting, roles and sign-in decided by the operator on 2026-10-30.
 
 ## Why
 
@@ -118,12 +118,12 @@ operator deploys it; teams never do (Article 7).
 ## Checklist
 
 - [x] Phase 0: the factory changes above, with tests
-- [ ] Phase 1: `web/` (Next.js 16, React 19, Better Auth 1.7, the Mongo adapter, passkeys, two-factor, magic links,
+- [x] Phase 1: `web/` (Next.js 16, React 19, Better Auth 1.7, the Mongo adapter, passkeys, two-factor, magic links,
       the admin plugin); invite, sign in, roles per team; admins' two factors enforced
-- [ ] Phase 2: Teams and Overview (board, journeys, graph, status)
-- [ ] Phase 3: Requests (form, list, detail; contributors' own)
-- [ ] Phase 4: Decisions and People (admins)
-- [ ] Phase 5: tests (the shared code with `node --test`; the app's flows with Playwright against a local MongoDB);
+- [x] Phase 2: Teams and Overview (board, journeys, graph, status)
+- [x] Phase 3: Requests (form, list, detail; contributors' own)
+- [x] Phase 4: Decisions and People (admins)
+- [x] Phase 5: tests (the shared code with `node --test`; the app's flows with Playwright against a local MongoDB);
       a security review; the README and a deploy guide
 - [ ] Phase 6: deploy (Vercel, Atlas user), and an end-to-end run with a team on Mongo
 

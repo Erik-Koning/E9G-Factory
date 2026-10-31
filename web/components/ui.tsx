@@ -1,5 +1,16 @@
-// Small pieces every page uses: the result of an action, status chips, times.
+// Small pieces every page uses: the result of an action, status chips, times. Server-only (the notices are signed).
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { ReactNode } from "react";
+import { config } from "../server/config.ts";
+
+// A notice is signed with the app's secret, so a link someone else made can't put its own words in the notice box.
+const signature = (kind: string, text: string): string =>
+  createHmac("sha256", config().secret).update(`notice\n${kind}\n${text}`).digest("base64url").slice(0, 22);
+const signed = (kind: string, text: string, sig: string): boolean => {
+  const want = Buffer.from(signature(kind, text));
+  const got = Buffer.from(sig);
+  return got.length === want.length && timingSafeEqual(got, want);
+};
 
 export type SearchParams = Promise<Record<string, string | string[] | undefined>>;
 export const param = (value: string | string[] | undefined): string => (Array.isArray(value) ? (value[0] ?? "") : (value ?? ""));
@@ -7,8 +18,10 @@ export const param = (value: string | string[] | undefined): string => (Array.is
 // What an action came back with (?ok=… or ?error=…), said once at the top of the page.
 export async function Notice({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
-  const ok = param(params["ok"]).slice(0, 300);
+  const sig = param(params["sig"]);
   const error = param(params["error"]).slice(0, 500);
+  const ok = error ? "" : param(params["ok"]).slice(0, 300);
+  if ((error && !signed("error", error, sig)) || (ok && !signed("ok", ok, sig))) return null;
   if (error)
     return (
       <p className="notice error" role="alert">
@@ -71,7 +84,10 @@ export const clip = (text: string, max: number): string => (text.length > max ? 
 // A path with ?ok= or ?error=, for an action's redirect.
 export function withNotice(path: string, notice: { ok?: string; error?: string }): string {
   const query = new URLSearchParams();
-  if (notice.error) query.set("error", notice.error.slice(0, 500));
-  else if (notice.ok) query.set("ok", notice.ok.slice(0, 300));
+  const error = notice.error?.slice(0, 500);
+  const ok = notice.ok?.slice(0, 300);
+  if (error) query.set("error", error);
+  else if (ok) query.set("ok", ok);
+  if (error || ok) query.set("sig", signature(error ? "error" : "ok", (error || ok) ?? ""));
   return `${path}?${query}`;
 }

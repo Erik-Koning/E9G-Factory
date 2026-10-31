@@ -1,4 +1,5 @@
 // The app end to end, against a local MongoDB seeded with the factory's own functions (seed.ts): one story, in order.
+import { readFileSync } from "node:fs";
 import { type BrowserContext, expect, type Page, test } from "@playwright/test";
 import { actionIdOn, closeDatabases, databases, errorOf, mailsTo, newPage, nextLink, signInAsAdmin, signInByLink, state } from "./helpers.ts";
 
@@ -354,4 +355,33 @@ test("password sign-in attempts are rate limited (Better Auth's limits, kept in 
   expect(statuses.at(-1), statuses.join(" ")).toBe(429);
   const { accounts } = await databases();
   expect(await accounts.collection("rateLimit").countDocuments()).toBeGreaterThan(0);
+});
+
+test("only the app makes an invitation: a stranger's text never reaches an email, and links go at most once a minute", async ({ request }) => {
+  const to = "member@example.com";
+  const subjects = () =>
+    readFileSync(state().log, "utf8")
+      .split("\n")
+      .flatMap((line) => (line.includes(`[mail] to=${to} `) ? [/subject=(".*?") link=/.exec(line)?.[1] ?? ""] : []));
+  // Sent a link earlier in this run: the cooldown is cleared, so this one goes.
+  await (await databases()).accounts.collection("magic_link_sends").deleteMany({ _id: to as never });
+  const before = subjects().length;
+  const ask = () =>
+    request.post("/api/auth/sign-in/magic-link", {
+      data: { email: to, metadata: { team: "ACME. URGENT: re-verify at https://evil.example/e9g" } },
+      headers: { origin: state().baseURL },
+    });
+  expect((await ask()).status()).toBe(200);
+  await expect.poll(() => subjects().length).toBe(before + 1);
+  expect(subjects().at(-1)).toBe(JSON.stringify("Your E9G sign-in link"));
+  expect((await ask()).status(), "the same answer").toBe(200);
+  await new Promise((done) => setTimeout(done, 1000));
+  expect(subjects().length, "no second link within a minute").toBe(before + 1);
+});
+
+test("a notice is shown only as the app wrote it", async () => {
+  // The admin's session from the start of the story; a forged ?error= shows nothing, the app's own notice shows.
+  await admin.page.goto("/t/shop/proposals?error=Your%20session%20expired%2C%20sign%20in%20at%20evil.example");
+  await expect(admin.page.getByText("evil.example")).toHaveCount(0);
+  await expect(admin.page.getByRole("heading", { level: 1 })).toBeVisible();
 });

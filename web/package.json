@@ -1,0 +1,38 @@
+{
+  "name": "e9g-web",
+  "version": "0.1.0",
+  "description": "The web app for E9G Factory's teams: requests, decisions and each team's state, on the same MongoDB as their task graphs.",
+  "private": true,
+  "type": "module",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p .",
+    "test": "tsc -p . && node --test tests/unit/*.test.ts",
+    "test:e2e": "next build && playwright test",
+    "create-admin": "node scripts/create-admin.ts"
+  },
+  "dependencies": {
+    "@better-auth/mongo-adapter": "1.7.14",
+    "@better-auth/passkey": "1.7.14",
+    "better-auth": "1.7.14",
+    "mongodb": "7.7.0",
+    "next": "16.4.3",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "resend": "6.37.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "@types/node": "26.6.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "mongodb-memory-server-core": "11.3.0",
+    "typescript": "7.0.2"
+  }
+}

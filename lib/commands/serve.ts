@@ -19,7 +19,7 @@ import { claimOrder, type FeatureRequest, journeyDue, type Stakeholder, STATUSES
 import { openTeamStore } from "../tasks/ops.ts";
 import { Refused, type Store } from "../tasks/store.ts";
 import { parseArgs, text as optionText } from "../util.ts";
-import { addRequest, keyHash, stakeholderFor } from "./request.ts";
+import { addRequest, keyHash, stakeholderFor } from "../tasks/requests.ts";
 
 export const USAGE = "usage: e9g serve [--port 4600] [--host 127.0.0.1] [--team <name>]   (the token: E9G_SERVE_TOKEN, or one made for you)";
 

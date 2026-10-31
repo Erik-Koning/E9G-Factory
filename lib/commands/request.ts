@@ -2,13 +2,14 @@
 // form), the planner researches each and promotes it into the task graph (e9g task add --request) or rejects it.
 // Who sent a request is a stakeholder id and a role: names and email addresses stay with the stakeholders, which only
 // the operator's own commands show (Article 8).
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { asOperator, teamSession } from "../session.ts";
 import { type FeatureRequest, nowIso, OPERATOR, REQUEST_STATUSES, type Stakeholder, withEvent } from "../tasks/model.ts";
+import { addRequest, forAgents, keyHash, stakeholderFor } from "../tasks/requests.ts";
 import { openTeamStore } from "../tasks/ops.ts";
-import { Refused, type Store, update } from "../tasks/store.ts";
+import { Refused, update } from "../tasks/store.ts";
 import { list, type Options, parseArgs, text as optionText } from "../util.ts";
 
 export const USAGE = `usage: e9g request <command>
@@ -19,46 +20,6 @@ export const USAGE = `usage: e9g request <command>
 
 const actor = (): string => (asOperator() ? OPERATOR : process.env.E9G_ROLE || "unknown");
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
-
-// A stakeholder's link key, as kept: the hash, never the key itself.
-export const keyHash = (key: string): string => createHash("sha256").update(key).digest("hex");
-
-// A stakeholder by email, made when new: the same person's requests share one id.
-export async function stakeholderFor(
-  store: Store,
-  team: string,
-  { name, email, role }: { name: string; email: string; role: string }
-): Promise<Stakeholder> {
-  const known = (await store.stakeholders.all()).find((s) => s.email.toLowerCase() === email.toLowerCase());
-  if (known) return known;
-  return store.stakeholders.create({ team, name, email, role, createdAt: nowIso() });
-}
-
-// A request as the agents see it: the stakeholder's id and role, nothing that names them.
-export async function forAgents(store: Store, request: FeatureRequest): Promise<FeatureRequest & { fromRole: string | null }> {
-  const from = request.from ? await store.stakeholders.get(request.from) : null;
-  return { ...request, fromRole: from?.role ?? null };
-}
-
-export async function addRequest(
-  store: Store,
-  team: string,
-  { title, body, from, by }: { title: string; body: string; from: string | null; by: string }
-): Promise<FeatureRequest> {
-  const at = nowIso();
-  return store.requests.create({
-    team,
-    title,
-    body,
-    from,
-    status: "new",
-    tasks: [],
-    notes: [],
-    createdAt: at,
-    updatedAt: at,
-    history: [{ at, by, what: "requested" }],
-  });
-}
 
 const commaList = (value: Options[string]): string[] =>
   list(value)

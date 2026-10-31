@@ -92,6 +92,9 @@ export function fileStore(run: string, _team: string): Store {
     // the guard refuses the private folder whatever path or glob names it (Article 8).
     stakeholders: collection(join(privateDir(run), "stakeholders"), PREFIX.stakeholders),
     cycles: collection(join(run, "cycles"), PREFIX.cycles),
+    publish: async () => {},
+    report: async () => {},
+    team: async () => null,
     close: async () => {},
   };
 }

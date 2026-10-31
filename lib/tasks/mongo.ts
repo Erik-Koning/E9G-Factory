@@ -3,23 +3,13 @@
 // document per task, request, stakeholder and cycle, keyed "<team>:<id>", with a counter per collection. The driver
 // (the optional mongodb package) loads only here, and only the few calls below are used, so tests run on a fake.
 import type { Team } from "../config.ts";
-import { forgetSecret, hasSecret, readSecret, storeSecret } from "../keychain.ts";
 import type { Doc } from "./model.ts";
 import type { Collection, Store } from "./store.ts";
+import type { TeamDoc } from "./teams.ts";
 
-export const MONGO_SERVICE = "e9g-mongo";
-export const MONGO_ACCOUNT = "uri";
-// The connection string holds its password and characters the Keychain item's text can't take as it is, so it's kept
-// base64url-encoded.
+// The connection string comes from the caller: the factory's commands read it from the Keychain (mongoUri.ts), the web
+// app from its environment, so this module needs neither.
 export const MONGO_URI = /^mongodb(\+srv)?:\/\/\S+$/;
-export const storeUri = (uri: string): boolean =>
-  storeSecret(MONGO_SERVICE, MONGO_ACCOUNT, "E9G Factory: MongoDB", Buffer.from(uri).toString("base64url"));
-export function readUri(): string | null {
-  const stored = readSecret(MONGO_SERVICE, MONGO_ACCOUNT);
-  return stored ? Buffer.from(stored, "base64url").toString("utf8") : null;
-}
-export const hasUri = (): boolean => hasSecret(MONGO_SERVICE, MONGO_ACCOUNT);
-export const forgetUri = (): void => forgetSecret(MONGO_SERVICE, MONGO_ACCOUNT);
 // Where the connection string goes, without its password, for messages.
 // Everything up to the last @ before the host is the user and password, however malformed.
 export const shownUri = (uri: string): string => {
@@ -133,6 +123,19 @@ export function storeOver(client: MongoClientLike, team: Pick<Team, "name" | "ta
     requests: collection(db, team.name, "requests"),
     stakeholders: collection(db, team.name, "stakeholders"),
     cycles: collection(db, team.name, "cycles"),
+    // One document per team in "teams", by its name: the settings the lead publishes and the state it reports.
+    publish: async (settings) => {
+      await db.collection("teams").updateOne({ _id: team.name }, { $set: settings }, { upsert: true });
+    },
+    report: async (state) => {
+      await db.collection("teams").updateOne({ _id: team.name }, { $set: { status: state } }, { upsert: true });
+    },
+    team: async () => {
+      const row = await db.collection("teams").findOne({ _id: team.name });
+      if (!row) return null;
+      const { _id, ...doc } = row;
+      return { status: null, ...doc } as unknown as TeamDoc;
+    },
     close: () => client.close(),
   };
 }
@@ -149,7 +152,7 @@ export async function driver(): Promise<{
   }
 }
 
-export async function mongoStore(team: Pick<Team, "name" | "tasks">, uri = readUri()): Promise<Store> {
+export async function mongoStore(team: Pick<Team, "name" | "tasks">, uri: string | null): Promise<Store> {
   if (!uri) throw new Error("this team's tasks are in Mongo, and this machine isn't connected: run e9g connect mongo");
   const { MongoClient } = await driver();
   const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, appName: "e9g" });

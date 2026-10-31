@@ -4,6 +4,7 @@
 // both win.
 import type { Team } from "../config.ts";
 import { type Cycle, type Doc, type FeatureRequest, Refused, type Stakeholder, type Task } from "./model.ts";
+import type { TeamDoc, TeamSettings, TeamState } from "./teams.ts";
 
 export interface Collection<T extends Doc> {
   all(): Promise<T[]>;
@@ -24,6 +25,10 @@ export interface Store {
   requests: Collection<FeatureRequest>;
   stakeholders: Collection<Stakeholder>;
   cycles: Collection<Cycle>;
+  // The team's settings and state for the web app (teams.ts); a file store has no web app, so it keeps neither.
+  publish(settings: TeamSettings): Promise<void>;
+  report(state: TeamState): Promise<void>;
+  team(): Promise<TeamDoc | null>;
   close(): Promise<void>;
 }
 
@@ -46,7 +51,8 @@ export async function update<T extends Doc>(collection: Collection<T>, id: strin
 export async function openStore(team: Pick<Team, "name" | "tasks">, run: string): Promise<Store> {
   if (team.tasks.store === "mongo") {
     const { mongoStore } = await import("./mongo.ts");
-    return mongoStore(team);
+    const { readUri } = await import("./mongoUri.ts");
+    return mongoStore(team, readUri());
   }
   // A file store whose graph was moved to Mongo is never written again: team.json says where it lives now.
   const { movedTo } = await import("./migrate.ts");

@@ -4,7 +4,7 @@ import { baseTeam, makeRepo, tmp } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { request } from "node:http";
 import { describe, test } from "node:test";
-import { keyHash } from "../lib/commands/request.ts";
+import { keyHash } from "../lib/tasks/requests.ts";
 import { startServer } from "../lib/commands/serve.ts";
 import { loadTeam } from "../lib/config.ts";
 import { fileStore } from "../lib/tasks/files.ts";

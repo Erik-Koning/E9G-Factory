@@ -25,6 +25,7 @@ import { claimRefusal } from "../tasks/model.ts";
 import { journeyDue } from "../tasks/model.ts";
 import { expireClaims } from "../tasks/ops.ts";
 import { openStore } from "../tasks/store.ts";
+import type { TeamState } from "../tasks/teams.ts";
 import * as t3 from "../t3.ts";
 import { die, readJson, which, writeFileAtomic, writeJson } from "../util.ts";
 
@@ -397,6 +398,8 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
   };
   mkdirSync(join(run, "heartbeat"), { recursive: true });
   mkdirSync(join(run, "outbox"), { recursive: true });
+  // Where the team stands, for the web app (lib/tasks/teams.ts): the lead reports it every run, paused or not.
+  if (entry.tasks?.store === "mongo" && !entry.worker) await reportState(entry, run, (text) => oncePer("state-unreported", 60) && log(text));
   if (existsSync(join(run, "paused"))) return;
 
   // Claims whose lease ran out go back to approved, for another member (lib/tasks/ops.ts); and what's waiting, which
@@ -555,6 +558,32 @@ function trimLog(run: string): void {
   if (!existsSync(logFile)) return;
   const lines = readFileSync(logFile, "utf8").split("\n");
   if (lines.length > 5000) writeFileSync(logFile, lines.slice(-2000).join("\n"));
+}
+
+// The lead's report of where the team stands; `log` says when Mongo didn't take it (at most hourly).
+async function reportState(entry: RegistryEntry, run: string, log: (text: string) => void): Promise<void> {
+  const flag = (name: string): boolean => existsSync(join(run, name));
+  const file = join(run, "planner-thread");
+  const planner = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
+  const prefix = `e9g-${entry.name}-`;
+  const members: Record<string, number> = {};
+  if (planner) for (const { instance, n } of t3.childCounts(planner)) members[instance.startsWith(prefix) ? instance.slice(prefix.length) : instance] = n;
+  const state: TeamState = {
+    state: flag("paused") ? "paused" : flag("complete") ? "complete" : flag("idle") ? "idle" : "active",
+    planner: planner ? (t3.threadShow(planner)?.status ?? null) : null,
+    members,
+    at: new Date().toISOString(),
+  };
+  try {
+    const store = await openStore({ name: entry.name, tasks: entry.tasks as NonNullable<RegistryEntry["tasks"]> }, run);
+    try {
+      await store.report(state);
+    } finally {
+      await store.close();
+    }
+  } catch (error) {
+    log(`couldn't report the team's state to Mongo: ${(error as Error).message.split("\n")[0]}`);
+  }
 }
 
 // A worker machine: for each role it runs, as many members as its limit leaves room for and approved tasks it could

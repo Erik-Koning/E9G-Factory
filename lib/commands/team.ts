@@ -27,6 +27,8 @@ import { die, parseArgs, writeJson } from "../util.ts";
 import { answers, BUSY, ensureWatchdog, keptWorktrees, watchOnce } from "./watchdog.ts";
 import { machineName } from "../machine.ts";
 import { isLead, multiMachine } from "../tasks/machines.ts";
+import { openStore } from "../tasks/store.ts";
+import { settingsOf } from "../tasks/teams.ts";
 
 const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"` : text);
 
@@ -60,14 +62,35 @@ export function memberEnvironment(
   return { ...vars, E9G_TEAM: team.name, E9G_ROLE: role, E9G_HOME: E9G_HOME, E9G_HOME_DIR: home, E9G_RUN: run, E9G_VERSION: version };
 }
 
-export function register(argv: string[]): number {
+export async function register(argv: string[]): Promise<number> {
   operatorOnly("register");
   const { positional, options } = parseArgs(argv, { booleans: ["force", "worker"] });
-  return registerTeam(homeFrom(positional[0]), { force: Boolean(options["force"]), worker: Boolean(options["worker"]) });
+  const home = homeFrom(positional[0]);
+  const code = registerTeam(home, { force: Boolean(options["force"]), worker: Boolean(options["worker"]) });
+  if (code === 0) await publishTeam(home);
+  return code;
 }
 
 // Registers the team in `home` to run `version` (else the one its team.json pins). Dies before changing anything
 // when it can't.
+// A team whose task graph is in Mongo shows in the web app: the lead publishes its settings there (the app reads no
+// team.json). A failure is said, and changes nothing else: register again once Mongo answers.
+async function publishTeam(home: string): Promise<void> {
+  const team = loadTeam(home);
+  if (team.board.type !== "tasks" || team.tasks.store !== "mongo" || !isLead(team)) return;
+  try {
+    const store = await openStore(team, readRegistry(team.name)?.run ?? defaultRunDir(team.name));
+    try {
+      await store.publish(settingsOf(team, PACKAGE.version));
+      console.info(`  published ${team.name}'s settings for the web app`);
+    } finally {
+      await store.close();
+    }
+  } catch (error) {
+    console.warn(`  couldn't publish ${team.name}'s settings for the web app: ${(error as Error).message.split("\n")[0]}`);
+  }
+}
+
 function registerTeam(home: string, { force, version: target, worker = false }: { force: boolean; version?: string; worker?: boolean }): number {
   const team = loadTeam(home);
   for (const warning of team.warnings) console.warn(`  note: ${warning}`);
@@ -318,7 +341,7 @@ export function pinned(text: string, version: string): string {
 // e9g upgrade <team> [version] [--force]: register the team again on an installed version (this one by default),
 // then move its pin there. It runs in the version it moves to, whose code compiles the prompts and writes the
 // instances; the pin moves only once that worked.
-export function upgrade(argv: string[]): number {
+export async function upgrade(argv: string[]): Promise<number> {
   operatorOnly("upgrade");
   const { positional, options } = parseArgs(argv, { booleans: ["force"] });
   const entry = entryFor(positional[0] ?? die("usage: e9g upgrade <team> [version] [--force]"));
@@ -334,6 +357,7 @@ export function upgrade(argv: string[]): number {
     return result.status ?? 1;
   }
   registerTeam(entry.home, { force, version, worker: Boolean(entry.worker) });
+  await publishTeam(entry.home);
   const file = teamFile(entry.home);
   writeFileSync(file, pinned(readFileSync(file, "utf8"), version));
   // The prompts' sources include team.json, so compile them again with the pin in it.

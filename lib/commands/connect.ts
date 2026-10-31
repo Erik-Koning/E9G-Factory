@@ -15,7 +15,8 @@
 // The heartbeat (lib/heartbeat.ts) is kept only after a test ping goes through.
 import { readFileSync } from "node:fs";
 import { MACHINE_NAME, machineName, saveMachineName } from "../machine.ts";
-import { driver, forgetUri, hasUri, MONGO_URI, readUri, shownUri, storeUri } from "../tasks/mongo.ts";
+import { driver, MONGO_URI, shownUri } from "../tasks/mongo.ts";
+import { forgetUri, hasUri, readUri, storeUri } from "../tasks/mongoUri.ts";
 import { hostname } from "node:os";
 import { createInterface } from "node:readline/promises";
 import {

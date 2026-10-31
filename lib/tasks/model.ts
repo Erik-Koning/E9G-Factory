@@ -116,6 +116,8 @@ export interface Stakeholder extends Doc {
   role: string;
   // A hash of the stakeholder's own link to e9g serve's form (e9g request stakeholders add), or none.
   key?: string | null;
+  // The web app's account this stakeholder signs in as (its id in the app's accounts), or none.
+  userId?: string | null;
   createdAt: string;
 }
 // A cycle the planner closed (team.json mode "cycles").

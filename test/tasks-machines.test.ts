@@ -17,7 +17,9 @@ import {
   refreshCheckout,
 } from "../lib/tasks/machines.ts";
 import { newTask, type Task, withEvent } from "../lib/tasks/model.ts";
-import { keyHash } from "../lib/commands/request.ts";
+import { decide } from "../lib/tasks/decide.ts";
+import { keyHash } from "../lib/tasks/requests.ts";
+import { settingsOf } from "../lib/tasks/teams.ts";
 import { markMoved, migrate } from "../lib/tasks/migrate.ts";
 import { openStore, update } from "../lib/tasks/store.ts";
 import { type MongoClientLike, type MongoCollectionLike, storeOver } from "../lib/tasks/mongo.ts";
@@ -157,6 +159,7 @@ function fakeMongo(): MongoClientLike {
               const id = String(filter._id);
               const doc = docs.get(id) ?? { _id: id, seq: 0 };
               for (const [k, v] of Object.entries((update.$max ?? {}) as Record<string, number>)) doc[k] = Math.max(Number(doc[k] ?? 0), v);
+              Object.assign(doc, structuredClone((update.$set ?? {}) as Record<string, unknown>));
               docs.set(id, doc);
             },
             createIndex: async () => "ok",
@@ -207,6 +210,41 @@ describe("moving a task graph to Mongo", () => {
     assert.match((await e9g(["task", "migrate", "--to", "mongo"], as("planner"))).out, /operator's/);
     assert.match((await e9g(["task", "migrate", "--to", "files"], as(null))).out, /in files already/);
     assert.match((await e9g(["task", "migrate", "--to", "mongo"], as(null))).out, /pause the team first/);
+  });
+});
+
+describe("what the web app shares", () => {
+  test("a team's settings and state go to Mongo for the app; a file store keeps none", async () => {
+    const mongo = storeOver(fakeMongo(), { name: "fixture", tasks: { store: "mongo", database: "e9g", lead: "studio" } });
+    const loaded = normalize({ ...team(), tasks: { store: "mongo", lead: "studio" }, push: { remote: "origin" } }, "/x").team;
+    await mongo.publish(settingsOf(loaded, "0.4.0"));
+    await mongo.report({ state: "active", planner: "running", members: { builder: 2 }, at: "2026-10-30T00:00:00Z" });
+    const doc = await mongo.team();
+    assert.deepEqual([doc?.name, doc?.approval.mode, doc?.factory, doc?.status?.members], ["fixture", "thresholds", "0.4.0", { builder: 2 }]);
+    assert.equal(await fileStore(tmp("e9g-run-"), "fixture").team(), null);
+  });
+
+  test("decisions go through the move table, whoever asks", async () => {
+    const store = fileStore(tmp("e9g-run-"), "fixture");
+    const scored = {
+      pain: 1,
+      reach: 1,
+      revenue: 1,
+      wow: 1,
+      distribution: 1,
+      leverage: 1,
+      urgency: 1,
+      risk: 1,
+      confidence: "data" as const,
+      size: "S" as const,
+      why: "x",
+    };
+    await store.tasks.createAs("1", newTask({ team: "fixture", title: "a", kind: "feature", status: "proposed", by: "planner", score: scored }));
+    const approval = { mode: "operator" as const, maxSize: "M" as const, findings: "planner" as const };
+    await assert.rejects(decide(store, "1", "approve", { who: "approver", approval }), /decided by the operator/);
+    await assert.rejects(decide(store, "1", "reject", { who: "operator", approval }), /say why/);
+    const approved = await decide(store, "1", "approve", { who: "operator", approval, text: "from the web" });
+    assert.deepEqual([approved.status, approved.approval?.by, approved.approval?.note], ["approved", "operator", "from the web"]);
   });
 });
 
@@ -412,7 +450,7 @@ describe("the watchdog and the task graph", () => {
       await w.e9g("watchdog", "run", "fixture");
       assert.equal(sent(), 1);
       assert.ok(existsSync(join(w.run, "idle")));
-      const { addRequest } = await import("../lib/commands/request.ts");
+      const { addRequest } = await import("../lib/tasks/requests.ts");
       await new Promise((done) => setTimeout(done, 20));
       await addRequest(store, "fixture", { title: "Export", body: "", from: null, by: "operator" });
       await w.e9g("watchdog", "run", "fixture");

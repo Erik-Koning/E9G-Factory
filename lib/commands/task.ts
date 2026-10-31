@@ -37,12 +37,12 @@ import {
   statusRefusal,
   type Task,
   ticketOf,
-  type Via,
   withEvent,
 } from "../tasks/model.ts";
 import { blastRadius } from "../blast.ts";
 import { branchRef, isLead, multiMachine, prepareBranch, pushTaskBranch, refreshCheckout, remoteOf } from "../tasks/machines.ts";
 import { claimMark, importBoard, leaseMinutes, markClaim, openTeamStore } from "../tasks/ops.ts";
+import { type Decision, decide } from "../tasks/decide.ts";
 import { openStore, Refused, type Store, update } from "../tasks/store.ts";
 import { git, gitOk, list, type Options, parseArgs, text as optionText } from "../util.ts";
 
@@ -355,32 +355,23 @@ const setStatus: Handler = async ({ store, who }, [id, to], options) => {
 // The verdicts on a proposal: the approver's and the operator's, and the planner's on a finding another member filed.
 // Who may give which, from where, is the move table's (lib/tasks/model.ts); each is checked again as it's written.
 const approve: Handler = async ({ team, store, who }, [id], options) => {
-  const text = optionText(options["note"]) ?? "";
-  const task = await getTask(store, id);
-  const ctx = { all: await store.tasks.all(), approval: team.approval };
-  const refusal = moveRefusal(task, "approved", "approve", who, ctx);
-  if (refusal) throw new Refused(refusal);
-  await update(store.tasks, task.id, (t) =>
-    move(t, "approved", "approve", who, ctx, { fields: { approval: { by: who, at: nowIso(), note: text } }, why: text || undefined })
-  );
+  const task = await decide(store, id ?? "", "approve", { who, approval: team.approval, text: optionText(options["note"]) ?? "" });
   console.info(`task ${task.id}: approved`);
   return 0;
 };
 
 const proposalVerdict =
-  (to: Status, via: Via, flag: "reason" | "note"): Handler =>
+  (decision: Exclude<Decision, "approve">, flag: "reason" | "note"): Handler =>
   async ({ team, store, who }, [id], options) => {
-    const task = await getTask(store, id);
-    const ctx = { all: await store.tasks.all(), approval: team.approval };
-    const refusal = moveRefusal(task, to, via, who, ctx);
-    if (refusal) throw new Refused(refusal);
-    const reason = optionText(options[flag]);
-    if (!reason) throw new Refused(`say why: --${flag} "…"`);
-    await update(store.tasks, task.id, (t) =>
-      move(t, to, via, who, ctx, { fields: { notes: [...t.notes, { at: nowIso(), by: who, text: reason }] }, why: reason })
-    );
-    console.info(`task ${task.id}: ${to}`);
-    return 0;
+    const reason = optionText(options[flag]) ?? "";
+    try {
+      const task = await decide(store, id ?? "", decision, { who, approval: team.approval, text: reason });
+      console.info(`task ${task.id}: ${task.status}`);
+      return 0;
+    } catch (error) {
+      if (error instanceof Refused && error.message === "say why") throw new Refused(`say why: --${flag} "…"`);
+      throw error;
+    }
   };
 
 // --- Claiming -------------------------------------------------------------------------------------------------------
@@ -608,7 +599,9 @@ const migrateTasks: Handler = async ({ team, run, store, who }, _positional, opt
   const { countsOf, markMoved, migrate, movedMark } = await import("../tasks/migrate.ts");
   const target =
     to === "mongo"
-      ? await (await import("../tasks/mongo.ts")).mongoStore({ name: team.name, tasks: { ...team.tasks, store: "mongo" } })
+      ? await (
+          await import("../tasks/mongo.ts")
+        ).mongoStore({ name: team.name, tasks: { ...team.tasks, store: "mongo" } }, (await import("../tasks/mongoUri.ts")).readUri())
       : (await import("../tasks/files.ts")).fileStore(run, team.name);
   const said = (counts: Record<string, number>) =>
     Object.entries(counts)
@@ -668,9 +661,9 @@ const COMMANDS: Record<string, Handler> = {
   score,
   status: setStatus,
   approve,
-  reject: proposalVerdict("rejected", "reject", "reason"),
-  research: proposalVerdict("researching", "research", "note"),
-  escalate: proposalVerdict("question", "escalate", "reason"),
+  reject: proposalVerdict("reject", "reason"),
+  research: proposalVerdict("research", "note"),
+  escalate: proposalVerdict("escalate", "reason"),
   claim,
   release,
   submit,

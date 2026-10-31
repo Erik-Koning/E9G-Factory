@@ -117,7 +117,7 @@ operator deploys it; teams never do (Article 7).
 
 ## Checklist
 
-- [ ] Phase 0: the factory changes above, with tests
+- [x] Phase 0: the factory changes above, with tests
 - [ ] Phase 1: `web/` (Next.js 16, React 19, Better Auth 1.7, the Mongo adapter, passkeys, two-factor, magic links,
       the admin plugin); invite, sign in, roles per team; admins' two factors enforced
 - [ ] Phase 2: Teams and Overview (board, journeys, graph, status)

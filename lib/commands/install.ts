@@ -54,7 +54,8 @@ exec "\${E9G_NODE:-$(command -v node || echo '__NODE__')}" "$entry" "$@"
 `;
 
 // The files a release is made of: tracked and untracked-but-not-ignored, so an install matches the working tree.
-// Regular files only: a deleted file, or a symlink such as a worktree's linked node_modules, isn't part of it.
+// Regular files only: a deleted file, or a symlink such as a worktree's linked node_modules, isn't part of it. The web
+// app (web/) is deployed on its own, never installed: a change to it isn't a new release of the factory.
 function sourceFiles(): string[] {
   let listed: string[];
   try {
@@ -63,6 +64,7 @@ function sourceFiles(): string[] {
     die(`${FACTORY_ROOT} isn't a git checkout; install from a clone of the factory`);
   }
   return listed.filter((file) => {
+    if (file.startsWith("web/")) return false;
     try {
       return lstatSync(join(FACTORY_ROOT, file)).isFile();
     } catch {

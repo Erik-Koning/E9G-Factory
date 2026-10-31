@@ -1,3 +1,11 @@
 node_modules/
 .DS_Store
 .cache/
+# The web app (web/, its own package): dependencies, builds, test output and local secrets.
+web/node_modules/
+web/.next/
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo
+web/test-results/
+web/playwright-report/
+web/.env*

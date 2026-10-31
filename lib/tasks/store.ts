@@ -47,20 +47,22 @@ export async function update<T extends Doc>(collection: Collection<T>, id: strin
   throw new Refused(`${id} kept changing while this tried to change it; try again`);
 }
 
-// The team's store: Mongo when team.json says so, otherwise files in the run folder.
+// The team's store: Mongo when team.json says so, otherwise files in the run folder. The CLI's alone: the web app
+// imports this module for update() and never calls openStore, so a bundler leaves the Keychain, the run folder and
+// migrations out of its build (the ignore comments; Node reads past them).
 export async function openStore(team: Pick<Team, "name" | "tasks">, run: string): Promise<Store> {
   if (team.tasks.store === "mongo") {
     const { mongoStore } = await import("./mongo.ts");
-    const { readUri } = await import("./mongoUri.ts");
+    const { readUri } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "./mongoUri.ts");
     return mongoStore(team, readUri());
   }
   // A file store whose graph was moved to Mongo is never written again: team.json says where it lives now.
-  const { movedTo } = await import("./migrate.ts");
+  const { movedTo } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "./migrate.ts");
   const moved = movedTo(run);
   if (moved)
     throw new Refused(
       `this team's task graph moved to ${moved.to}${moved.at ? ` on ${moved.at.slice(0, 10)}` : ""} (e9g task migrate): set team.json tasks.store to "${moved.to}"`
     );
-  const { fileStore } = await import("./files.ts");
+  const { fileStore } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "./files.ts");
   return fileStore(run, team.name);
 }

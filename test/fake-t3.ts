@@ -1,7 +1,7 @@
-// A throwaway T3 Code and E9G home for the watchdog, rotate, register and upgrade: a fake `t3`, `osascript`,
+// A throwaway T3 Code and Anything Factory home for the watchdog, rotate, register and upgrade: a fake `t3`, `osascript`,
 // `launchctl`, `docker` and `open` first on PATH (test/fake-t3/), a T3 database with the tables the factory reads,
-// a server that answers while a flag file exists, and a registered team. Nothing touches ~/.t3, ~/.e9g or launchd.
-import { baseTeam, e9g, git, makeRepo, ROOT, tmp } from "./helpers.ts";
+// a server that answers while a flag file exists, and a registered team. Nothing touches ~/.t3, ~/.a6g or launchd.
+import { baseTeam, a6g, git, makeRepo, ROOT, tmp } from "./helpers.ts";
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -14,7 +14,7 @@ export interface World {
   root: string;
   home: string;
   run: string;
-  e9gHome: string;
+  a6gHome: string;
   t3Home: string;
   db: string;
   worktreesDir: string;
@@ -26,18 +26,18 @@ export interface World {
   show: (thread: Record<string, unknown>) => void;
   calls: () => string[];
   setUp: (up: boolean) => void;
-  e9g: (...args: string[]) => Promise<{ code: number | null; out: string }>;
+  a6g: (...args: string[]) => Promise<{ code: number | null; out: string }>;
   close: () => Promise<void>;
 }
 
 const ago = (min: number): string => new Date(Date.now() - min * 60_000).toISOString();
 
 export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }: { register?: boolean } = {}): Promise<World> {
-  const root = tmp("e9g-world-");
-  const e9gHome = join(root, "e9g");
+  const root = tmp("a6g-world-");
+  const a6gHome = join(root, "a6g");
   const t3Home = join(root, "t3");
-  const run = join(e9gHome, "runs", team.name ?? "fixture");
-  for (const dir of [join(t3Home, "userdata"), join(e9gHome, "teams"), run, join(root, "home")]) mkdirSync(dir, { recursive: true });
+  const run = join(a6gHome, "runs", team.name ?? "fixture");
+  for (const dir of [join(t3Home, "userdata"), join(a6gHome, "teams"), run, join(root, "home")]) mkdirSync(dir, { recursive: true });
   const db = join(t3Home, "userdata", "statev2.sqlite");
   execFileSync("sqlite3", [db], { input: readFileSync(join(BIN, "schema.sql"), "utf8") });
   writeFileSync(join(t3Home, "userdata", "settings.json"), "{}\n");
@@ -75,7 +75,7 @@ export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }:
       run,
       project: "proj-1",
       version: "dev",
-      plannerInstance: `e9g-${team.name ?? "fixture"}-planner`,
+      plannerInstance: `a6g-${team.name ?? "fixture"}-planner`,
       model: "m",
       health: [],
       needsDocker: false,
@@ -84,7 +84,7 @@ export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }:
       startPrompt: "go",
       registeredAt: new Date().toISOString(),
     };
-    writeFileSync(join(e9gHome, "teams", `${entry.name}.json`), JSON.stringify(entry));
+    writeFileSync(join(a6gHome, "teams", `${entry.name}.json`), JSON.stringify(entry));
   }
   const log = join(root, "t3.log");
   const showFile = join(root, "show.json");
@@ -92,7 +92,7 @@ export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }:
   show({ status: "idle", updatedAt: new Date().toISOString(), pendingRequestCount: 0 });
   const env: NodeJS.ProcessEnv = {
     HOME: join(root, "home"),
-    E9G_HOME: e9gHome,
+    A6G_HOME: a6gHome,
     T3CODE_HOME: t3Home,
     PATH: `${BIN}:${process.env.PATH}`,
     FAKE_T3_LOG: log,
@@ -115,14 +115,14 @@ export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }:
   const worktree = (name: string, branch: string): string => {
     const path = join(worktreesDir, name);
     mkdirSync(worktreesDir, { recursive: true });
-    git(home, "worktree", "add", "-q", "-b", branch, path, team.branch ?? "e9g/next");
+    git(home, "worktree", "add", "-q", "-b", branch, path, team.branch ?? "a6g/next");
     return path;
   };
   return {
     root,
     home,
     run,
-    e9gHome,
+    a6gHome,
     t3Home,
     db,
     worktreesDir,
@@ -134,7 +134,7 @@ export async function fakeWorld(team: RawTeam = baseTeam(), { register = true }:
     show,
     calls: () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : []),
     setUp: (on) => (on ? writeFileSync(up, "") : rmSync(up, { force: true })),
-    e9g: (...args) => e9g(args, { cwd: root, env }),
+    a6g: (...args) => a6g(args, { cwd: root, env }),
     // Closing its stdin ends the server; so does this process ending.
     close: () =>
       new Promise<void>((done) => {

@@ -5,7 +5,7 @@
 // right. Each test names the finding it holds.
 //
 // Anything that installs, runs the launcher or runs doctor does it on a machine of its own (machine() in helpers.ts).
-import { baseTeam, e9g, git, gitRepo, guard, machine, makeRepo, NO_SERVER, ROOT, sourceCopy, tmp, write } from "./helpers.ts";
+import { baseTeam, a6g, git, gitRepo, guard, machine, makeRepo, NO_SERVER, ROOT, sourceCopy, tmp, write } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
@@ -20,7 +20,6 @@ import {
   realpathSync,
   renameSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -33,14 +32,14 @@ import { PACKAGE } from "../lib/paths.ts";
 import { validator } from "./jsonschema.ts";
 
 const VERSION = PACKAGE.version;
-// E9G Factory 0.2.0, and main when the review was made.
+// Anything Factory 0.2.0, and main when the review was made.
 const V020 = "7753a95";
 const BASELINE = "6142b7a";
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const norm = (raw: Record<string, unknown>) => normalize({ name: "t", branch: "e9g/next", ...raw } as RawTeam, "/tmp/x");
+const norm = (raw: Record<string, unknown>) => normalize({ name: "t", branch: "a6g/next", ...raw } as RawTeam, "/tmp/x");
 const validate = validator(JSON.parse(readFileSync(join(ROOT, "schema", "team.schema.json"), "utf8")) as Record<string, unknown>);
-const schema = (raw: Record<string, unknown>) => validate({ name: "t", branch: "e9g/next", ...raw });
+const schema = (raw: Record<string, unknown>) => validate({ name: "t", branch: "a6g/next", ...raw });
 
 function run(command: string[], { cwd, env = {} }: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): Promise<{ code: number | null; out: string }> {
   return new Promise((done) => {
@@ -57,7 +56,7 @@ const node = (entry: string, args: string[], options: { cwd?: string; env?: Node
 // history doesn't have it.
 function archive(commit: string, ...paths: string[]): string | null {
   if (spawnSync("git", ["cat-file", "-e", `${commit}^{commit}`], { cwd: ROOT }).status !== 0) return null;
-  const dir = join(tmp("e9g-release-"), "E9G-Factory");
+  const dir = join(tmp("a6g-release-"), "Anything-Factory");
   mkdirSync(dir, { recursive: true });
   const tar = join(dirname(dir), "release.tar");
   execFileSync("git", ["-C", ROOT, "archive", "-o", tar, commit, ...paths]);
@@ -65,15 +64,6 @@ function archive(commit: string, ...paths: string[]): string | null {
   rmSync(tar);
   return dir;
 }
-// The same, as a clone to self-install from. Its dependency is a folder of its own: through a link, an install could
-// write into this checkout's node_modules.
-function releaseClone(commit: string): string | null {
-  const dir = archive(commit);
-  if (!dir) return null;
-  cpSync(join(ROOT, "node_modules", "axe-core"), join(dir, "node_modules", "axe-core"), { recursive: true });
-  return gitRepo(dir);
-}
-
 // The key paths at which two values differ, so a failure names where without printing what.
 function differences(a: unknown, b: unknown, at = ""): string[] {
   if (isDeepStrictEqual(a, b)) return [];
@@ -102,7 +92,7 @@ describe("team.json that 0.2.0 loaded loads again", { concurrency: true }, () =>
     const tuning = { CLAUDE_CODE_MAX_OUTPUT_TOKENS: "64000", CLAUDE_CODE_DISABLE_TELEMETRY: "1", CLAUDE_PROJECT_DIRS: "x" };
     assert.deepEqual(norm({ vars: tuning }).problems, []);
     assert.deepEqual(schema({ vars: tuning }), []);
-    for (const name of ["CLAUDE_PROJECT_DIR", "CLAUDE_CONFIG_DIR", "CLAUDE_PLUGIN_ROOT", "CLAUDE_ENV_FILE", "E9G_ROLE", "E9G_ANYTHING"]) {
+    for (const name of ["CLAUDE_PROJECT_DIR", "CLAUDE_CONFIG_DIR", "CLAUDE_PLUGIN_ROOT", "CLAUDE_ENV_FILE", "A6G_ROLE", "A6G_ANYTHING"]) {
       assert.match(norm({ vars: { [name]: "x" } }).problems.join("\n"), new RegExp(`vars\\.${name}: `), name);
       assert.notDeepEqual(schema({ vars: { [name]: "x" } }), [], `the schema refuses ${name}`);
     }
@@ -119,7 +109,7 @@ describe("team.json that 0.2.0 loaded loads again", { concurrency: true }, () =>
       [{ watchdog: { tickevery: "10m" } }, "watchdog.tickevery"],
       [{ gate: { full: "true", $comment: "what CI runs" } }, "gate.$comment"],
       [{ roles: { planner: {}, builder: { limit: 2, model: "claude-sonnet" } } }, "roles.builder.model"],
-      [{ board: { github: { label: "e9g", repo: "o/r" } } }, "board.github.repo"],
+      [{ board: { github: { label: "a6g", repo: "o/r" } } }, "board.github.repo"],
       [{ board: { github: {}, note: "x" } }, "board.note"],
       [{ push: { every: "6h", force: true } }, "push.force"],
       [{ review: { required: ["builder"], approvers: 2 } }, "review.approvers"],
@@ -165,7 +155,7 @@ describe("team.json that 0.2.0 loaded loads again", { concurrency: true }, () =>
     assert.equal(team({ title: "" }).title, "t", '"" is the name');
     assert.equal(team({ finish: "" }).finish, null);
     assert.equal(team({ finish: "", progress: "" }).progress, null);
-    assert.equal(team({ finish: "e9g pages done", progress: null, pages: { list: [{ id: "a", path: "/" }] } }).progress, "e9g pages status");
+    assert.equal(team({ finish: "a6g pages done", progress: null, pages: { list: [{ id: "a", path: "/" }] } }).progress, "a6g pages status");
     assert.deepEqual(team({ watchdog: { tickEvery: "10m ", stuckAfter: " 45m", pruneAfter: " 2h " } }).watchdog, {
       tickEveryMin: 10,
       stuckAfterMin: 45,
@@ -185,11 +175,11 @@ describe("team.json that 0.2.0 loaded loads again", { concurrency: true }, () =>
 });
 
 describe("the teams on this machine load as they did before this review", () => {
-  // Every team checkout beside this one (<folder>/.e9g/team.json next to the factory's checkout). Each is read through
+  // Every team checkout beside this one (<folder>/.a6g/team.json next to the factory's checkout). Each is read through
   // a temporary copy, removed afterwards, and a failure names keys, never values.
   const parent = dirname(ROOT);
   const files = readdirSync(parent)
-    .map((folder) => join(parent, folder, ".e9g", "team.json"))
+    .map((folder) => join(parent, folder, ".a6g", "team.json"))
     .filter((file) => existsSync(file));
   type Loader = { normalize: (raw: unknown, home: string) => { team: Record<string, unknown>; problems: string[]; warnings: string[] } };
   const loaderAt = async (commit: string, file: string): Promise<Loader | null> => {
@@ -211,15 +201,15 @@ describe("the teams on this machine load as they did before this review", () => 
       const baseline = await loaderAt(BASELINE, "config.ts");
       const v020 = await loaderAt(V020, "config.mjs");
       if (!baseline) t.diagnostic(`${BASELINE} isn't in this clone's history, so each team is only held to loading`);
-      const copies = tmp("e9g-teams-");
+      const copies = tmp("a6g-teams-");
       let compared = 0;
       try {
         for (const [i, file] of files.entries()) {
           const which = `team ${i + 1} of ${files.length}`;
           const home = join(copies, String(i));
-          mkdirSync(join(home, ".e9g"), { recursive: true });
-          copyFileSync(file, join(home, ".e9g", "team.json"));
-          const raw = JSON.parse(readFileSync(join(home, ".e9g", "team.json"), "utf8")) as RawTeam;
+          mkdirSync(join(home, ".a6g"), { recursive: true });
+          copyFileSync(file, join(home, ".a6g", "team.json"));
+          const raw = JSON.parse(readFileSync(join(home, ".a6g", "team.json"), "utf8")) as RawTeam;
           const loadedAtBaseline = loads(baseline, raw, home);
           // A draft that neither 0.2.0 nor the baseline loaded isn't held to anything.
           if ((baseline || v020) && !loadedAtBaseline && !loads(v020, raw, home)) {
@@ -240,7 +230,7 @@ describe("the teams on this machine load as they did before this review", () => 
             const plannerWrite = (team: Record<string, unknown>) => {
               const roles = team["roles"] as Record<string, { write: string[] }>;
               const planner = roles["planner"];
-              return planner ? { ...roles, planner: { ...planner, write: planner.write.filter((rule) => rule !== "^\\.e9g/decisions\\.md$") } } : roles;
+              return planner ? { ...roles, planner: { ...planner, write: planner.write.filter((rule) => rule !== "^\\.a6g/decisions\\.md$") } } : roles;
             };
             const withoutPullRequest = (push: unknown) => {
               if (!push || typeof push !== "object") return push;
@@ -292,66 +282,62 @@ describe("the teams on this machine load as they did before this review", () => 
 
 describe("an older self-install after a newer one, on a machine of its own (#3, #5, #11)", () => {
   const m = machine();
-  const versions = join(m.e9gHome, "versions");
+  const versions = join(m.a6gHome, "versions");
   const source = sourceCopy();
-  const old = releaseClone(V020);
-  const skip = old ? false : `${V020} (0.2.0) isn't in this clone's history`;
-  const launcher = (args: string[], { cwd, env = {} }: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) =>
-    run([m.launcher, ...args], { env: { ...m.env, ...env }, ...(cwd === undefined ? {} : { cwd }) });
-
-  test("0.2.0 installed after this release leaves it reachable, for its agents and through 0.2.0's hand-over (#3)", { skip }, async () => {
-    const installed = await node(join(source, "bin", "e9g.ts"), ["self-install"], { env: m.env });
+  test("doctor judges a team pinned to an older version by that version's own loader (#5)", async () => {
+    const installed = await node(join(source, "bin", "a6g.ts"), ["self-install"], { env: m.env });
     assert.equal(installed.code, 0, installed.out);
-    assert.ok(statSync(join(versions, VERSION, "bin", "e9g.mjs")).mode & 0o100, "the release has bin/e9g.mjs, executable");
-    const rolledBack = await node(join(old ?? "", "bin", "e9g.mjs"), ["self-install"], { env: m.env });
-    assert.equal(rolledBack.code, 0, rolledBack.out);
-    assert.match(readFileSync(join(m.e9gHome, "bin", "e9g"), "utf8"), /\/bin\/e9g\.mjs" "\$@"/, "0.2.0's launcher, which runs bin/e9g.mjs");
-    const agent = await launcher(["--version"], { env: { E9G_VERSION: VERSION } });
-    assert.equal(agent.out.trim(), VERSION, agent.out);
-    const home = makeRepo(baseTeam({ factory: VERSION }));
-    const person = await launcher(["prompt", home, "planner"], { cwd: home });
-    assert.match(person.out, new RegExp(`compiled by E9G Factory ${escape(VERSION)} `), person.out.slice(0, 400));
-  });
-
-  test("doctor judges a team pinned to 0.2.0 by 0.2.0's loader (#5)", { skip }, async () => {
-    mkdirSync(join(m.e9gHome, "teams"), { recursive: true });
+    // An older release whose loader reads a page id with a dot, which this version refuses; and, like this version,
+    // refuses an isolation it doesn't know.
+    const older = sourceCopy("0.2.98");
+    const config = join(older, "lib", "config.ts");
+    const loader = readFileSync(config, "utf8");
+    const dots = loader.replace("const ID = /^[\\w-]+$/;", "const ID = /^[\\w.-]+$/;");
+    assert.notEqual(dots, loader, "the older release's loader reads a dot");
+    writeFileSync(config, dots);
+    const added = await node(join(older, "bin", "a6g.ts"), ["self-install"], { env: m.env });
+    assert.equal(added.code, 0, added.out);
+    mkdirSync(join(m.a6gHome, "teams"), { recursive: true });
     const register = (name: string, extra: RawTeam) => {
-      const home = makeRepo(baseTeam({ name, factory: "0.2.0", ...extra }));
+      const home = makeRepo(baseTeam({ name, factory: "0.2.98", ...extra }));
       const runDir = join(m.root, "runs", name);
-      writeFileSync(join(m.e9gHome, "teams", `${name}.json`), JSON.stringify({ name, title: name, home, run: runDir, version: "0.2.0" }));
+      writeFileSync(join(m.a6gHome, "teams", `${name}.json`), JSON.stringify({ name, title: name, home, run: runDir, version: "0.2.98" }));
       mkdirSync(join(runDir, "prompts"), { recursive: true });
       for (const role of Object.keys(baseTeam().roles ?? {})) {
-        const prompt = spawnSync(process.execPath, [join(versions, "0.2.0", "bin", "e9g.mjs"), "prompt", name, role], {
-          env: { ...process.env, ...m.env, E9G_HANDED_OVER: "1" },
+        const prompt = spawnSync(process.execPath, [join(versions, "0.2.98", "bin", "a6g.ts"), "prompt", name, role], {
+          env: { ...process.env, ...m.env, A6G_HANDED_OVER: "1" },
           encoding: "utf8",
         });
         writeFileSync(join(runDir, "prompts", `${role}.md`), prompt.stdout);
       }
     };
-    // 0.2.0 reads a page id with a dot, which this version refuses; and refuses an isolation it doesn't know.
     register("dotted", { pages: { list: [{ id: "home.v2", path: "/" }] } });
     register("loose", { isolation: "loose" });
-    const doctor = await node(join(versions, VERSION, "bin", "e9g.ts"), ["doctor"], { env: m.env });
-    assert.match(doctor.out, /^ok {4}dotted: rules load, prompts current \(judged by 0\.2\.0\)/m, doctor.out);
-    assert.match(doctor.out, /^FAIL {2}loose: E9G Factory 0\.2\.0, which it pins, can't load its rules or compile its prompts: .*isolation/m, doctor.out);
-    for (const name of ["dotted", "loose"]) rmSync(join(m.e9gHome, "teams", `${name}.json`));
+    const doctor = await node(join(versions, VERSION, "bin", "a6g.ts"), ["doctor"], { env: m.env });
+    assert.match(doctor.out, /^ok {4}dotted: rules load, prompts current \(judged by 0\.2\.98\)/m, doctor.out);
+    assert.match(
+      doctor.out,
+      /^FAIL {2}loose: Anything Factory 0\.2\.98, which it pins, can't load its rules or compile its prompts: .*isolation/m,
+      doctor.out
+    );
+    for (const name of ["dotted", "loose"]) rmSync(join(m.a6gHome, "teams", `${name}.json`));
   });
 
   test("this release installed again is current again; an older one is only added, unless --force (#3)", async () => {
-    const again = await node(join(source, "bin", "e9g.ts"), ["self-install"], { env: m.env });
+    const again = await node(join(source, "bin", "a6g.ts"), ["self-install"], { env: m.env });
     assert.equal(again.code, 0, again.out);
-    assert.equal(realpathSync(join(m.e9gHome, "current")), realpathSync(join(versions, VERSION)));
-    const launcherText = readFileSync(join(m.e9gHome, "bin", "e9g"), "utf8");
+    assert.equal(realpathSync(join(m.a6gHome, "current")), realpathSync(join(versions, VERSION)));
+    const launcherText = readFileSync(join(m.a6gHome, "bin", "a6g"), "utf8");
     const older = sourceCopy("0.2.99");
-    const added = await node(join(older, "bin", "e9g.ts"), ["self-install"], { env: m.env });
+    const added = await node(join(older, "bin", "a6g.ts"), ["self-install"], { env: m.env });
     assert.equal(added.code, 0, added.out);
     assert.match(added.out, new RegExp(`${escape(VERSION)} stays current, since 0\\.2\\.99 is older`));
-    assert.ok(existsSync(join(versions, "0.2.99", "bin", "e9g.ts")), "installed, for teams to pin");
-    assert.equal(realpathSync(join(m.e9gHome, "current")), realpathSync(join(versions, VERSION)));
-    assert.equal(readFileSync(join(m.e9gHome, "bin", "e9g"), "utf8"), launcherText, "the launcher is left as it was");
-    const forced = await node(join(older, "bin", "e9g.ts"), ["self-install", "--force"], { env: m.env });
+    assert.ok(existsSync(join(versions, "0.2.99", "bin", "a6g.ts")), "installed, for teams to pin");
+    assert.equal(realpathSync(join(m.a6gHome, "current")), realpathSync(join(versions, VERSION)));
+    assert.equal(readFileSync(join(m.a6gHome, "bin", "a6g"), "utf8"), launcherText, "the launcher is left as it was");
+    const forced = await node(join(older, "bin", "a6g.ts"), ["self-install", "--force"], { env: m.env });
     assert.equal(forced.code, 0, forced.out);
-    assert.equal(realpathSync(join(m.e9gHome, "current")), realpathSync(join(versions, "0.2.99")), "--force makes it current");
+    assert.equal(realpathSync(join(m.a6gHome, "current")), realpathSync(join(versions, "0.2.99")), "--force makes it current");
   });
 
   test("an interrupted install is put right by the next one (#11)", async () => {
@@ -363,10 +349,10 @@ describe("an older self-install after a newer one, on a machine of its own (#3, 
     mkdirSync(join(versions, `.${VERSION}.installing-${gone}`));
     // One whose process is still running is left alone.
     mkdirSync(join(versions, `.${VERSION}.installing-${process.pid}`));
-    const next = await node(join(source, "bin", "e9g.ts"), ["self-install"], { env: m.env });
+    const next = await node(join(source, "bin", "a6g.ts"), ["self-install"], { env: m.env });
     assert.equal(next.code, 0, next.out);
     assert.match(next.out, /put 0\.2\.99 back/);
-    assert.ok(existsSync(join(versions, "0.2.99", "bin", "e9g.ts")), "the release that was moved aside is back");
+    assert.ok(existsSync(join(versions, "0.2.99", "bin", "a6g.ts")), "the release that was moved aside is back");
     assert.deepEqual(
       readdirSync(versions).filter((name) => name.startsWith(".")),
       [`.${VERSION}.installing-${process.pid}`]
@@ -378,8 +364,8 @@ describe("an older self-install after a newer one, on a machine of its own (#3, 
 describe("doctor on a machine of its own", () => {
   test("a T3 Code settings file it can't read is a warning, and the report goes on (#9, #12)", async () => {
     const m = machine();
-    writeFileSync(join(m.home, ".t3", "userdata", "settings.json"), '{"providerInstances": {"e9g-');
-    const doctor = await node(join(ROOT, "bin", "e9g.ts"), ["doctor"], { env: m.env });
+    writeFileSync(join(m.home, ".t3", "userdata", "settings.json"), '{"providerInstances": {"a6g-');
+    const doctor = await node(join(ROOT, "bin", "a6g.ts"), ["doctor"], { env: m.env });
     assert.match(doctor.out, /^warn {2}T3 Code's settings \(.*settings\.json\) can't be read: /m, doctor.out);
     assert.match(doctor.out, /^(ok|warn) +\d+ GB free/m, "the rest of the report");
     assert.match(doctor.out, new RegExp(`doesn't answer at ${escape(NO_SERVER)}/`), "the stand-in server address, never T3 Code's own");
@@ -392,9 +378,9 @@ describe("doctor on a machine of its own", () => {
   });
 });
 
-describe("e9g check", { concurrency: true }, () => {
+describe("a6g check", { concurrency: true }, () => {
   const { env } = machine();
-  const checkOf = (home: string) => e9g(["check", home], { cwd: home, env: { PATH: env.PATH } });
+  const checkOf = (home: string) => a6g(["check", home], { cwd: home, env: { PATH: env.PATH } });
   const executableAdapter = (home: string, path: string) => {
     chmodSync(join(home, path), 0o755);
     git(home, "add", "-A");
@@ -404,15 +390,15 @@ describe("e9g check", { concurrency: true }, () => {
   test("rules git ignores fail, naming the rule, until they're committed (#4)", async () => {
     // Every dotfile ignored, .gitignore let back in, as some repositories have it.
     const home = makeRepo(baseTeam(), { ".gitignore": ".*\n!.gitignore\n" });
-    assert.equal(git(home, "ls-files", ".e9g"), "", "git add -A left .e9g out");
+    assert.equal(git(home, "ls-files", ".a6g"), "", "git add -A left .a6g out");
     const ignored = await checkOf(home);
     assert.equal(ignored.code, 1, ignored.out);
     assert.match(
       ignored.out,
-      /^FAIL {2}ignored by git \(\.gitignore:1: \.\*\), so not committed on e9g\/next .*: \.e9g\/team\.json, \.e9g\/\.gitignore\. Add "!\.e9g\/"/m
+      /^FAIL {2}ignored by git \(\.gitignore:1: \.\*\), so not committed on a6g\/next .*: \.a6g\/team\.json, \.a6g\/\.gitignore\. Add "!\.a6g\/"/m
     );
     assert.doesNotMatch(ignored.out, /Ready/);
-    write(home, { ".gitignore": ".*\n!.gitignore\n!.e9g/\n" });
+    write(home, { ".gitignore": ".*\n!.gitignore\n!.a6g/\n" });
     git(home, "add", "-A");
     git(home, "commit", "-qm", "the team");
     const fixed = await checkOf(home);
@@ -421,56 +407,56 @@ describe("e9g check", { concurrency: true }, () => {
   });
 
   test("rules ignored by .git/info/exclude fail too; git add -f is enough (#4)", async () => {
-    const home = gitRepo(tmp("e9g-exclude-"), { "README.md": "x\n" });
-    appendFileSync(join(home, ".git", "info", "exclude"), ".e9g/\n");
-    write(home, { ".e9g/team.json": baseTeam(), ".e9g/.gitignore": "run/\n" });
-    git(home, "checkout", "-q", "-b", "e9g/next");
+    const home = gitRepo(tmp("a6g-exclude-"), { "README.md": "x\n" });
+    appendFileSync(join(home, ".git", "info", "exclude"), ".a6g/\n");
+    write(home, { ".a6g/team.json": baseTeam(), ".a6g/.gitignore": "run/\n" });
+    git(home, "checkout", "-q", "-b", "a6g/next");
     const ignored = await checkOf(home);
     assert.equal(ignored.code, 1, ignored.out);
-    assert.match(ignored.out, /^FAIL {2}ignored by git \(\.git\/info\/exclude:\d+: \.e9g\/\)/m);
-    git(home, "add", "-f", ".e9g/team.json", ".e9g/.gitignore");
+    assert.match(ignored.out, /^FAIL {2}ignored by git \(\.git\/info\/exclude:\d+: \.a6g\/\)/m);
+    git(home, "add", "-f", ".a6g/team.json", ".a6g/.gitignore");
     git(home, "commit", "-qm", "the team");
     const fixed = await checkOf(home);
     assert.equal(fixed.code, 0, fixed.out);
   });
 
   test("a .DS_Store, an editor's backup or a note in adapters/ doesn't fail check; its shell scripts are still checked (#6)", async () => {
-    const home = makeRepo(baseTeam({ gate: { full: ".e9g/adapters/gate.sh" } }), { ".e9g/adapters/gate.sh": "#!/usr/bin/env bash\necho ok\n" });
-    executableAdapter(home, ".e9g/adapters/gate.sh");
+    const home = makeRepo(baseTeam({ gate: { full: ".a6g/adapters/gate.sh" } }), { ".a6g/adapters/gate.sh": "#!/usr/bin/env bash\necho ok\n" });
+    executableAdapter(home, ".a6g/adapters/gate.sh");
     write(home, {
-      ".e9g/adapters/.DS_Store": "\0\0\0\u0001Bud1",
-      ".e9g/adapters/gate.sh~": "#!/bin/bash\necho old\n",
-      ".e9g/adapters/notes.txt": "how the gate works\n",
-      ".e9g/adapters/finish.mjs": "#!/usr/bin/env node\n",
+      ".a6g/adapters/.DS_Store": "\0\0\0\u0001Bud1",
+      ".a6g/adapters/gate.sh~": "#!/bin/bash\necho old\n",
+      ".a6g/adapters/notes.txt": "how the gate works\n",
+      ".a6g/adapters/finish.mjs": "#!/usr/bin/env node\n",
     });
     const stray = await checkOf(home);
     assert.equal(stray.code, 0, stray.out);
-    assert.match(stray.out, /^warn {2}\.e9g\/adapters\/gate\.sh~ looks like an editor's backup/m);
+    assert.match(stray.out, /^warn {2}\.a6g\/adapters\/gate\.sh~ looks like an editor's backup/m);
     assert.doesNotMatch(stray.out, /DS_Store|notes\.txt|finish\.mjs/);
     assert.match(stray.out, /Ready/);
-    write(home, { ".e9g/adapters/extra.sh": "if then\n" });
+    write(home, { ".a6g/adapters/extra.sh": "if then\n" });
     const script = await checkOf(home);
     assert.equal(script.code, 1, script.out);
-    assert.match(script.out, /^FAIL {2}\.e9g\/adapters\/extra\.sh isn't valid sh/m);
-    assert.match(script.out, /^FAIL {2}not committed on e9g\/next: \.e9g\/adapters\/extra\.sh/m);
+    assert.match(script.out, /^FAIL {2}\.a6g\/adapters\/extra\.sh isn't valid sh/m);
+    assert.match(script.out, /^FAIL {2}not committed on a6g\/next: \.a6g\/adapters\/extra\.sh/m);
   });
 
   test("a linked adapter is checked through what it points at (#7)", async () => {
-    const home = makeRepo(baseTeam({ gate: { full: ".e9g/adapters/gate.sh" } }), { "scripts/ci.sh": "#!/usr/bin/env bash\necho ok\n" });
-    mkdirSync(join(home, ".e9g", "adapters"), { recursive: true });
-    symlinkSync("../../scripts/ci.sh", join(home, ".e9g", "adapters", "gate.sh"));
+    const home = makeRepo(baseTeam({ gate: { full: ".a6g/adapters/gate.sh" } }), { "scripts/ci.sh": "#!/usr/bin/env bash\necho ok\n" });
+    mkdirSync(join(home, ".a6g", "adapters"), { recursive: true });
+    symlinkSync("../../scripts/ci.sh", join(home, ".a6g", "adapters", "gate.sh"));
     executableAdapter(home, "scripts/ci.sh");
-    assert.match(git(home, "ls-files", "-s", ".e9g/adapters/gate.sh"), /^120000 /);
+    assert.match(git(home, "ls-files", "-s", ".a6g/adapters/gate.sh"), /^120000 /);
     const linked = await checkOf(home);
     assert.equal(linked.code, 0, linked.out);
-    assert.match(linked.out, /^ok {4}the rules and adapters are committed on e9g\/next/m);
+    assert.match(linked.out, /^ok {4}the rules and adapters are committed on a6g\/next/m);
     // What it points at, committed without the executable bit, is what fails.
     git(home, "update-index", "--chmod=-x", "scripts/ci.sh");
     git(home, "commit", "-qm", "not executable");
     const target = await checkOf(home);
     assert.equal(target.code, 1, target.out);
     assert.match(target.out, /^FAIL {2}scripts\/ci\.sh is committed without its executable bit/m);
-    assert.doesNotMatch(target.out, /\.e9g\/adapters\/gate\.sh is committed without/);
+    assert.doesNotMatch(target.out, /\.a6g\/adapters\/gate\.sh is committed without/);
   });
 
   test("#!/usr/bin/env -S bash -eu is read as bash; a #! line that names no program is mentioned (#12)", async () => {
@@ -488,15 +474,15 @@ describe("e9g check", { concurrency: true }, () => {
       ["#!", null],
     ];
     for (const [line, program] of read) assert.equal(interpreterOf(line), program, line);
-    const home = makeRepo(baseTeam({ environment: { script: ".e9g/adapters/env.sh" } }), {
-      ".e9g/adapters/env.sh": "#!/usr/bin/env -S bash -eu\nif then\n",
-      ".e9g/adapters/odd.sh": "#!/usr/bin/env -S\necho\n",
+    const home = makeRepo(baseTeam({ environment: { script: ".a6g/adapters/env.sh" } }), {
+      ".a6g/adapters/env.sh": "#!/usr/bin/env -S bash -eu\nif then\n",
+      ".a6g/adapters/odd.sh": "#!/usr/bin/env -S\necho\n",
     });
-    executableAdapter(home, ".e9g/adapters/env.sh");
+    executableAdapter(home, ".a6g/adapters/env.sh");
     const result = await checkOf(home);
     assert.equal(result.code, 1, result.out);
-    assert.match(result.out, /^FAIL {2}\.e9g\/adapters\/env\.sh isn't valid bash/m);
-    assert.match(result.out, /^warn {2}\.e9g\/adapters\/odd\.sh: its #! line doesn't say which shell runs it/m);
+    assert.match(result.out, /^FAIL {2}\.a6g\/adapters\/env\.sh isn't valid bash/m);
+    assert.match(result.out, /^warn {2}\.a6g\/adapters\/odd\.sh: its #! line doesn't say which shell runs it/m);
   });
 });
 
@@ -553,7 +539,7 @@ describe("review.removedPattern's default", () => {
 describe("the pages command (#10)", () => {
   test("pages done refuses a team that loads but lists no pages, saying so", async () => {
     const home = makeRepo(baseTeam({ finish: "true" }));
-    const done = await e9g(["pages", "done"], { cwd: home, env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "planner" } });
+    const done = await a6g(["pages", "done"], { cwd: home, env: { A6G_HOME_DIR: home, A6G_TEAM: "fixture", A6G_ROLE: "planner" } });
     assert.equal(done.code, 2, done.out);
     assert.match(done.out, /pages\.list" names no pages/);
   });

@@ -1,15 +1,15 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Erik-Koning/Anything-Factory/main/schema/team.schema.json",
   "name": "app-complete",
   "title": "App completeness team",
   "owner": "you@example.com",
   "branch": "next",
   "base": "main",
   "push": { "remote": "origin", "branch": "next", "every": "6h" },
-  "board": { "github": { "label": "e9g" } },
+  "board": { "github": { "label": "a6g" } },
   "branchPrefix": "team",
   "roles": {
-    "planner": { "write": ["^\\.e9g/lessons\\.md$", "^docs/journeys\\.json$"] },
+    "planner": { "write": ["^\\.a6g/lessons\\.md$", "^docs/journeys\\.json$"] },
     "builder": { "limit": 3, "write": ["*"], "deny": ["^e2e/", "^docs/journeys\\.json$", "^scripts/e2e/", "^playwright\\.config\\.ts$"] },
     "tester": { "limit": 2, "write": ["^e2e/"] },
     "reviewer": { "limit": 2 },
@@ -26,7 +26,7 @@
   "never": [
     {
       "rule": "\\bdocker[\\s-]+compose\\s+down\\b[^;&|]*\\s(-v|--volumes)\\b",
-      "reason": "that deletes the operator's local database volumes; the team has its own (e9g env).",
+      "reason": "that deletes the operator's local database volumes; the team has its own (a6g env).",
       "example": "docker compose down -v"
     },
     { "rule": "\\bLIVE_PAYMENTS\\s*=\\s*[\"']?(1|true)\\b", "reason": "live payments stay off.", "example": "LIVE_PAYMENTS=true pnpm dev" }
@@ -40,7 +40,7 @@
     { "rule": "\\bjourneys\\.mjs\\s+ux\\b", "roles": ["ux-specialist"], "reason": "only the UX specialist records UX verdicts." }
   ],
   "context": [{ "title": "Journeys", "command": "node scripts/e2e/journeys.mjs status --brief" }],
-  "docs": [".e9g/brief.md", ".e9g/notes.md", ".e9g/rubric.md"],
+  "docs": [".a6g/brief.md", ".a6g/notes.md", ".a6g/rubric.md"],
   "vars": { "E2E_ENV_FILE": "${home}/.e2e-state/app.env" },
   "worktreeSetup": "pnpm install --frozen-lockfile --prefer-offline",
   "watchdog": { "tickEvery": "10m", "stuckAfter": "45m", "pruneAfter": "1h" }

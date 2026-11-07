@@ -1,7 +1,7 @@
 {
-  "name": "e9g-web",
+  "name": "a6g-web",
   "version": "0.1.0",
-  "description": "The web app for E9G Factory's teams: requests, decisions and each team's state, on the same MongoDB as their task graphs.",
+  "description": "The web app for Anything Factory's teams: requests, decisions and each team's state, on the same MongoDB as their task graphs.",
   "private": true,
   "type": "module",
   "license": "UNLICENSED",

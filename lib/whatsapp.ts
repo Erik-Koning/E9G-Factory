@@ -1,27 +1,27 @@
 // WhatsApp from the factory, through the operator's own WhatsApp Business number on Meta's Cloud API, so the
-// watchdog's alerts and the planner's outbox reach their phone. `e9g connect whatsapp` sets it up. The access token
-// is in the Keychain (lib/keychain.ts); the number's ids and the operator's number are in ~/.e9g/whatsapp.json.
+// watchdog's alerts and the planner's outbox reach their phone. `a6g connect whatsapp` sets it up. The access token
+// is in the Keychain (lib/keychain.ts); the number's ids and the operator's number are in ~/.a6g/whatsapp.json.
 //
 // A business may message someone first only with a template Meta has approved: free text more than 24 hours after
 // their last message fails later, in a webhook the factory can't see. So every message goes through one utility
-// template, e9g_update, which connect creates on the account. Replies aren't read: they arrive only at the number's
+// template, a6g_update, which connect creates on the account. Replies aren't read: they arrive only at the number's
 // webhook, a public server that belongs to whatever else uses the number.
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Channel } from "./channels.ts";
 import { forgetSecret, hasSecret, readSecret, storeSecret } from "./keychain.ts";
 import { PLANNER_LABEL, PLANNER_TAG } from "./labels.ts";
-import { E9G_HOME, PACKAGE } from "./paths.ts";
+import { A6G_HOME, PACKAGE } from "./paths.ts";
 import { readJson, writeJson } from "./util.ts";
 
-export const WHATSAPP_FILE = join(E9G_HOME, "whatsapp.json");
-export const TEMPLATE = "e9g_update";
+export const WHATSAPP_FILE = join(A6G_HOME, "whatsapp.json");
+export const TEMPLATE = "a6g_update";
 const LANGUAGE = "en";
 // Meta refuses a template that starts or ends with a parameter.
-export const TEMPLATE_BODY = "E9G Factory has an update about {{1}}:\n\n{{2}}\n\nOpen T3 Code on your Mac for the details.";
-const KEYCHAIN = ["ca.e9g.whatsapp", "meta"] as const;
-// Graph API v25.0 (February 2026) is supported until July 2028. E9G_GRAPH_URL is for the tests.
-const api = (): string => process.env.E9G_GRAPH_URL ?? "https://graph.facebook.com/v25.0";
+export const TEMPLATE_BODY = "Anything Factory has an update about {{1}}:\n\n{{2}}\n\nOpen T3 Code on your Mac for the details.";
+const KEYCHAIN = ["ca.a6g.whatsapp", "meta"] as const;
+// Graph API v25.0 (February 2026) is supported until July 2028. A6G_GRAPH_URL is for the tests.
+const api = (): string => process.env.A6G_GRAPH_URL ?? "https://graph.facebook.com/v25.0";
 
 export interface WhatsAppSettings {
   provider: "meta";
@@ -36,7 +36,7 @@ export const whatsappSettings = (): WhatsAppSettings | null => readJson<WhatsApp
 export const saveWhatsAppSettings = (settings: WhatsAppSettings): void => writeJson(WHATSAPP_FILE, settings);
 export const readToken = (): string | null => readSecret(...KEYCHAIN);
 export const hasToken = (): boolean => hasSecret(...KEYCHAIN);
-export const storeToken = (token: string): boolean => storeSecret(...KEYCHAIN, "E9G Factory WhatsApp", token);
+export const storeToken = (token: string): boolean => storeSecret(...KEYCHAIN, "Anything Factory WhatsApp", token);
 export function forgetWhatsApp(): void {
   forgetSecret(...KEYCHAIN);
   rmSync(WHATSAPP_FILE, { force: true });
@@ -51,7 +51,7 @@ async function graph<T>(token: string, path: string, body?: unknown): Promise<An
   try {
     response = await fetch(`${api()}${path}`, {
       method: body === undefined ? "GET" : "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": `e9g/${PACKAGE.version}` },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "User-Agent": `a6g/${PACKAGE.version}` },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(15_000),
     });
@@ -105,7 +105,7 @@ const parameter = (text: string, max: number): string => {
 };
 
 // A message as the template's two parameters: what it's about (the team's title from "[title] …", after the planner's
-// label when the planner wrote it, "[E9G-Planner] [title] …", so the parameter starts with the label too and the
+// label when the planner wrote it, "[A6G-Planner] [title] …", so the parameter starts with the label too and the
 // approved template stays as it is), and the subject with the text after it, leaving out a paragraph that repeats
 // the subject and the watchdog's sign-off.
 export function whatsappMessage(subject: string, text: string): [string, string] {
@@ -116,10 +116,10 @@ export function whatsappMessage(subject: string, text: string): [string, string]
   const body = text
     .split(/\n\s*\n/)
     .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph && paragraph !== headline && !paragraph.startsWith("Sent by the E9G Factory watchdog"))
+    .filter((paragraph) => paragraph && paragraph !== headline && !paragraph.startsWith("Sent by the Anything Factory watchdog"))
     .join(" ");
   const message = body ? `${headline}${/[.!?:]$/.test(headline) ? "" : "."} ${body}` : headline;
-  const about = !title || title === "E9G Factory" ? "your teams" : title;
+  const about = !title || title === "Anything Factory" ? "your teams" : title;
   return [parameter(planner ? `${PLANNER_LABEL} · ${about}` : about, 60), parameter(message, 700)];
 }
 

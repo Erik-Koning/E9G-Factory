@@ -21,7 +21,7 @@ export default async function DonePage({ searchParams }: { searchParams: SearchP
       <h1>{said.title}</h1>
       <p role="status">{said.text}</p>
       <p>
-        <Link href="/">Go to E9G</Link>
+        <Link href="/">Go to Anything Factory</Link>
       </p>
     </div>
   );

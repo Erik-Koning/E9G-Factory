@@ -67,7 +67,7 @@ export async function openStore(team: Pick<Team, "name" | "tasks">, run: string)
   const moved = movedTo(run);
   if (moved)
     throw new Refused(
-      `this team's task graph moved to ${moved.to}${moved.at ? ` on ${moved.at.slice(0, 10)}` : ""} (e9g task migrate): set team.json tasks.store to "${moved.to}"`
+      `this team's task graph moved to ${moved.to}${moved.at ? ` on ${moved.at.slice(0, 10)}` : ""} (a6g task migrate): set team.json tasks.store to "${moved.to}"`
     );
   const { fileStore } = await import(/* webpackIgnore: true */ /* turbopackIgnore: true */ "./files.ts");
   return fileStore(run, team.name);

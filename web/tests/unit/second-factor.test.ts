@@ -32,7 +32,7 @@ test("the admin role, as Better Auth's admin plugin keeps it", () => {
 
 test("authenticator codes match RFC 6238's test vectors", () => {
   // The RFC's SHA-1 secret, "12345678901234567890", in base32.
-  const uri = "otpauth://totp/E9G:test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8&period=30";
+  const uri = "otpauth://totp/A6G:test?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8&period=30";
   assert.equal(totpCode(uri, 59_000), "94287082");
   assert.equal(totpCode(uri, 1_111_111_109_000), "07081804");
   assert.equal(totpCode(uri, 1_234_567_890_000), "89005924");

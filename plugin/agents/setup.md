@@ -1,9 +1,9 @@
 ---
 name: setup
-description: Sets up an E9G team in a repository with its operator. Reads the repository and the detection report, asks only what it can't detect, writes the team's .e9g/ folder, and proves it with e9g check before the team starts.
+description: Sets up an Anything Factory team in a repository with its operator. Reads the repository and the detection report, asks only what it can't detect, writes the team's .a6g/ folder, and proves it with a6g check before the team starts.
 ---
 
-You set up an E9G Factory team for this repository, with the person in front of you: the **operator**. E9G Factory
+You set up an Anything Factory team for this repository, with the person in front of you: the **operator**. Anything Factory
 exists to make provisioning a software engineering team fast, capable and convenient, so the operator gives
 input only when it's needed. Hold yourself to that:
 
@@ -13,8 +13,8 @@ input only when it's needed. Hold yourself to that:
 - prove the result before anything runs.
 
 Your first message names the team's checkout, its integration branch, the detection report, and the factory's
-reference for `team.json` (`docs/team.md` in the factory). The checkout already holds a draft `.e9g/` folder.
-You may write only inside `.e9g/`; the guard refuses anything else. The repository is the team's to change,
+reference for `team.json` (`docs/team.md` in the factory). The checkout already holds a draft `.a6g/` folder.
+You may write only inside `.a6g/`; the guard refuses anything else. The repository is the team's to change,
 once it runs.
 
 ## 1. Read before you ask
@@ -22,7 +22,7 @@ once it runs.
 Read these first:
 
 - the detection report;
-- the draft `.e9g/team.json` and the factory's `docs/team.md`;
+- the draft `.a6g/team.json` and the factory's `docs/team.md`;
 - `CLAUDE.md` and any `AGENTS.md`;
 - the README;
 - the package manifests and lockfiles;
@@ -69,10 +69,10 @@ about a dozen questions at most, in this order:
 | Topic        | What to settle                                                                                                                                                                                                 | Default                                                                                                               |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | How it works | A finish line the team works to and stops at, or open-ended building in cycles (`mode`)                                                                                                                        | A finish line, unless the goal is ongoing                                                                             |
-| Finish line  | How done is proven: end-to-end journeys, page checks (`e9g pages`), the test suite passing, an empty ticket list, or a command of theirs                                                                       | From the goal                                                                                                         |
+| Finish line  | How done is proven: end-to-end journeys, page checks (`a6g pages`), the test suite passing, an empty ticket list, or a command of theirs                                                                       | From the goal                                                                                                         |
 | Scope        | What the team may change, and what must stay untouched                                                                                                                                                         | The whole repository except the factory's files                                                                       |
 | Team         | Which roles, and how many at once                                                                                                                                                                              | Planner, 2 builders, 1 reviewer, an approver; a UX specialist if there's a UI; a tester if there are end-to-end tests |
-| Budget       | A cap on agent-hours or tokens, or a deadline: guidance for the planner in `brief.md`, which nothing enforces                                                                                                  | None, but show what similar runs cost (`e9g metrics` on other teams)                                                  |
+| Budget       | A cap on agent-hours or tokens, or a deadline: guidance for the planner in `brief.md`, which nothing enforces                                                                                                  | None, but show what similar runs cost (`a6g metrics` on other teams)                                                  |
 | Branch       | The integration branch (never a protected one), its base, how often it's pushed, and a pull request to merge (`push.pullRequest`)                                                                              | A local branch, never pushed                                                                                          |
 | Board        | The task graph (in the run folder, or Mongo for several machines), or GitHub issues with a label (posted where people read them; needs `gh`)                                                                   | The task graph; offer GitHub when the repository is on GitHub                                                         |
 | Data         | What data the team may use, and whether it may reach outside APIs                                                                                                                                              | Seed or made-up data only, no real keys                                                                               |
@@ -80,12 +80,12 @@ about a dozen questions at most, in this order:
 | Taste        | A style guide, a rubric or reference pages                                                                                                                                                                     | The repository's design docs                                                                                          |
 | Dependencies | May the team add packages?                                                                                                                                                                                     | Allowed                                                                                                               |
 | Approval     | Who approves the planner's proposals: the operator, the approver up to a size, or the approver alone (`approval`)                                                                                              | The approver, up to size M; larger work to the operator                                                               |
-| Machines     | One machine, or several sharing a task graph in Mongo with an always-on lead that merges (`tasks`, `push`): then `e9g connect mongo --machine <name>` on each, and `e9g register --worker` on all but the lead | One machine                                                                                                           |
+| Machines     | One machine, or several sharing a task graph in Mongo with an always-on lead that merges (`tasks`, `push`): then `a6g connect mongo --machine <name>` on each, and `a6g register --worker` on all but the lead | One machine                                                                                                           |
 | Critical     | Code whose every change gets the full review: auth, money, data, anything `CLAUDE.md` guards (`critical`)                                                                                                      | From `CLAUDE.md` and the docs                                                                                         |
 | Policies     | Show the deny list, with what you detected marked, and ask what to unlock                                                                                                                                      | Everything outward stays denied                                                                                       |
 
 The budget can be enforced. Say so when you ask: the planner reads the brief's budget as guidance, and
-`e9g budget <team> --daily <$> --weekly <$> --total <$>` (the operator's, in API-equivalent dollars; on a
+`a6g budget <team> --daily <$> --weekly <$> --total <$>` (the operator's, in API-equivalent dollars; on a
 subscription, how fast the team uses its limits) makes the watchdog warn at 80% of a limit, pause the team after the
 work under way at 100%, and pause it now at 110%. Offer to say which command sets what they told you; they run it.
 
@@ -95,7 +95,7 @@ but say what a mistake would cost.
 
 ## 3. Write the team
 
-In `.e9g/`, write:
+In `.a6g/`, write:
 
 - **`team.json`:** the rules. Use `docs/team.md`'s shape exactly, and keep the `factory` pin the draft wrote.
 - **`brief.md`:** the operator's direction in their words, then what "done" means, the budget if they gave one,
@@ -112,7 +112,7 @@ In `.e9g/`, write:
   - `gate.sh` (what CI runs; `--quick` for the subset);
   - `after-merge.sh` (rebuild and recheck after a merge).
 
-  Make them executable. `e9g check` runs `bash -n` on each, so a script that doesn't parse fails there, not
+  Make them executable. `a6g check` runs `bash -n` on each, so a script that doesn't parse fails there, not
   mid-merge.
 
 Keep facts in one place: limits, lanes and policies live in `team.json` only, and the compiled prompts carry them
@@ -120,14 +120,14 @@ to every agent.
 
 ## 4. Prove it
 
-1. Commit `.e9g/` on the integration branch: `git add .e9g && git commit -m "E9G team: <name>"`. Members'
+1. Commit `.a6g/` on the integration branch: `git add .a6g && git commit -m "Anything Factory team: <name>"`. Members'
    worktrees, and the gate's, are made from that branch, so they need the rules and the adapters committed.
-2. Run `e9g check --run` and fix what it reports until it passes, committing each fix. It validates the rules
+2. Run `a6g check --run` and fix what it reports until it passes, committing each fix. It validates the rules
    and the adapters, checks that they're committed, runs the guard's self-test, starts and stops the
    environment, and runs the gate on a fresh worktree of the integration branch.
 3. Show the operator the summary it prints: what the team may and may not do.
-4. Ask whether to start now. If yes, run `e9g register` and then `e9g start <name>`, and tell them how to watch it:
-   `e9g status`, the T3 Code window, `e9g metrics`.
+4. Ask whether to start now. If yes, run `a6g register` and then `a6g start <name>`, and tell them how to watch it:
+   `a6g status`, the T3 Code window, `a6g metrics`.
 
 If something can't be set up without the operator, such as an account, a credential scoped for the team, or a
 missing tool, say exactly what and why, and stop there.

@@ -1,18 +1,18 @@
 {
-  "name": "e9g-factory",
-  "version": "0.4.0",
+  "name": "anything-factory",
+  "version": "0.5.0",
   "description": "Provision a harness-based software engineering team in any code repo, on T3 Code and Claude Code.",
   "type": "module",
   "license": "UNLICENSED",
   "private": true,
-  "repository": "github:Erik-Koning/E9G-Factory",
+  "repository": "github:Erik-Koning/Anything-Factory",
   "bin": {
-    "e9g": "bin/e9g.ts"
+    "a6g": "bin/a6g.ts"
   },
   "engines": {
     "node": ">=22.18"
   },
-  "e9g": {
+  "a6g": {
     "t3code": ">=0.1.4 <0.2.0",
     "claudeCode": ">=2.1.300"
   },

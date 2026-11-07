@@ -35,7 +35,7 @@ export type Ability =
   // Every request of the team (otherwise only one's own).
   | "requests:all"
   | "requests:send"
-  // Add a task as the operator: a proposal, or approved as it's added (e9g task add).
+  // Add a task as the operator: a proposal, or approved as it's added (a6g task add).
   | "tasks:add"
   // Suggest a task, which goes to triage for the planner.
   | "tasks:suggest"

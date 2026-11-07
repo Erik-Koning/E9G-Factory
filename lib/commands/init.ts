@@ -1,16 +1,16 @@
-// e9g init [<repo>] [--name <team>] [--branch <integration>] [--base <ref>] [--checkout <dir> | --in-place]
+// a6g init [<repo>] [--name <team>] [--branch <integration>] [--base <ref>] [--checkout <dir> | --in-place]
 //          [--owner <email>] [--no-interview]
 //
 // Sets up a team in a repository:
 // 1. Detects what it can: git, package manager and scripts, what CI runs, how the repository reaches outside the
 //    machine, its tests and UI, the agent configuration it already has.
-// 2. Makes the team's checkout: by default a worktree beside the repository (<repo>-e9g) on a new integration
+// 2. Makes the team's checkout: by default a worktree beside the repository (<repo>-a6g) on a new integration
 //    branch, so the team never works in the operator's own checkout. --in-place uses the repository itself, switched
 //    to the integration branch (made from the base if it's new).
-// 3. Writes a draft .e9g/ from what it found (team.json, brief, notes, rubric, adapters).
-// 4. Opens the setup agent (claude --agent e9g:setup) in the team's checkout to interview the operator, finish
-//    .e9g/, prove it with e9g check --run, and register and start the team if the operator says so. Its guard lets
-//    it write only .e9g/.
+// 3. Writes a draft .a6g/ from what it found (team.json, brief, notes, rubric, adapters).
+// 4. Opens the setup agent (claude --agent a6g:setup) in the team's checkout to interview the operator, finish
+//    .a6g/, prove it with a6g check --run, and register and start the team if the operator says so. Its guard lets
+//    it write only .a6g/.
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
@@ -53,13 +53,13 @@ export function init(argv: string[]): number {
     }
   })();
   const problems = t3.contract();
-  if (problems.length) console.warn(`e9g: T3 Code isn't ready yet; the team can't start until it is (e9g doctor):\n  - ${problems.join("\n  - ")}`);
+  if (problems.length) console.warn(`a6g: T3 Code isn't ready yet; the team can't start until it is (a6g doctor):\n  - ${problems.join("\n  - ")}`);
 
   const found = detect(repo);
   const given = optionText(options["name"]);
   if (given !== undefined && !TEAM_NAME.test(given)) die(`--name ${given}: lowercase letters, digits and dashes, starting with a letter, up to 31`);
   const name = given ?? teamName(basename(repo));
-  const branch = optionText(options["branch"]) ?? "e9g/next";
+  const branch = optionText(options["branch"]) ?? "a6g/next";
   const base = optionText(options["base"]) ?? found.git.defaultBranch ?? "main";
   const port = 9300 + (Number.parseInt(hash(name), 16) % 90);
   const draft = draftTeam(found, { name, branch, owner: optionText(options["owner"]) });
@@ -84,34 +84,34 @@ export function init(argv: string[]): number {
       const exists = gitOk(repo, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
       const switched = spawnSync("git", exists ? ["checkout", "-q", branch] : ["checkout", "-q", "-b", branch, base], { cwd: repo, encoding: "utf8" });
       if (switched.status !== 0) die(`couldn't check out ${branch} in ${repo}: ${switched.stderr.trim()}`);
-      console.info(`e9g: switched ${repo} to ${exists ? branch : `a new branch ${branch} (from ${base})`}`);
+      console.info(`a6g: switched ${repo} to ${exists ? branch : `a new branch ${branch} (from ${base})`}`);
     }
   } else {
-    checkout = resolve(optionText(options["checkout"]) ?? join(dirname(repo), `${basename(repo)}-e9g`));
+    checkout = resolve(optionText(options["checkout"]) ?? join(dirname(repo), `${basename(repo)}-a6g`));
     if (!existsSync(checkout)) {
       const made = gitOk(repo, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`)
         ? spawnSync("git", ["worktree", "add", checkout, branch], { cwd: repo, encoding: "utf8" })
         : spawnSync("git", ["worktree", "add", "-b", branch, checkout, base], { cwd: repo, encoding: "utf8" });
       if (made.status !== 0) die(`couldn't make the team's checkout at ${checkout}: ${made.stderr.trim()}`);
-      console.info(`e9g: made the team's checkout ${checkout} on ${branch} (from ${base})`);
+      console.info(`a6g: made the team's checkout ${checkout} on ${branch} (from ${base})`);
     } else {
       let on = "";
       try {
         on = git(checkout, "symbolic-ref", "--quiet", "--short", "HEAD");
       } catch {}
-      console.info(`e9g: using the existing checkout ${checkout}${on === branch ? "" : ` (on ${on || "no branch"}, not ${branch}: check it out there)`}`);
+      console.info(`a6g: using the existing checkout ${checkout}${on === branch ? "" : ` (on ${on || "no branch"}, not ${branch}: check it out there)`}`);
     }
   }
 
-  // The draft .e9g/, never overwriting what's there.
-  const dir = join(checkout, ".e9g");
+  // The draft .a6g/, never overwriting what's there.
+  const dir = join(checkout, ".a6g");
   const write = (path: string, text: string, mode?: number): void => {
     const file = join(dir, path);
-    if (existsSync(file)) return console.info(`  kept .e9g/${path}`);
+    if (existsSync(file)) return console.info(`  kept .a6g/${path}`);
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(file, text);
     if (mode) chmodSync(file, mode);
-    console.info(`  wrote .e9g/${path}`);
+    console.info(`  wrote .a6g/${path}`);
   };
   const runners: Record<string, string> = { pnpm: "pnpm", yarn: "yarn", bun: "bun run", npm: "npm run" };
   const runner = runners[found.packageManager ?? ""] ?? "npm run";
@@ -135,8 +135,8 @@ export function init(argv: string[]): number {
     "notes.md",
     fill("notes.md", {
       ENVIRONMENT: app
-        ? `The app runs on http://localhost:${port}/ (.e9g/adapters/env.sh).`
-        : "No app was found to run (no UI, no dev or start script, no HTML), so team.json names no environment and no after-merge step. If there is one, fill in .e9g/adapters/env.sh and set environment.script, its health URL and afterMerge.",
+        ? `The app runs on http://localhost:${port}/ (.a6g/adapters/env.sh).`
+        : "No app was found to run (no UI, no dev or start script, no HTML), so team.json names no environment and no after-merge step. If there is one, fill in .a6g/adapters/env.sh and set environment.script, its health URL and afterMerge.",
       COMMANDS: Object.keys(found.scripts).length
         ? Object.entries(found.scripts)
             .map(([script, command]) => `- \`${runner} ${script}\`: \`${command}\``)
@@ -174,33 +174,33 @@ export function init(argv: string[]): number {
 
   const report = join(dir, "run", "setup", "detect.json");
   console.info(
-    `\ne9g: detected ${found.packageManager ?? "no package manager"}, ${found.ci.length} CI workflow(s), ${found.surfaces.length} way(s) out: ${found.surfaces.map((s) => s.id).join(", ") || "none"}`
+    `\na6g: detected ${found.packageManager ?? "no package manager"}, ${found.ci.length} CI workflow(s), ${found.surfaces.length} way(s) out: ${found.surfaces.map((s) => s.id).join(", ") || "none"}`
   );
   if (!existsSync(versionDir(PACKAGE.version)))
-    console.warn(`e9g: the draft pins E9G Factory ${PACKAGE.version}, which isn't installed yet; run e9g self-install before e9g register`);
+    console.warn(`a6g: the draft pins Anything Factory ${PACKAGE.version}, which isn't installed yet; run a6g self-install before a6g register`);
   if (options["no-interview"]) {
-    // Members' worktrees are made from the integration branch, so .e9g/ must be committed there before the gate runs.
+    // Members' worktrees are made from the integration branch, so .a6g/ must be committed there before the gate runs.
     console.info(
       [
-        `e9g: draft written in ${dir}. Next:`,
-        `  1. finish .e9g/ (the reference is ${join(FACTORY_ROOT, "docs", "team.md")})`,
-        `  2. commit it on ${branch}: cd ${shellWord(checkout)} && git add .e9g && git commit -m "E9G team: ${name}"`,
-        "  3. e9g check --run (commit again after any fix)",
-        `  4. e9g register, then e9g start ${name}`,
+        `a6g: draft written in ${dir}. Next:`,
+        `  1. finish .a6g/ (the reference is ${join(FACTORY_ROOT, "docs", "team.md")})`,
+        `  2. commit it on ${branch}: cd ${shellWord(checkout)} && git add .a6g && git commit -m "Anything Factory team: ${name}"`,
+        "  3. a6g check --run (commit again after any fix)",
+        `  4. a6g register, then a6g start ${name}`,
       ].join("\n")
     );
     return 0;
   }
   const first = [
-    `Set up an E9G team for the repository at ${repo}.`,
+    `Set up an Anything Factory team for the repository at ${repo}.`,
     `The team's checkout is ${checkout} on its integration branch ${branch} (from ${base}); the team is named ${name}.`,
     `The detection report is ${report}. The draft is in ${dir}. The reference for team.json is ${join(FACTORY_ROOT, "docs", "team.md")}.`,
     "Read them and the repository first, then interview me.",
   ].join(" ");
-  const session = spawnSync("claude", ["--plugin-dir", join(FACTORY_ROOT, "plugin"), "--agent", "e9g:setup", "--setting-sources", "project", first], {
+  const session = spawnSync("claude", ["--plugin-dir", join(FACTORY_ROOT, "plugin"), "--agent", "a6g:setup", "--setting-sources", "project", first], {
     cwd: checkout,
     stdio: "inherit",
-    env: { ...process.env, E9G_SETUP: "1", E9G_HOME_DIR: checkout, E9G_FACTORY: FACTORY_ROOT },
+    env: { ...process.env, A6G_SETUP: "1", A6G_HOME_DIR: checkout, A6G_FACTORY: FACTORY_ROOT },
   });
   return session.status ?? 0;
 }

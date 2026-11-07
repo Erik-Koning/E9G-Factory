@@ -1,5 +1,5 @@
-// Shared by the tests. Imported first, so E9G_HOME, T3CODE_HOME and HOME point at empty temporary folders before any of
-// the factory's modules read them: no test touches ~/.e9g, ~/.t3, launchd or T3 Code's settings.
+// Shared by the tests. Imported first, so A6G_HOME, T3CODE_HOME and HOME point at empty temporary folders before any of
+// the factory's modules read them: no test touches ~/.a6g, ~/.t3, launchd or T3 Code's settings.
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
@@ -9,16 +9,16 @@ import { fileURLToPath } from "node:url";
 import type { RawTeam } from "../lib/config.ts";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-export const tmp = (prefix = "e9g-test-") => realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+export const tmp = (prefix = "a6g-test-") => realpathSync(mkdtempSync(join(tmpdir(), prefix)));
 
-process.env.E9G_HOME = tmp("e9g-home-");
-process.env.T3CODE_HOME = tmp("e9g-t3-");
+process.env.A6G_HOME = tmp("a6g-home-");
+process.env.T3CODE_HOME = tmp("a6g-t3-");
 // HOME too, for whatever resolves homedir(): ~/.local/bin, ~/Library/LaunchAgents, ~/.claude. Repositories made here
 // set their own git identity, since a fresh HOME has no ~/.gitconfig.
-process.env.HOME = tmp("e9g-user-");
-for (const key of ["E9G_TEAM", "E9G_HOME_DIR", "E9G_RUN", "E9G_ROLE", "E9G_SETUP", "E9G_VERSION", "E9G_MERGE_QUEUED", "CLAUDE_PROJECT_DIR"])
+process.env.HOME = tmp("a6g-user-");
+for (const key of ["A6G_TEAM", "A6G_HOME_DIR", "A6G_RUN", "A6G_ROLE", "A6G_SETUP", "A6G_VERSION", "A6G_MERGE_QUEUED", "CLAUDE_PROJECT_DIR"])
   delete process.env[key];
-// Stand-ins for t3, launchctl, docker, osascript and open first on PATH (test/fake-t3/), for the tests that run e9g
+// Stand-ins for t3, launchctl, docker, osascript and open first on PATH (test/fake-t3/), for the tests that run a6g
 // without a machine of their own; and a T3 server address where nothing listens, since lib/t3.ts would otherwise try
 // the real server's default port.
 process.env.PATH = `${join(ROOT, "test", "fake-t3")}:${process.env.PATH ?? ""}`;
@@ -43,7 +43,7 @@ export const baseTeam = (overrides: RawTeam = {}): RawTeam => ({
   name: "fixture",
   title: "Fixture team",
   owner: "op@example.com",
-  branch: "e9g/next",
+  branch: "a6g/next",
   board: "files",
   roles: {
     planner: {},
@@ -56,17 +56,17 @@ export const baseTeam = (overrides: RawTeam = {}): RawTeam => ({
   ...overrides,
 });
 
-// A git repository on its integration branch with .e9g/team.json committed, like a team's checkout.
+// A git repository on its integration branch with .a6g/team.json committed, like a team's checkout.
 export function makeRepo(team: RawTeam = baseTeam(), files: Record<string, unknown> = {}): string {
-  const dir = tmp("e9g-repo-");
+  const dir = tmp("a6g-repo-");
   git(dir, "init", "-q", "-b", "main");
   git(dir, "config", "user.email", "test@example.com");
   git(dir, "config", "user.name", "Test");
   git(dir, "config", "commit.gpgsign", "false");
-  write(dir, { "README.md": "fixture\n", "src/app.ts": "export const a = 1;\n", ".e9g/.gitignore": "run/\n", ".e9g/team.json": team, ...files });
+  write(dir, { "README.md": "fixture\n", "src/app.ts": "export const a = 1;\n", ".a6g/.gitignore": "run/\n", ".a6g/team.json": team, ...files });
   git(dir, "add", "-A");
   git(dir, "commit", "-qm", "init");
-  git(dir, "checkout", "-q", "-b", team.branch ?? "e9g/next");
+  git(dir, "checkout", "-q", "-b", team.branch ?? "a6g/next");
   return dir;
 }
 
@@ -79,7 +79,7 @@ export function commit(dir: string, files: Record<string, unknown>, message = "c
 
 const GUARD = join(ROOT, "plugin", "hooks", "guard.ts");
 // As plugin/hooks/hooks.json runs the hooks.
-const HOOK_ENV = { NODE_COMPILE_CACHE: join(ROOT, ".cache"), E9G_NODE_CACHE: "1" };
+const HOOK_ENV = { NODE_COMPILE_CACHE: join(ROOT, ".cache"), A6G_NODE_CACHE: "1" };
 
 export interface GuardOptions {
   env?: NodeJS.ProcessEnv;
@@ -90,7 +90,7 @@ export type Outcome = { outcome: string; said: string };
 // [home, role, tool, input, expected, options]: one call to the guard and what it must do.
 export type GuardCase = [string, string, string, Record<string, unknown>, "allow" | "refuse", (GuardOptions | undefined)?];
 
-const agentType = (role: string | null) => (role === null ? undefined : role.includes(":") || role === "Explore" ? role : `e9g:${role}`);
+const agentType = (role: string | null) => (role === null ? undefined : role.includes(":") || role === "Explore" ? role : `a6g:${role}`);
 
 // Runs the guard the way Claude Code would, as one role of the team in `home`. Returns "allow", "refuse" or an error.
 export function guard(
@@ -108,7 +108,7 @@ export function guard(
       cwd,
       session_id: "test",
     }),
-    env: { ...process.env, ...HOOK_ENV, E9G_TEAM: "fixture", E9G_HOME_DIR: home, E9G_RUN: run, E9G_ROLE: role ?? "", CLAUDE_PROJECT_DIR: cwd, ...env },
+    env: { ...process.env, ...HOOK_ENV, A6G_TEAM: "fixture", A6G_HOME_DIR: home, A6G_RUN: run, A6G_ROLE: role ?? "", CLAUDE_PROJECT_DIR: cwd, ...env },
     encoding: "utf8",
   });
   return { outcome: result.status === 2 ? "refuse" : result.status === 0 ? "allow" : `error ${result.status}: ${result.stderr}`, said: result.stderr };
@@ -124,7 +124,7 @@ export function guardAsync(
 ): Promise<Outcome> {
   return new Promise((done) => {
     const child = spawn(process.execPath, [GUARD], {
-      env: { ...process.env, ...HOOK_ENV, E9G_TEAM: "fixture", E9G_HOME_DIR: home, E9G_RUN: run, E9G_ROLE: role ?? "", CLAUDE_PROJECT_DIR: cwd, ...env },
+      env: { ...process.env, ...HOOK_ENV, A6G_TEAM: "fixture", A6G_HOME_DIR: home, A6G_RUN: run, A6G_ROLE: role ?? "", CLAUDE_PROJECT_DIR: cwd, ...env },
     });
     let said = "";
     child.stderr.on("data", (chunk: Buffer) => (said += chunk));
@@ -174,10 +174,10 @@ export const tool = (
 ): GuardCase => [home, role, name, input, expected, options];
 export const holds = async (cases: GuardCase[]): Promise<void> => assert.deepEqual(await guardAll(cases), []);
 
-// A stand-in for macOS's security tool, first on PATH for this process and the e9g it starts: one generic password
+// A stand-in for macOS's security tool, first on PATH for this process and the a6g it starts: one generic password
 // per service in a file, and every call's arguments in calls.
 export function fakeKeychain(): string {
-  const dir = tmp("e9g-security-");
+  const dir = tmp("a6g-security-");
   write(dir, {
     security: `#!/bin/sh
 echo "$@" >> "${dir}/calls"
@@ -195,13 +195,13 @@ esac
   return dir;
 }
 
-export const E9G = join(ROOT, "bin", "e9g.ts");
-export function e9g(
+export const A6G = join(ROOT, "bin", "a6g.ts");
+export function a6g(
   args: string[],
   { cwd, env = {}, input }: { cwd?: string; env?: NodeJS.ProcessEnv; input?: string } = {}
 ): Promise<{ code: number | null; out: string }> {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [E9G, ...args], { env: { ...process.env, ...HOOK_ENV, ...env }, ...(cwd === undefined ? {} : { cwd }) });
+    const child = spawn(process.execPath, [A6G, ...args], { env: { ...process.env, ...HOOK_ENV, ...env }, ...(cwd === undefined ? {} : { cwd }) });
     let out = "";
     for (const stream of [child.stdout, child.stderr]) stream.on("data", (chunk: Buffer) => (out += chunk));
     child.on("close", (code) => done({ code, out }));
@@ -209,11 +209,11 @@ export function e9g(
   });
 }
 
-// A machine of its own, for anything that installs, runs the launcher or runs doctor: HOME, E9G_HOME and T3CODE_HOME
+// A machine of its own, for anything that installs, runs the launcher or runs doctor: HOME, A6G_HOME and T3CODE_HOME
 // in a temporary folder (T3's server address where nothing listens), and a PATH whose t3, launchctl, claude and gh are
 // stand-ins. node is there under a name of its own (like Homebrew's /opt/homebrew/bin/node).
-export function machine({ e9gHome }: { e9gHome?: string } = {}) {
-  const root = tmp("e9g-machine-");
+export function machine({ a6gHome }: { a6gHome?: string } = {}) {
+  const root = tmp("a6g-machine-");
   const home = join(root, "home");
   const bin = join(root, "bin");
   mkdirSync(home, { recursive: true });
@@ -230,11 +230,11 @@ export function machine({ e9gHome }: { e9gHome?: string } = {}) {
   fakeT3Home(join(home, ".t3"));
   const env: NodeJS.ProcessEnv = {
     HOME: home,
-    E9G_HOME: e9gHome ?? join(home, ".e9g"),
+    A6G_HOME: a6gHome ?? join(home, ".a6g"),
     T3CODE_HOME: join(home, ".t3"),
     PATH: `${bin}:/usr/bin:/bin:/usr/sbin:/sbin`,
   };
-  return { root, home, bin, env, e9gHome: env.E9G_HOME as string, launcher: join(home, ".local", "bin", "e9g") };
+  return { root, home, bin, env, a6gHome: env.A6G_HOME as string, launcher: join(home, ".local", "bin", "a6g") };
 }
 
 // A repository with one commit on main, and an identity of its own (a test HOME has no ~/.gitconfig).
@@ -251,7 +251,7 @@ export function gitRepo(dir: string, files: Record<string, unknown> = {}): strin
 
 // A clone of this checkout (its files as they are now), optionally as another version, to install from.
 export function sourceCopy(version?: string): string {
-  const dir = join(tmp("e9g-source-"), "E9G-Factory");
+  const dir = join(tmp("a6g-source-"), "Anything-Factory");
   for (const file of git(ROOT, "ls-files", "-co", "--exclude-standard").split("\n").filter(Boolean)) {
     const from = join(ROOT, file);
     if (!existsSync(from) || !lstatSync(from).isFile()) continue;

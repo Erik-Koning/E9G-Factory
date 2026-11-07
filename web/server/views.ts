@@ -62,7 +62,7 @@ export function requestState(request: FeatureRequest, byId: Map<string, Task>): 
   return "being built";
 }
 
-// Why the planner rejected a request: its note, as `e9g request reject` writes it.
+// Why the planner rejected a request: its note, as `a6g request reject` writes it.
 export const rejectionOf = (request: FeatureRequest): string | null =>
   request.status === "rejected" ? (request.notes.findLast((n) => n.text.startsWith("rejected: "))?.text.slice("rejected: ".length) ?? null) : null;
 

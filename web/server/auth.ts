@@ -104,7 +104,7 @@ function makeAuth() {
   const client = mongo();
   void ensureAuthIndexes(client.db(authDatabase));
   return betterAuth({
-    appName: "E9G",
+    appName: "Anything Factory",
     baseURL,
     basePath: "/api/auth",
     secret,
@@ -272,8 +272,8 @@ function makeAuth() {
       admin({ defaultRole: "user", adminRoles: ["admin"] }),
       // Passwordless: members turn one on without a password they don't have. Turning it on or off is never over HTTP
       // (the guard above); the account page's server actions do it, the latter only with a current code.
-      twoFactor({ issuer: "E9G", allowPasswordless: true, backupCodeOptions: { amount: 10, length: 10 } }),
-      passkey({ rpID: new URL(baseURL).hostname, rpName: "E9G", origin: baseURL }),
+      twoFactor({ issuer: "Anything Factory", allowPasswordless: true, backupCodeOptions: { amount: 10, length: 10 } }),
+      passkey({ rpID: new URL(baseURL).hostname, rpName: "Anything Factory", origin: baseURL }),
       magicLink({
         disableSignUp: true,
         expiresIn: 15 * 60,
@@ -326,14 +326,14 @@ function makeAuth() {
       invitation
         ? {
             to: email,
-            subject: `You're invited to follow ${invitation} on E9G`,
-            text: `You've been invited to follow the team ${invitation} on E9G: send it requests and see how they're going.\n\nSign in with this link within 15 minutes: ${url}\n\nLater, sign in at ${baseURL}/sign-in with this address, and add a passkey from your account page.`,
+            subject: `You're invited to follow ${invitation} on Anything Factory`,
+            text: `You've been invited to follow the team ${invitation} on Anything Factory: send it requests and see how they're going.\n\nSign in with this link within 15 minutes: ${url}\n\nLater, sign in at ${baseURL}/sign-in with this address, and add a passkey from your account page.`,
             link: url,
           }
         : {
             to: email,
-            subject: "Your E9G sign-in link",
-            text: `Sign in to E9G with this link within 15 minutes: ${url}\n\nIf you didn't ask for it, ignore this email.`,
+            subject: "Your Anything Factory sign-in link",
+            text: `Sign in to Anything Factory with this link within 15 minutes: ${url}\n\nIf you didn't ask for it, ignore this email.`,
             link: url,
           }
     );
@@ -364,10 +364,10 @@ async function twoFactorUser(ctx: {
 
 export type Auth = ReturnType<typeof makeAuth>;
 
-const cache = globalThis as typeof globalThis & { e9gWebAuth?: Auth };
+const cache = globalThis as typeof globalThis & { a6gWebAuth?: Auth };
 export function auth(): Auth {
-  cache.e9gWebAuth ??= makeAuth();
-  return cache.e9gWebAuth;
+  cache.a6gWebAuth ??= makeAuth();
+  return cache.a6gWebAuth;
 }
 
 // The viewer's IP address for a request, exactly as sessions and rate limits read it.

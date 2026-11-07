@@ -1,4 +1,4 @@
-// e9g blast [<ref>] [--base <branch>] [--json]
+// a6g blast [<ref>] [--base <branch>] [--json]
 //
 // The blast radius of a change: the files it touches, what imports them, what usually changes with them, the tests
 // among those, whether it touches UI (and how much), and which of the team's critical paths (team.json critical) it
@@ -9,7 +9,7 @@ import { type BlastRadius, blastRadius } from "../blast.ts";
 import { teamSession } from "../session.ts";
 import { parseArgs, text as optionText } from "../util.ts";
 
-const USAGE = "usage: e9g blast [<ref>] [--base <branch>] [--json]";
+const USAGE = "usage: a6g blast [<ref>] [--base <branch>] [--json]";
 // Past this many, a list shows its first ones and how many more there are (--json has them all).
 const SHOWN = 30;
 

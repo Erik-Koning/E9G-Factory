@@ -1,4 +1,4 @@
-import { baseTeam, commit, e9g, git, makeRepo, write } from "./helpers.ts";
+import { baseTeam, commit, a6g, git, makeRepo, write } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -6,60 +6,60 @@ import { describe, test } from "node:test";
 import { fileStore } from "../lib/tasks/files.ts";
 
 // Each checkout's run folder beside it (the default is the team's name, which every fixture shares).
-const merge = (home: string, ...args: string[]) => e9g(["merge", ...args], { cwd: home, env: { E9G_HOME_DIR: home, E9G_RUN: `${home}-run` } });
+const merge = (home: string, ...args: string[]) => a6g(["merge", ...args], { cwd: home, env: { A6G_HOME_DIR: home, A6G_RUN: `${home}-run` } });
 const taskStatus = async (home: string, id: string) => (await fileStore(`${home}-run`, "fixture").tasks.get(id))?.status;
 const approve = (home: string, branch: string) =>
-  e9g(["verdict", "review", branch, "approve", "--sha", git(home, "rev-parse", branch), "--risk", "low", "--note", "ok"], {
+  a6g(["verdict", "review", branch, "approve", "--sha", git(home, "rev-parse", branch), "--risk", "low", "--note", "ok"], {
     cwd: home,
-    env: { E9G_HOME_DIR: home, E9G_TEAM: "fixture", E9G_ROLE: "reviewer", E9G_RUN: `${home}-run` },
+    env: { A6G_HOME_DIR: home, A6G_TEAM: "fixture", A6G_ROLE: "reviewer", A6G_RUN: `${home}-run` },
   });
 const record = (home: string, branch: string): { result: string; message: string; sha: string } =>
-  JSON.parse(readFileSync(join(home, ".e9g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
-const tip = (home: string, ref = "e9g/next"): string => git(home, "rev-parse", ref);
+  JSON.parse(readFileSync(join(home, ".a6g/run/state/merges", `${branch.replaceAll("/", "_")}.json`), "utf8"));
+const tip = (home: string, ref = "a6g/next"): string => git(home, "rev-parse", ref);
 
 // A branch made from the integration branch, with one commit, and the checkout back on the integration branch.
-function branch(home: string, name: string, files: Record<string, unknown>, from = "e9g/next"): string {
+function branch(home: string, name: string, files: Record<string, unknown>, from = "a6g/next"): string {
   git(home, "checkout", "-q", "-b", name, from);
   const sha = commit(home, files, `work on ${name}`);
-  git(home, "checkout", "-q", "e9g/next");
+  git(home, "checkout", "-q", "a6g/next");
   return sha;
 }
 
 describe("merge queue", { concurrency: true }, () => {
   test("a builder branch needs an approval of its exact tip", async () => {
-    const home = makeRepo(baseTeam(), { ".e9g/run/board/1-feature.md": "status: review\nkind: feature\n\nDo it.\n" });
+    const home = makeRepo(baseTeam(), { ".a6g/run/board/1-feature.md": "status: review\nkind: feature\n\nDo it.\n" });
     const before = tip(home);
-    branch(home, "e9g/b1-feature", { "src/feature.ts": "export const f = 1;\n" });
+    branch(home, "a6g/b1-feature", { "src/feature.ts": "export const f = 1;\n" });
 
-    let result = await merge(home, "e9g/b1-feature");
+    let result = await merge(home, "a6g/b1-feature");
     assert.equal(result.code, 2, result.out);
-    assert.match(record(home, "e9g/b1-feature").message, /has no review/);
+    assert.match(record(home, "a6g/b1-feature").message, /has no review/);
 
-    assert.equal((await approve(home, "e9g/b1-feature")).code, 0);
-    git(home, "checkout", "-q", "e9g/b1-feature");
+    assert.equal((await approve(home, "a6g/b1-feature")).code, 0);
+    git(home, "checkout", "-q", "a6g/b1-feature");
     commit(home, { "src/feature.ts": "export const f = 2;\n" }, "after the review");
-    git(home, "checkout", "-q", "e9g/next");
-    result = await merge(home, "e9g/b1-feature");
+    git(home, "checkout", "-q", "a6g/next");
+    result = await merge(home, "a6g/b1-feature");
     assert.equal(result.code, 2);
-    assert.match(record(home, "e9g/b1-feature").message, /the approval is for/);
+    assert.match(record(home, "a6g/b1-feature").message, /the approval is for/);
     assert.equal(tip(home), before, "nothing merged");
 
-    await approve(home, "e9g/b1-feature");
-    result = await merge(home, "e9g/b1-feature");
+    await approve(home, "a6g/b1-feature");
+    result = await merge(home, "a6g/b1-feature");
     assert.equal(result.code, 0, result.out);
-    assert.equal(record(home, "e9g/b1-feature").result, "merged");
-    assert.equal(git(home, "rev-parse", "e9g/next^2"), tip(home, "e9g/b1-feature"), "a merge commit of the approved tip");
+    assert.equal(record(home, "a6g/b1-feature").result, "merged");
+    assert.equal(git(home, "rev-parse", "a6g/next^2"), tip(home, "a6g/b1-feature"), "a merge commit of the approved tip");
     assert.equal(await taskStatus(home, "1"), "done", "the board's ticket, now a task, is done");
-    assert.match(readFileSync(join(home, ".e9g/run/state/merges.log"), "utf8"), /e9g\/b1-feature merged/);
-    assert.ok(!existsSync(join(home, ".e9g/run/merge")), "the scratch worktree is gone");
+    assert.match(readFileSync(join(home, ".a6g/run/state/merges.log"), "utf8"), /a6g\/b1-feature merged/);
+    assert.ok(!existsSync(join(home, ".a6g/run/merge")), "the scratch worktree is gone");
   });
 
   test("a branch outside its lane is refused, approved or not", async () => {
     const home = makeRepo();
     const cases: [string, Record<string, string>][] = [
-      ["e9g/b2-rules", { ".e9g/notes.md": "changed\n" }],
-      ["e9g/b3-specs", { "e2e/a.spec.ts": "test\n" }],
-      ["e9g/b4-settings", { ".claude/settings.json": "{}\n" }],
+      ["a6g/b2-rules", { ".a6g/notes.md": "changed\n" }],
+      ["a6g/b3-specs", { "e2e/a.spec.ts": "test\n" }],
+      ["a6g/b4-settings", { ".claude/settings.json": "{}\n" }],
     ];
     for (const [name, files] of cases) {
       branch(home, name, files);
@@ -75,48 +75,48 @@ describe("merge queue", { concurrency: true }, () => {
   test("a failing gate merges nothing", async () => {
     const home = makeRepo(baseTeam({ gate: { full: "echo 'tests: 3 FAILED' && false" } }));
     const before = tip(home);
-    branch(home, "e9g/b5-thing", { "src/thing.ts": "x\n" });
-    await approve(home, "e9g/b5-thing");
-    const result = await merge(home, "e9g/b5-thing");
+    branch(home, "a6g/b5-thing", { "src/thing.ts": "x\n" });
+    await approve(home, "a6g/b5-thing");
+    const result = await merge(home, "a6g/b5-thing");
     assert.equal(result.code, 4, result.out);
     assert.equal(tip(home), before);
-    assert.match(record(home, "e9g/b5-thing").message, /the gate fails.*3 FAILED/);
+    assert.match(record(home, "a6g/b5-thing").message, /the gate fails.*3 FAILED/);
   });
 
   test("a pure rebase merges on its earlier approval; a changed one doesn't", async () => {
     const home = makeRepo();
-    const approved = branch(home, "e9g/b6-rebase", { "src/six.ts": "6\n" });
-    await approve(home, "e9g/b6-rebase");
-    branch(home, "e9g/b7-other", { "src/seven.ts": "7\n" });
-    await approve(home, "e9g/b7-other");
-    assert.equal((await merge(home, "e9g/b7-other")).code, 0);
-    git(home, "checkout", "-q", "e9g/b6-rebase");
-    git(home, "rebase", "-q", "e9g/next");
-    git(home, "checkout", "-q", "e9g/next");
-    assert.equal((await merge(home, "e9g/b6-rebase")).code, 2, "a new tip without --rebased-from");
-    let result = await merge(home, "e9g/b6-rebase", "--rebased-from", approved);
+    const approved = branch(home, "a6g/b6-rebase", { "src/six.ts": "6\n" });
+    await approve(home, "a6g/b6-rebase");
+    branch(home, "a6g/b7-other", { "src/seven.ts": "7\n" });
+    await approve(home, "a6g/b7-other");
+    assert.equal((await merge(home, "a6g/b7-other")).code, 0);
+    git(home, "checkout", "-q", "a6g/b6-rebase");
+    git(home, "rebase", "-q", "a6g/next");
+    git(home, "checkout", "-q", "a6g/next");
+    assert.equal((await merge(home, "a6g/b6-rebase")).code, 2, "a new tip without --rebased-from");
+    let result = await merge(home, "a6g/b6-rebase", "--rebased-from", approved);
     assert.equal(result.code, 0, result.out);
 
-    const second = branch(home, "e9g/b8-sneaky", { "src/eight.ts": "8\n" });
-    await approve(home, "e9g/b8-sneaky");
-    git(home, "checkout", "-q", "e9g/b8-sneaky");
-    git(home, "reset", "-q", "--hard", "e9g/next");
-    commit(home, { "src/eight.ts": "8, and something else\n" }, "work on e9g/b8-sneaky");
-    git(home, "checkout", "-q", "e9g/next");
-    result = await merge(home, "e9g/b8-sneaky", "--rebased-from", second);
+    const second = branch(home, "a6g/b8-sneaky", { "src/eight.ts": "8\n" });
+    await approve(home, "a6g/b8-sneaky");
+    git(home, "checkout", "-q", "a6g/b8-sneaky");
+    git(home, "reset", "-q", "--hard", "a6g/next");
+    commit(home, { "src/eight.ts": "8, and something else\n" }, "work on a6g/b8-sneaky");
+    git(home, "checkout", "-q", "a6g/next");
+    result = await merge(home, "a6g/b8-sneaky", "--rebased-from", second);
     assert.equal(result.code, 2, result.out);
-    assert.match(record(home, "e9g/b8-sneaky").message, /isn't only a rebase/);
+    assert.match(record(home, "a6g/b8-sneaky").message, /isn't only a rebase/);
   });
 
   test("the planner's own commit during a merge still lets it in", async () => {
     const home = makeRepo(
-      baseTeam({ gate: { full: `cd "$E9G_HOME_DIR" && echo lesson >> .e9g/lessons.md && git add .e9g/lessons.md && git commit -qm lessons` } })
+      baseTeam({ gate: { full: `cd "$A6G_HOME_DIR" && echo lesson >> .a6g/lessons.md && git add .a6g/lessons.md && git commit -qm lessons` } })
     );
-    branch(home, "e9g/b9-meanwhile", { "src/nine.ts": "9\n" });
-    await approve(home, "e9g/b9-meanwhile");
-    const result = await merge(home, "e9g/b9-meanwhile");
+    branch(home, "a6g/b9-meanwhile", { "src/nine.ts": "9\n" });
+    await approve(home, "a6g/b9-meanwhile");
+    const result = await merge(home, "a6g/b9-meanwhile");
     assert.equal(result.code, 0, result.out);
-    assert.equal(git(home, "log", "-1", "--format=%s", "e9g/next^1"), "lessons", "merged on top of the planner's commit");
+    assert.equal(git(home, "log", "-1", "--format=%s", "a6g/next^1"), "lessons", "merged on top of the planner's commit");
     assert.ok(existsSync(join(home, "src/nine.ts")));
   });
 
@@ -124,41 +124,41 @@ describe("merge queue", { concurrency: true }, () => {
     const home = makeRepo(baseTeam({ review: { required: ["builder"], removedPattern: "\\bexpect\\(" } }), {
       "e2e/a.spec.ts": "expect(one);\nexpect(two);\n",
     });
-    branch(home, "e9g/t-more", { "e2e/b.spec.ts": "expect(three);\n" });
-    let result = await merge(home, "e9g/t-more");
+    branch(home, "a6g/t-more", { "e2e/b.spec.ts": "expect(three);\n" });
+    let result = await merge(home, "a6g/t-more");
     assert.equal(result.code, 0, result.out);
-    branch(home, "e9g/t-fewer", { "e2e/a.spec.ts": "expect(one);\n" });
-    result = await merge(home, "e9g/t-fewer");
+    branch(home, "a6g/t-fewer", { "e2e/a.spec.ts": "expect(one);\n" });
+    result = await merge(home, "a6g/t-fewer");
     assert.equal(result.code, 2, result.out);
-    assert.match(record(home, "e9g/t-fewer").message, /has no review/);
+    assert.match(record(home, "a6g/t-fewer").message, /has no review/);
   });
 
   test("closes the tickets it's told to, and refuses a dirty checkout", async () => {
-    const home = makeRepo(baseTeam(), { ".e9g/run/board/7-seven.md": "status: review\n" });
-    branch(home, "e9g/b10-ten", { "src/ten.ts": "10\n" });
-    await approve(home, "e9g/b10-ten");
+    const home = makeRepo(baseTeam(), { ".a6g/run/board/7-seven.md": "status: review\n" });
+    branch(home, "a6g/b10-ten", { "src/ten.ts": "10\n" });
+    await approve(home, "a6g/b10-ten");
     write(home, { "README.md": "edited but not committed\n" });
-    assert.equal((await merge(home, "e9g/b10-ten")).code, 2);
-    assert.match(record(home, "e9g/b10-ten").message, /uncommitted changes/);
+    assert.equal((await merge(home, "a6g/b10-ten")).code, 2);
+    assert.match(record(home, "a6g/b10-ten").message, /uncommitted changes/);
     git(home, "checkout", "--", "README.md");
-    const result = await merge(home, "e9g/b10-ten", "--closes", "7");
+    const result = await merge(home, "a6g/b10-ten", "--closes", "7");
     assert.equal(result.code, 0, result.out);
     assert.equal(await taskStatus(home, "7"), "done");
   });
 
-  test("a branch that conflicts sends its task back to be rebased; e9g merge --push closes what a failed push held", async () => {
-    const home = makeRepo(baseTeam(), { ".e9g/run/board/4-four.md": "status: review\n", "src/shared.ts": "0\n" });
-    branch(home, "e9g/b4-four", { "src/shared.ts": "from the branch\n" });
-    await approve(home, "e9g/b4-four");
+  test("a branch that conflicts sends its task back to be rebased; a6g merge --push closes what a failed push held", async () => {
+    const home = makeRepo(baseTeam(), { ".a6g/run/board/4-four.md": "status: review\n", "src/shared.ts": "0\n" });
+    branch(home, "a6g/b4-four", { "src/shared.ts": "from the branch\n" });
+    await approve(home, "a6g/b4-four");
     commit(home, { "src/shared.ts": "from the integration branch\n" }, "a change the branch conflicts with");
-    const result = await merge(home, "e9g/b4-four");
+    const result = await merge(home, "a6g/b4-four");
     assert.equal(result.code, 3, result.out);
     assert.match(result.out, /task 4 went back to be claimed and rebased/);
     const task = await fileStore(`${home}-run`, "fixture").tasks.get("4");
     assert.deepEqual([task?.status, task?.sha], ["approved", null]);
-    assert.match(task?.notes.at(-1)?.text ?? "", /rebase e9g\/b4-four onto it/);
+    assert.match(task?.notes.at(-1)?.text ?? "", /rebase a6g\/b4-four onto it/);
     // Held open by a merge whose push failed: closed once a push goes through.
-    write(`${home}-run`, { "unpushed.json": [{ ids: ["4"], branch: "e9g/b4-four", sha: "abc", tip: "abc" }] });
+    write(`${home}-run`, { "unpushed.json": [{ ids: ["4"], branch: "a6g/b4-four", sha: "abc", tip: "abc" }] });
     const pushed = await merge(home, "--push");
     assert.equal(pushed.code, 0, pushed.out);
     assert.equal(await taskStatus(home, "4"), "done");

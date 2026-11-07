@@ -24,7 +24,7 @@ test("eventsOf: questions, blocks, merges and journeys done, since a time, not t
   );
   const escalated = move(task("proposed"), "question", OPERATOR, "mine to think about");
   const stuck = move(task("building", { title: "Pay by card" }), "blocked", "planner", "needs the payment key");
-  const merged = move(task("review", { title: "Export CSV" }), "done", MERGE, "merged e9g/b3");
+  const merged = move(task("review", { title: "Export CSV" }), "done", MERGE, "merged a6g/b3");
   const journey = move(task("approved", { kind: "journey", title: "Checkout" }), "done", "planner", "verified");
   const events = eventsOf("shop", [asked, escalated, stuck, merged, journey], [], "2000-01-01T00:00:00.000Z");
   // Oldest first (by id within the same moment): compare them by kind.
@@ -142,18 +142,18 @@ const titles = new Map([
   ["givenet", "GiveNet"],
   ["blog", "Blog"],
 ]);
-const BASE = "https://e9g.example.com";
+const BASE = "https://a6g.example.com";
 
 test("nowMail: one event as its own email, with the link to answer it; several together", () => {
   const one = nowMail([event({})], titles, BASE);
   assert.equal(one.subject, "[GiveNet] Question for you: #39 Q: the consent words");
   assert.equal(one.link, `${BASE}/t/givenet/inbox#task-39`);
-  assert.match(one.text, /Answer it: https:\/\/e9g\.example\.com\/t\/givenet\/inbox#task-39/);
-  assert.match(one.text, /notification settings: https:\/\/e9g\.example\.com\/account\/notifications$/);
+  assert.match(one.text, /Answer it: https:\/\/a6g\.example\.com\/t\/givenet\/inbox#task-39/);
+  assert.match(one.text, /notification settings: https:\/\/a6g\.example\.com\/account\/notifications$/);
   const two = nowMail([event({}), event({ id: "question:40:1", title: "#40 Q: open the staff pages?", path: "/t/givenet/inbox#task-40" })], titles, BASE);
   assert.equal(two.subject, "[GiveNet] 2 questions for you");
   assert.equal(two.link, `${BASE}/inbox`);
-  assert.match(two.text, /- Question for you: #40 Q: open the staff pages\?\n {2}https:\/\/e9g\.example\.com\/t\/givenet\/inbox#task-40/);
+  assert.match(two.text, /- Question for you: #40 Q: open the staff pages\?\n {2}https:\/\/a6g\.example\.com\/t\/givenet\/inbox#task-40/);
   const mixed = nowMail([event({}), event({ id: "blocked:7:1", kind: "blocked", team: "blog", title: "#7 Post", path: "/t/blog/tasks/7" })], titles, BASE);
   assert.equal(mixed.subject, "[GiveNet, Blog] 2 updates");
   assert.match(mixed.text, /GiveNet:\n- Question for you/);
@@ -168,9 +168,9 @@ test("digestMail: what still waits, then what happened; summaryOf and testMail s
     BASE,
     "Monday, November 2"
   );
-  assert.equal(mail.subject, "[E9G] 1 waiting on you, 1 update");
-  assert.match(mail.text, /^Your E9G digest for Monday, November 2\./);
-  assert.match(mail.text, /Waiting on you:\n- #39 Q: the consent words \(a question, since 2026-11-01\)\nAnswer them: https:\/\/e9g\.example\.com\/inbox/);
+  assert.equal(mail.subject, "[Anything Factory] 1 waiting on you, 1 update");
+  assert.match(mail.text, /^Your Anything Factory digest for Monday, November 2\./);
+  assert.match(mail.text, /Waiting on you:\n- #39 Q: the consent words \(a question, since 2026-11-01\)\nAnswer them: https:\/\/a6g\.example\.com\/inbox/);
   assert.match(mail.text, /Since your last digest:\n- Merged: #3 Export/);
   const prefs = prefsOr(null, "u1", "admin", "America/Toronto");
   const lines = summaryOf(prefs, ["question", "blocked", "merged"], "08:00");

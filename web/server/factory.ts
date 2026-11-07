@@ -1,4 +1,4 @@
-// The factory's own task code, over the app's MongoClient: the same store, move table and decisions as the e9g CLI.
+// The factory's own task code, over the app's MongoClient: the same store, move table and decisions as the a6g CLI.
 // The app keeps no rules of its own about tasks or requests; it only reads, and writes through these.
 //
 // Only these modules of ../lib/tasks are imported: mongo.ts (storeOver), store.ts (update), model.ts, requests.ts,
@@ -30,13 +30,13 @@ const stores = new Map<string, Store>();
 export function storeFor(team: string): Store {
   let store = stores.get(team);
   if (!store) {
-    store = storeOver(mongo() as unknown as MongoClientLike, { name: team, tasks: { store: "mongo", database: config().e9gDatabase, lead: null } });
+    store = storeOver(mongo() as unknown as MongoClientLike, { name: team, tasks: { store: "mongo", database: config().a6gDatabase, lead: null } });
     stores.set(team, store);
   }
   return store;
 }
 
-// Every team that has published its settings (e9g register writes them; the lead's watchdog its status).
+// Every team that has published its settings (a6g register writes them; the lead's watchdog its status).
 export async function allTeams(): Promise<TeamDoc[]> {
   const rows = await graphDb().collection<{ _id: string }>("teams").find({}).sort({ _id: 1 }).toArray();
   return rows.map(({ _id, ...doc }) => ({ status: null, name: _id, title: _id, ...doc }) as unknown as TeamDoc);
@@ -78,7 +78,7 @@ export function sendRequest(
 // An admin's decision, as the operator, with the team's approval rules from its published settings.
 export async function decideAsOperator(team: string, id: string, decision: Decision, text: string): Promise<Task> {
   const settings = await teamDoc(team);
-  if (!settings?.approval) throw new Refused(`${team} hasn't published its approval rules (e9g register publishes them)`);
+  if (!settings?.approval) throw new Refused(`${team} hasn't published its approval rules (a6g register publishes them)`);
   return decide(storeFor(team), id, decision, { who: OPERATOR, approval: settings.approval, text: text.trim() });
 }
 

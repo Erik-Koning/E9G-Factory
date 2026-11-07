@@ -34,7 +34,7 @@ export default async function ProposalsPage({ params, searchParams }: { params: 
     <>
       <Notice searchParams={searchParams} />
       <p className="lede small">
-        You decide as the operator, by the same rules as <code>e9g task approve</code>.{" "}
+        You decide as the operator, by the same rules as <code>a6g task approve</code>.{" "}
         {approval
           ? approval.mode === "operator"
             ? "This team's proposals all wait for you."

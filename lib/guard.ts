@@ -1,9 +1,9 @@
-// The guard's rules, run before every tool call an agent on an E9G team makes (plugin/hooks/guard.ts is the hook,
+// The guard's rules, run before every tool call an agent on an Anything Factory team makes (plugin/hooks/guard.ts is the hook,
 // which fails closed around this). It keeps each role in its lane, keeps the whole team away from what its policies
 // deny (deploys, hosted data, publishing, payments, messages, secrets), and enforces what the planner would otherwise
 // only remember: members per role, who records verdicts, who merges, the push cadence, a pause.
-// Rules come from the team's .e9g/team.json in its checkout, never a worktree's copy, so a branch can't change the
-// rules it runs under. In setup (E9G_SETUP=1) the setup agent may write only .e9g/.
+// Rules come from the team's .a6g/team.json in its checkout, never a worktree's copy, so a branch can't change the
+// rules it runs under. In setup (A6G_SETUP=1) the setup agent may write only .a6g/.
 // Each shell command is judged on its own, where it runs (cd, git -C, GIT_DIR): the planner's and the read-only roles'
 // git rules hold in the team's checkout, not in the /tmp worktrees they inspect branches in. A shell write outside a
 // lane passes only where git ignores it, asked once for all of a call's paths.
@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { FACTORY_PATH, factoryWrite, instanceId, type Lane, laneAllows, normalize as normalizeTeam, roleForInstance, type Team } from "./config.ts";
 import { messageKind, waitReason } from "./contact.ts";
-import { E9G_HOME } from "./paths.ts";
+import { A6G_HOME } from "./paths.ts";
 import { issueCreateLabels, PLANNER_LABEL, PLANNER_TAG } from "./labels.ts";
 import { brokenRule, commandRules, END, isSecretFile, isSecretWord, OPERATOR_COMMANDS, START } from "./policies.ts";
 import { type HookInput, inSetup, inTeam, setupRole, teamSession } from "./session.ts";
@@ -564,7 +564,7 @@ function checkIgnore(dir: string, paths: string[]): string[] {
 
 // The commands only some roles run: [regex over a command line, roles allowed, reason].
 function ownedCommands(team: Team): [RegExp, string[], string][] {
-  const e9g = (subcommands: string) => new RegExp(`${START}e9g\\s+(?:${subcommands})${END}`);
+  const a6g = (subcommands: string) => new RegExp(`${START}a6g\\s+(?:${subcommands})${END}`);
   // The environment script itself, called by its path (scripts/loop/env.sh reset), is the planner's too.
   const script =
     String(team.environment.script ?? "")
@@ -573,43 +573,43 @@ function ownedCommands(team: Team): [RegExp, string[], string][] {
       .pop() ?? "";
   return [
     [
-      e9g("merge|log|pr|drain\\s+(?!status(?:$|\\s))\\S+"),
+      a6g("merge|log|pr|drain\\s+(?!status(?:$|\\s))\\S+"),
       ["planner"],
       "the planner merges, keeps the log, opens the pull request and drains the environment.",
     ],
-    [e9g("env\\s+(?:up|reset|restart|down)"), ["planner"], "only the planner starts, resets or stops the team's environment."],
-    [e9g("pages\\s+run"), ["planner"], "the planner records page results; use e9g pages shots to check anything yourself."],
+    [a6g("env\\s+(?:up|reset|restart|down)"), ["planner"], "only the planner starts, resets or stops the team's environment."],
+    [a6g("pages\\s+run"), ["planner"], "the planner records page results; use a6g pages shots to check anything yourself."],
     [
-      e9g("task\\s+(?:edit|score|status|import)"),
+      a6g("task\\s+(?:edit|score|status|import)"),
       ["planner"],
-      "the planner shapes, scores and moves tasks; add a finding (e9g task add) or a note (e9g task note) instead.",
+      "the planner shapes, scores and moves tasks; add a finding (a6g task add) or a note (a6g task note) instead.",
     ],
-    [e9g("task\\s+ask"), ["planner", "approver"], "the planner and the approver raise tasks to the operator, with why and what they recommend."],
+    [a6g("task\\s+ask"), ["planner", "approver"], "the planner and the approver raise tasks to the operator, with why and what they recommend."],
     [
-      e9g("task\\s+(?:reject|research|escalate)"),
+      a6g("task\\s+(?:reject|research|escalate)"),
       ["approver"],
       "the approver (or the operator) decides on proposals, and nobody approves their own (Article 4).",
     ],
-    // The planner approves the findings other members file (team.json approval.findings); e9g task approve says which.
+    // The planner approves the findings other members file (team.json approval.findings); a6g task approve says which.
     [
-      e9g("task\\s+approve"),
+      a6g("task\\s+approve"),
       ["approver", ...(team.approval.findings === "planner" ? ["planner"] : [])],
       "the approver (or the operator) decides on proposals, and nobody approves their own (Article 4).",
     ],
-    [e9g("task\\s+(?:claim|release|submit)"), ["builder", "tester", "planner"], "builders and testers claim, release and submit tasks."],
-    [e9g("request\\s+(?:add|reject)|cycle\\s+close"), ["planner"], "the planner takes in feature requests and closes cycles."],
-    [e9g("request\\s+note"), ["planner", "approver"], "the planner and the approver note what they found about a request."],
-    [e9g("task\\s+fetch"), ["planner", "reviewer"], "the planner and the reviewer fetch a task's branch from the remote."],
-    [e9g("request\\s+stakeholders"), [], "the stakeholders' names and addresses are the operator's to see (Article 8)."],
-    [e9g("task\\s+migrate"), [], "moving the task graph between stores is the operator's."],
-    [e9g("verdict\\s+review"), ["reviewer"], "only a reviewer records a review (Article 4)."],
-    [e9g("verdict\\s+ux"), ["ux-specialist"], "only the UX specialist records a UX verdict (Article 4)."],
+    [a6g("task\\s+(?:claim|release|submit)"), ["builder", "tester", "planner"], "builders and testers claim, release and submit tasks."],
+    [a6g("request\\s+(?:add|reject)|cycle\\s+close"), ["planner"], "the planner takes in feature requests and closes cycles."],
+    [a6g("request\\s+note"), ["planner", "approver"], "the planner and the approver note what they found about a request."],
+    [a6g("task\\s+fetch"), ["planner", "reviewer"], "the planner and the reviewer fetch a task's branch from the remote."],
+    [a6g("request\\s+stakeholders"), [], "the stakeholders' names and addresses are the operator's to see (Article 8)."],
+    [a6g("task\\s+migrate"), [], "moving the task graph between stores is the operator's."],
+    [a6g("verdict\\s+review"), ["reviewer"], "only a reviewer records a review (Article 4)."],
+    [a6g("verdict\\s+ux"), ["ux-specialist"], "only the UX specialist records a UX verdict (Article 4)."],
     ...(script
       ? [
           [
             new RegExp(`${START}${escapeRegex(script)}\\s+(?:up|reset|restart|down)${END}`),
             ["planner"],
-            "only the planner starts, resets or stops the team's environment (e9g env …).",
+            "only the planner starts, resets or stops the team's environment (a6g env …).",
           ] as [RegExp, string[], string],
         ]
       : []),
@@ -707,7 +707,7 @@ export function check(input: HookInput): void {
   let session: { home: string; team: Team; run: string | null; role: string };
   try {
     if (setup) {
-      const home = resolve(process.env.E9G_HOME_DIR ?? process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd());
+      const home = resolve(process.env.A6G_HOME_DIR ?? process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd());
       session = { home, team: normalizeTeam({ name: "setup", branch: "setup" }, home).team, run: null, role };
     } else session = teamSession({ cwd: input.cwd, agentType: input.agent_type });
   } catch (error) {
@@ -724,20 +724,20 @@ export function check(input: HookInput): void {
   role = session.role;
   const home = canonical(session.home);
   const root = canonical(process.env.CLAUDE_PROJECT_DIR ?? input.cwd ?? process.cwd());
-  const work = join(home, ".e9g", "run");
+  const work = join(home, ".a6g", "run");
   const run = session.run ? canonical(session.run) : null;
   const lane: Lane | undefined = Object.hasOwn(team.roles, role) ? team.roles[role] : undefined;
   // A role the team doesn't have (a native subagent such as Explore, a misconfigured instance, a subagent of the
   // setup agent) writes nothing.
   const readOnly = setup ? role !== "setup" : !lane || lane.readOnly;
   const paused = (): boolean => run !== null && existsSync(join(run, "paused"));
-  const PAUSED = "the operator paused the team: merge nothing and start no members until e9g resume. Finish your turn.";
+  const PAUSED = "the operator paused the team: merge nothing and start no members until a6g resume. Finish your turn.";
   const nonEmpty = (path: string | undefined): path is string => Boolean(path);
   const scratch = [...new Set(["/tmp", "/private/tmp", process.env.TMPDIR].filter(nonEmpty).map(canonical))];
   // The factory's, T3 Code's and Claude Code's own folders on this machine, and the team's run folder.
   const machine = [
-    E9G_HOME,
-    join(homedir(), ".e9g"),
+    A6G_HOME,
+    join(homedir(), ".a6g"),
     T3_HOME,
     join(homedir(), ".t3"),
     join(homedir(), ".claude"),
@@ -749,18 +749,18 @@ export function check(input: HookInput): void {
 
   // --- Files ---------------------------------------------------------------------------------------------------
 
-  // Inside the team's run folder in its checkout (.e9g/run/): state and locks belong to the factory's commands; the
+  // Inside the team's run folder in its checkout (.a6g/run/): state and locks belong to the factory's commands; the
   // board's tickets to the planner; anyone may add a finding (f-*.md) or use scratch/ and shots/.
   function checkWork(absolute: string): void {
     const rel = relative(work, absolute);
-    if (/^(state|locks|merge)(\/|$)/.test(rel)) refuse(`.e9g/run/${rel} is written by the factory's commands only.`);
-    // The board itself (mkdir -p .e9g/run/board) and its tickets are the planner's; anyone may add a finding.
+    if (/^(state|locks|merge)(\/|$)/.test(rel)) refuse(`.a6g/run/${rel} is written by the factory's commands only.`);
+    // The board itself (mkdir -p .a6g/run/board) and its tickets are the planner's; anyone may add a finding.
     if (/^board(\/|$)/.test(rel)) {
       if (role === "planner" || /^board\/f-[\w.-]+\.md$/.test(rel)) return;
       refuse("only the planner edits tickets; file what you found as a new board/f-<yyyymmdd-hhmm>-<slug>.md.");
     }
     if (/^(scratch|shots)(\/|$)/.test(rel)) return;
-    refuse(`.e9g/run/${rel} isn't yours to write; use .e9g/run/scratch/ or /tmp.`);
+    refuse(`.a6g/run/${rel} isn't yours to write; use .a6g/run/scratch/ or /tmp.`);
   }
 
   const outsideLane = (rel: string): never => refuse(`the ${role || "unnamed"} role doesn't write ${rel}; it's outside its lane (Article 6).`);
@@ -799,11 +799,11 @@ export function check(input: HookInput): void {
       refuse(`${absolute} is outside your checkout.`);
     }
     if (setup) {
-      if (role !== "setup") refuse("a subagent of the setup agent writes nothing; the setup agent writes .e9g/ itself.");
-      if (!/^\.e9g\//.test(rel)) refuse("setup writes only the team's .e9g/ folder; the repository itself is the team's to change, once it runs.");
+      if (role !== "setup") refuse("a subagent of the setup agent writes nothing; the setup agent writes .a6g/ itself.");
+      if (!/^\.a6g\//.test(rel)) refuse("setup writes only the team's .a6g/ folder; the repository itself is the team's to change, once it runs.");
       return null;
     }
-    // A folder that holds factory files (rm -rf .e9g) is one of them.
+    // A folder that holds factory files (rm -rf .a6g) is one of them.
     if (factoryWrite(team, role, rel) || (rel !== "" && !FACTORY_PATH.test(rel) && FACTORY_PATH.test(`${rel}/`)))
       refuse(`${rel} is the team's rules or the factory's own files, which the operator changes (Article 12).`);
     // .git/config and .git/hooks hold for the team's checkout and every worktree, like git config (checkGit).
@@ -894,7 +894,7 @@ export function check(input: HookInput): void {
 
     if (sub === "push") checkPush(rest, dir);
 
-    // Nobody on the team renames, deletes or resets the integration branch: it changes only through e9g merge.
+    // Nobody on the team renames, deletes or resets the integration branch: it changes only through a6g merge.
     // git branch -m <new> renames the branch checked out, which in the team's checkout is the integration branch;
     // a copy (git branch -c) changes only its destination.
     let moved = false;
@@ -914,7 +914,7 @@ export function check(input: HookInput): void {
     if (sub === "update-ref" && rest.some(integration)) moved = true;
     if (/^(checkout|switch|worktree)$/.test(sub) && rest.some((arg, i) => /^(-B|-C|--force-create)$/.test(rest[i - 1] ?? "") && integration(arg)))
       moved = true;
-    if (moved) refuse(`${team.branch} changes only through e9g merge; nobody on the team renames, deletes or resets it.`);
+    if (moved) refuse(`${team.branch} changes only through a6g merge; nobody on the team renames, deletes or resets it.`);
 
     const ends = rest.some((arg) => arg === "--abort" || arg === "--quit");
     // Only the planner commits on the integration branch (its own lane's files); everyone else works on a branch.
@@ -925,12 +925,12 @@ export function check(input: HookInput): void {
     // fast-forwards it while the planner works, and every member's rules are read from it.
     if (role === "planner" && inTeamCheckout) {
       if (sub === "pull" || (/^(merge|rebase|cherry-pick|revert|am)$/.test(sub) && !ends))
-        refuse(`${team.branch} changes only through e9g merge, and a builder rebases its own branch.`);
+        refuse(`${team.branch} changes only through a6g merge, and a builder rebases its own branch.`);
       if (sub === "reset" && resetMoves(rest, dir))
-        refuse(`git reset with a commit or a mode changes ${team.branch}, which changes only through e9g merge; unstage with git reset -- <paths>.`);
+        refuse(`git reset with a commit or a mode changes ${team.branch}, which changes only through a6g merge; unstage with git reset -- <paths>.`);
       // git takes a start of an option for the whole of it: --am and --amen are --amend.
       if (sub === "commit" && rest.some((arg) => /^--am(e(nd?)?)?$/.test(arg)))
-        refuse(`--amend rewrites ${team.branch}'s last commit, which changes only through e9g merge; make a new commit.`);
+        refuse(`--amend rewrites ${team.branch}'s last commit, which changes only through a6g merge; make a new commit.`);
       if (sub === "switch" || (sub === "checkout" && rest[0] !== "--") || (sub === "stash" && !listsOnly(sub, rest)))
         refuse(
           `the team's checkout stays on ${team.branch}; inspect other branches with git show, git diff or git worktree add --detach /tmp/<name> <branch>.`
@@ -1002,15 +1002,15 @@ export function check(input: HookInput): void {
       if (broken) refuse(broken.reason);
       for (const line of lines(command)) for (const [rule, roles, reason] of owned) if (rule.test(line) && !roles.includes(role)) refuse(reason);
       checkSecrets(command);
-      // The command that actually runs, its wrappers (timeout, env, e9g lock … --) taken off.
+      // The command that actually runs, its wrappers (timeout, env, a6g lock … --) taken off.
       const words = unwrap(command.words).at(-1) ?? [];
       const git = basename(words[0] ?? "") === "git";
       const gitEnv = command.words.flatMap((word) => /^GIT_(DIR|WORK_TREE)=(.+)$/.exec(word)?.[2] ?? []);
       if (!git) exported.push(...gitEnv);
-      if (words[0] === "e9g") {
+      if (words[0] === "a6g") {
         const sub = words[1];
         if (setup && sub !== undefined && !sub.startsWith("-") && !SETUP_COMMANDS.includes(sub))
-          refuse(`setup runs e9g ${SETUP_COMMANDS.slice(0, -1).join(", ")} and help only.`);
+          refuse(`setup runs a6g ${SETUP_COMMANDS.slice(0, -1).join(", ")} and help only.`);
         if (!setup && sub === "merge" && paused()) refuse(PAUSED);
       }
       if (git) checkGit(words, command.cwd, [...exported, ...gitEnv]);
@@ -1018,7 +1018,7 @@ export function check(input: HookInput): void {
         const labels = issueCreateLabels(words);
         if (labels && !labels.includes(PLANNER_LABEL))
           refuse(
-            `the issues the planner opens carry the label ${PLANNER_LABEL}: add --label ${PLANNER_LABEL} (once, if the repository doesn't have it yet: gh label create ${PLANNER_LABEL} --color 5319E7 --description "Opened by an E9G team's planner").`
+            `the issues the planner opens carry the label ${PLANNER_LABEL}: add --label ${PLANNER_LABEL} (once, if the repository doesn't have it yet: gh label create ${PLANNER_LABEL} --color 5319E7 --description "Opened by an Anything Factory team's planner").`
           );
       }
       checkSearches(words, command.cwd);
@@ -1082,7 +1082,7 @@ export function check(input: HookInput): void {
     const target = args.target;
     // Members on another machine are started by that machine's watchdog, which holds its own limits.
     if (typeof target === "object" && target !== null && (target as Record<string, unknown>).environmentId !== undefined)
-      refuse("members start on this machine; a worker machine's watchdog starts its own builders (e9g register --worker).");
+      refuse("members start on this machine; a worker machine's watchdog starts its own builders (a6g register --worker).");
     const named = (value: unknown): string | undefined => (typeof value === "string" && value ? value : undefined);
     const instance =
       named(typeof target === "object" && target !== null ? (target as Record<string, unknown>).providerInstanceId : undefined) ??
@@ -1100,7 +1100,7 @@ export function check(input: HookInput): void {
       );
     const drain = join(work, "state", "drain");
     if (existsSync(drain) && readFileSync(drain, "utf8").split(/\s+/).includes(childRole))
-      refuse(`the environment is draining for a reset; start no ${childRole} until e9g drain off.`);
+      refuse(`the environment is draining for a reset; start no ${childRole} until a6g drain off.`);
     const limit = child?.limit ?? 0;
     const ids = [
       instanceId(team, childRole),

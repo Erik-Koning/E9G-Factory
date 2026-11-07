@@ -40,16 +40,16 @@ function pass(): never {
 function refuse(reason: string): never {
   if (refusals >= 3) {
     // Letting it stop with work possibly uncommitted: keep its worktree from the watchdog's pruning.
-    if (process.env.E9G_RUN) {
-      mkdirSync(join(process.env.E9G_RUN, "keep"), { recursive: true });
-      writeFileSync(join(process.env.E9G_RUN, "keep", basename(cwd)), `${new Date().toISOString()} ${reason.split("\n")[0]}\n`);
+    if (process.env.A6G_RUN) {
+      mkdirSync(join(process.env.A6G_RUN, "keep"), { recursive: true });
+      writeFileSync(join(process.env.A6G_RUN, "keep", basename(cwd)), `${new Date().toISOString()} ${reason.split("\n")[0]}\n`);
     }
     rmSync(counterFile, { force: true });
     // Its task goes back as blocked, with why, rather than sitting claimed until the lease runs out.
     if (claimed)
       spawnSync(
         process.execPath,
-        [join(FACTORY_ROOT, "bin", "e9g.ts"), "task", "release", claimed, `--blocked=stopped without handing it in: ${reason.split("\n")[0]}`],
+        [join(FACTORY_ROOT, "bin", "a6g.ts"), "task", "release", claimed, `--blocked=stopped without handing it in: ${reason.split("\n")[0]}`],
         {
           cwd,
           stdio: "ignore",
@@ -70,7 +70,7 @@ function refuse(reason: string): never {
 // by nobody until its lease runs out. Only a claim the task graph still shows counts.
 const claimed = await heldTask();
 async function heldTask(): Promise<string | null> {
-  const run = process.env.E9G_RUN;
+  const run = process.env.A6G_RUN;
   if (!run || team.board.type !== "tasks") return null;
   try {
     const worktree = realpathSync(git(cwd, "rev-parse", "--show-toplevel"));
@@ -99,7 +99,7 @@ const ahead = Number(git(cwd, "rev-list", "--count", `${base}..HEAD`));
 const dirty = git(cwd, "status", "--porcelain", "--untracked-files=normal") !== "";
 // A member that changed nothing is reporting a blocker; let it, once it has handed its task back.
 if (ahead === 0 && !dirty) {
-  if (claimed) refuse(`hand task ${claimed} back with the reason: e9g task release ${claimed} --blocked "<why>".`);
+  if (claimed) refuse(`hand task ${claimed} back with the reason: a6g task release ${claimed} --blocked "<why>".`);
   pass();
 }
 if (dirty) refuse("commit your changes (git commit -- <paths>), new files included; nothing may be left uncommitted.");
@@ -108,13 +108,13 @@ if (pattern && !new RegExp(pattern).test(branch)) refuse(`name your branch to ma
 
 const gate = team.gate.quick;
 if (!gate) {
-  if (claimed) refuse(`hand in task ${claimed}: e9g task submit ${claimed} (or e9g task release ${claimed} --blocked "<why>").`);
+  if (claimed) refuse(`hand in task ${claimed}: a6g task submit ${claimed} (or a6g task release ${claimed} --blocked "<why>").`);
   pass();
 }
 // From the worktree's root: the member may have cd'ed into a package, and the gate's path is relative to the root.
 const result = spawnSync(
   "node",
-  [join(FACTORY_ROOT, "bin", "e9g.ts"), "lock", "gate", "--slots", String(team.gate.concurrency), "--wait-min", String(WAIT_MIN), "--", "sh", "-c", gate],
+  [join(FACTORY_ROOT, "bin", "a6g.ts"), "lock", "gate", "--slots", String(team.gate.concurrency), "--wait-min", String(WAIT_MIN), "--", "sh", "-c", gate],
   { cwd: git(cwd, "rev-parse", "--show-toplevel"), encoding: "utf8", timeout: GATE_MS }
 );
 const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
@@ -128,5 +128,5 @@ if (result.signal || (result.error as NodeJS.ErrnoException | undefined)?.code =
   refuse(`the gate (${gate}) didn't finish within ${GATE_MS / 60_000} minutes; make it faster or ask the planner.\n${tail}`);
 if (result.status === TIMED_OUT) refuse(`no gate slot came free in ${WAIT_MIN} minutes; try stopping again.`);
 if (!passed) refuse(`the gate (${gate}) fails:\n${tail}`);
-if (claimed) refuse(`hand in task ${claimed}: e9g task submit ${claimed} (or e9g task release ${claimed} --blocked "<why>").`);
+if (claimed) refuse(`hand in task ${claimed}: a6g task submit ${claimed} (or a6g task release ${claimed} --blocked "<why>").`);
 pass();

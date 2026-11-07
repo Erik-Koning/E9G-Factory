@@ -1,7 +1,7 @@
-// e9g pr: the planner's pull request, from the branch it pushes into the one the operator promotes into
+// a6g pr: the planner's pull request, from the branch it pushes into the one the operator promotes into
 // (team.json push.pullRequest). gh is a stand-in that records what it was asked; the remote is a bare repository
 // behind a GitHub address (git's insteadOf), so the pull request names acme/app while the push stays on disk.
-import { baseTeam, bash, commit, e9g, git, holds, machine, makeRepo, tmp, write } from "./helpers.ts";
+import { baseTeam, bash, commit, a6g, git, holds, machine, makeRepo, tmp, write } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,26 +12,26 @@ import { compile } from "../lib/prompts.ts";
 import { validator } from "./jsonschema.ts";
 
 const ADDRESS = "git@github.com:acme/app.git";
-// How e9g pr asks gh for the open pull request.
-const LIST = "pr list --repo acme/app --head e9g/next --base main --state open --json number,url,title,isCrossRepository --limit 20";
+// How a6g pr asks gh for the open pull request.
+const LIST = "pr list --repo acme/app --head a6g/next --base main --state open --json number,url,title,isCrossRepository --limit 20";
 
 // A team's checkout whose origin is acme/app on GitHub, as far as anything but git's transport can tell.
 function checkout(push: RawTeam["push"] = { remote: "origin", pullRequest: true }, more: RawTeam = {}): { home: string; run: string } {
   const home = makeRepo(baseTeam({ push, ...more }));
-  const bare = tmp("e9g-remote-");
+  const bare = tmp("a6g-remote-");
   git(bare, "init", "-q", "--bare");
   git(home, "remote", "add", "origin", ADDRESS);
   git(home, "config", `url.${bare}.insteadOf`, ADDRESS);
-  const run = tmp("e9g-run-");
+  const run = tmp("a6g-run-");
   write(run, { "planner-thread": "mcp:planner-1\n" });
-  write(home, { ".e9g/run/scratch/pr.md": "## What's in it\n\nThe charity approval journey, end to end.\n" });
+  write(home, { ".a6g/run/scratch/pr.md": "## What's in it\n\nThe charity approval journey, end to end.\n" });
   return { home, run };
 }
 
-// gh as far as e9g pr uses it: every call's arguments in calls, the body it was given in body, and the open pull
+// gh as far as a6g pr uses it: every call's arguments in calls, the body it was given in body, and the open pull
 // requests `pr list` answers from list (none, unless a test writes one).
 function fakeGh(): { dir: string; calls: () => string[]; body: () => string; list: (json: string) => void } {
-  const dir = tmp("e9g-gh-");
+  const dir = tmp("a6g-gh-");
   write(dir, {
     gh: `#!/bin/sh
 printf '%s\\n' "$*" >> "${dir}/calls"
@@ -54,25 +54,25 @@ esac
 }
 
 const prAs = (role: string, { home, run }: { home: string; run: string }, gh: { dir: string }, ...args: string[]) =>
-  e9g(["pr", ...args], {
+  a6g(["pr", ...args], {
     cwd: home,
-    env: { PATH: `${gh.dir}:${process.env.PATH}`, E9G_TEAM: "fixture", E9G_HOME_DIR: home, E9G_RUN: run, E9G_ROLE: role },
+    env: { PATH: `${gh.dir}:${process.env.PATH}`, A6G_TEAM: "fixture", A6G_HOME_DIR: home, A6G_RUN: run, A6G_ROLE: role },
   });
-const bodyFile = (home: string) => join(home, ".e9g/run/scratch/pr.md");
+const bodyFile = (home: string) => join(home, ".a6g/run/scratch/pr.md");
 
-describe("e9g pr", { concurrency: true }, () => {
+describe("a6g pr", { concurrency: true }, () => {
   test("push.pullRequest: true goes into base, a name into that branch, never into the branch it comes from", () => {
-    const pullOf = (raw: RawTeam) => normalize({ name: "app", branch: "e9g/next", ...raw }, "/tmp/app");
+    const pullOf = (raw: RawTeam) => normalize({ name: "app", branch: "a6g/next", ...raw }, "/tmp/app");
     assert.equal(pullOf({ push: { pullRequest: true } }).team.push?.pullRequest, "main");
     assert.equal(pullOf({ base: "trunk", push: { pullRequest: true } }).team.push?.pullRequest, "trunk");
     assert.equal(pullOf({ push: { pullRequest: "release" } }).team.push?.pullRequest, "release");
     assert.equal(pullOf({ push: { pullRequest: false } }).team.push?.pullRequest, null);
     assert.equal(pullOf({ push: {} }).team.push?.pullRequest, null);
-    assert.match(pullOf({ push: { pullRequest: "e9g/next" } }).problems.join("; "), /push\.pullRequest: e9g\/next is the branch the planner pushes/);
+    assert.match(pullOf({ push: { pullRequest: "a6g/next" } }).problems.join("; "), /push\.pullRequest: a6g\/next is the branch the planner pushes/);
     assert.match(pullOf({ push: { pullRequest: 5 as never } }).problems.join("; "), /push\.pullRequest: true \(into base\), or the branch/);
 
     const validate = validator(JSON.parse(readFileSync(join(import.meta.dirname, "..", "schema", "team.schema.json"), "utf8")));
-    const base = { name: "app", branch: "e9g/next" };
+    const base = { name: "app", branch: "a6g/next" };
     for (const pullRequest of [true, false, "main"]) assert.deepEqual(validate({ ...base, push: { pullRequest } }), [], `the schema takes ${pullRequest}`);
     for (const pullRequest of ["", 5]) assert.notDeepEqual(validate({ ...base, push: { pullRequest } }), [], `the schema refuses ${pullRequest}`);
   });
@@ -99,10 +99,10 @@ describe("e9g pr", { concurrency: true }, () => {
   test("only the planner runs it, and gh's own pull requests stay refused", async () => {
     const { home } = checkout();
     await holds([
-      bash(home, "planner", `e9g pr --title "Sprint one" --body-file ${bodyFile(home)}`, "allow"),
-      bash(home, "builder", `e9g pr --title "Sprint one" --body-file ${bodyFile(home)}`, "refuse"),
-      bash(home, "reviewer", "e9g pr --title x --body y", "refuse"),
-      bash(home, "planner", "e9g progress", "allow"),
+      bash(home, "planner", `a6g pr --title "Sprint one" --body-file ${bodyFile(home)}`, "allow"),
+      bash(home, "builder", `a6g pr --title "Sprint one" --body-file ${bodyFile(home)}`, "refuse"),
+      bash(home, "reviewer", "a6g pr --title x --body y", "refuse"),
+      bash(home, "planner", "a6g progress", "allow"),
       bash(home, "planner", "gh pr create --fill", "refuse"),
     ]);
     const gh = fakeGh();
@@ -117,82 +117,82 @@ describe("e9g pr", { concurrency: true }, () => {
     const gh = fakeGh();
     const notYet = await prAs("planner", team, gh, "--title", "Sprint one", "--body-file", bodyFile(team.home));
     assert.equal(notYet.code, 2, notYet.out);
-    assert.match(notYet.out, /e9g\/next isn't on origin yet: git push origin e9g\/next first/);
+    assert.match(notYet.out, /a6g\/next isn't on origin yet: git push origin a6g\/next first/);
 
-    git(team.home, "push", "-q", "origin", "e9g/next");
-    const pushed = git(team.home, "rev-parse", "e9g/next");
+    git(team.home, "push", "-q", "origin", "a6g/next");
+    const pushed = git(team.home, "rev-parse", "a6g/next");
     const opened = await prAs("planner", team, gh, "--title", "Sprint one", "--body-file", bodyFile(team.home));
     assert.equal(opened.code, 0, opened.out);
-    assert.match(opened.out, /opened e9g\/next into main: https:\/\/github\.com\/acme\/app\/pull\/12/);
+    assert.match(opened.out, /opened a6g\/next into main: https:\/\/github\.com\/acme\/app\/pull\/12/);
     assert.deepEqual(gh.calls(), [
       LIST,
-      "pr create --repo acme/app --head e9g/next --base main --title [E9G-Planner] [Fixture team] Sprint one --body-file -",
+      "pr create --repo acme/app --head a6g/next --base main --title [A6G-Planner] [Fixture team] Sprint one --body-file -",
     ]);
     assert.match(gh.body(), /^## What's in it\n\nThe charity approval journey, end to end\.\n\n---\n/);
-    assert.match(gh.body(), new RegExp(`Holds \`e9g/next\` at ${pushed.slice(0, 9)}\\. Merging it promotes the team's work into \`main\``));
+    assert.match(gh.body(), new RegExp(`Holds \`a6g/next\` at ${pushed.slice(0, 9)}\\. Merging it promotes the team's work into \`main\``));
     assert.match(gh.body(), /\n— planner · mcp:planner-1\n$/);
 
     // Work merged since the push: the open one is updated, and says what isn't in it yet. A title that already
     // carries the labels doesn't get them twice.
     commit(team.home, { "src/next.ts": "export const next = 1;\n" }, "merge 13");
-    gh.list('[{"number":12,"url":"https://github.com/acme/app/pull/12","title":"[E9G-Planner] [Fixture team] Sprint one","isCrossRepository":false}]');
-    const updated = await prAs("planner", team, gh, "--title", "[E9G-Planner] [Fixture team] Sprint two", "--body", "More of it.");
+    gh.list('[{"number":12,"url":"https://github.com/acme/app/pull/12","title":"[A6G-Planner] [Fixture team] Sprint one","isCrossRepository":false}]');
+    const updated = await prAs("planner", team, gh, "--title", "[A6G-Planner] [Fixture team] Sprint two", "--body", "More of it.");
     assert.equal(updated.code, 0, updated.out);
-    assert.match(updated.out, /updated #12, e9g\/next into main: https:\/\/github\.com\/acme\/app\/pull\/12/);
-    assert.equal(gh.calls().at(-1), "pr edit 12 --repo acme/app --title [E9G-Planner] [Fixture team] Sprint two --body-file -");
-    assert.match(gh.body(), new RegExp(`Holds \`e9g/next\` at ${pushed.slice(0, 9)}; 1 newer commit\\(s\\) on the team's machine aren't pushed yet\\.`));
+    assert.match(updated.out, /updated #12, a6g\/next into main: https:\/\/github\.com\/acme\/app\/pull\/12/);
+    assert.equal(gh.calls().at(-1), "pr edit 12 --repo acme/app --title [A6G-Planner] [Fixture team] Sprint two --body-file -");
+    assert.match(gh.body(), new RegExp(`Holds \`a6g/next\` at ${pushed.slice(0, 9)}; 1 newer commit\\(s\\) on the team's machine aren't pushed yet\\.`));
   });
 
   test("leaves a fork's pull request alone, and comments on one the operator opened instead of rewriting it", async () => {
     const team = checkout();
-    git(team.home, "push", "-q", "origin", "e9g/next");
+    git(team.home, "push", "-q", "origin", "a6g/next");
     const gh = fakeGh();
-    gh.list('[{"number":7,"url":"https://github.com/acme/app/pull/7","title":"[E9G-Planner] mine now","isCrossRepository":true}]');
+    gh.list('[{"number":7,"url":"https://github.com/acme/app/pull/7","title":"[A6G-Planner] mine now","isCrossRepository":true}]');
     const beside = await prAs("planner", team, gh, "--title", "Sprint one", "--body-file", bodyFile(team.home));
     assert.equal(beside.code, 0, beside.out);
-    assert.match(gh.calls().at(-1) ?? "", /^pr create /, "a fork's e9g/next isn't the team's");
+    assert.match(gh.calls().at(-1) ?? "", /^pr create /, "a fork's a6g/next isn't the team's");
 
     gh.list('[{"number":9,"url":"https://github.com/acme/app/pull/9","title":"Promote the approval journey","isCrossRepository":false}]');
     const theirs = await prAs("planner", team, gh, "--title", "Sprint two", "--body", "More of it.");
     assert.equal(theirs.code, 0, theirs.out);
-    assert.match(theirs.out, /commented on #9, e9g\/next into main, which the operator opened \(no \[E9G-Planner\] in its title\)/);
+    assert.match(theirs.out, /commented on #9, a6g\/next into main, which the operator opened \(no \[A6G-Planner\] in its title\)/);
     assert.equal(gh.calls().at(-1), "pr comment 9 --repo acme/app --body-file -");
     assert.ok(!gh.calls().some((call) => call.startsWith("pr edit")), "their title and description stay theirs");
-    assert.match(gh.body(), /^\*\*\[E9G-Planner\] \[Fixture team\] Sprint two\*\*\n\nMore of it\.\n\n---\n/);
+    assert.match(gh.body(), /^\*\*\[A6G-Planner\] \[Fixture team\] Sprint two\*\*\n\nMore of it\.\n\n---\n/);
   });
 
   test("on several machines, says when it was written, since the lead pushes after every merge", async () => {
     const several = { tasks: { store: "mongo" as const, lead: "studio" } };
     const team = checkout({ remote: "origin", pullRequest: true }, several);
-    git(team.home, "push", "-q", "origin", "e9g/next");
+    git(team.home, "push", "-q", "origin", "a6g/next");
     const gh = fakeGh();
     const opened = await prAs("planner", team, gh, "--title", "Sprint one", "--body-file", bodyFile(team.home));
     assert.equal(opened.code, 0, opened.out);
-    assert.match(gh.body(), /Written when `e9g\/next` was at [0-9a-f]{9}; the lead pushes it after every merge/);
+    assert.match(gh.body(), /Written when `a6g\/next` was at [0-9a-f]{9}; the lead pushes it after every merge/);
 
     const rules = compile(loadTeam(team.home), "builder");
-    assert.match(rules, /a builder's `e9g task submit` pushes its task's branch, and the lead's merge queue pushes `e9g\/next` after every merge/);
-    assert.match(rules, /The planner's `e9g pr` opens the pull request/);
+    assert.match(rules, /a builder's `a6g task submit` pushes its task's branch, and the lead's merge queue pushes `a6g\/next` after every merge/);
+    assert.match(rules, /The planner's `a6g pr` opens the pull request/);
     assert.match(rules, /Nothing else leaves these machines\./);
     assert.doesNotMatch(compile(loadTeam(checkout().home), "builder"), /these machines/);
 
-    const elsewhere = normalize({ name: "app", branch: "e9g/next", ...several, push: { branch: "e9g/out" } }, "/tmp/app").problems.join("; ");
-    assert.match(elsewhere, /push\.branch: a team on several machines pushes its integration branch, e9g\/next, after every merge/);
+    const elsewhere = normalize({ name: "app", branch: "a6g/next", ...several, push: { branch: "a6g/out" } }, "/tmp/app").problems.join("; ");
+    assert.match(elsewhere, /push\.branch: a team on several machines pushes its integration branch, a6g\/next, after every merge/);
   });
 
   test("closing a cycle points the planner at the pull request", async () => {
     const team = checkout({ remote: "origin", pullRequest: true }, { mode: "cycles" });
     write(team.home, {
-      ".e9g/run/scratch/cycle.md": "Approval journey verified\n\nBuilt and verified the charity approval journey on phone and desktop.\n",
+      ".a6g/run/scratch/cycle.md": "Approval journey verified\n\nBuilt and verified the charity approval journey on phone and desktop.\n",
     });
-    const closed = await e9g(["cycle", "close", "--report-file", join(team.home, ".e9g/run/scratch/cycle.md")], {
+    const closed = await a6g(["cycle", "close", "--report-file", join(team.home, ".a6g/run/scratch/cycle.md")], {
       cwd: team.home,
-      env: { E9G_TEAM: "fixture", E9G_HOME_DIR: team.home, E9G_RUN: team.run, E9G_ROLE: "planner" },
+      env: { A6G_TEAM: "fixture", A6G_HOME_DIR: team.home, A6G_RUN: team.run, A6G_ROLE: "planner" },
     });
     assert.equal(closed.code, 0, closed.out);
     assert.match(
       closed.out,
-      /then the pull request: push e9g\/next if it isn't pushed \(git push origin e9g\/next\), and e9g pr --title "Cycle 1: …" --body-file /
+      /then the pull request: push a6g\/next if it isn't pushed \(git push origin a6g\/next\), and a6g pr --title "Cycle 1: …" --body-file /
     );
   });
 
@@ -212,23 +212,23 @@ describe("e9g pr", { concurrency: true }, () => {
       ["--title", "", "--body", "y"],
       ["--title", "x", "--body", "  "],
     ])
-      assert.match((await prAs("planner", team, gh, ...args)).out, /usage: e9g pr/, args.join(" "));
+      assert.match((await prAs("planner", team, gh, ...args)).out, /usage: a6g pr/, args.join(" "));
     assert.match((await prAs("planner", team, gh, "--title", "x", "--body-file", "/nowhere.md")).out, /no file \/nowhere\.md/);
     assert.deepEqual(gh.calls(), [], "none of them reached gh");
   });
 
-  test("the planner's rules name it only when the team has one, and e9g check proves it", async () => {
+  test("the planner's rules name it only when the team has one, and a6g check proves it", async () => {
     const { home } = checkout();
     const planner = compile(loadTeam(home), "planner");
-    assert.match(planner, /After a push, the planner's `e9g pr` opens the pull request from `e9g\/next` into `main`/);
-    assert.match(planner, /`e9g pr --title "<what it holds>" --body-file <file>`: after a push/);
-    assert.doesNotMatch(compile(loadTeam(home), "builder"), /`e9g pr --title/);
-    assert.doesNotMatch(compile(loadTeam(makeRepo(baseTeam({ push: { remote: "origin" } }))), "planner"), /e9g pr/);
+    assert.match(planner, /After a push, the planner's `a6g pr` opens the pull request from `a6g\/next` into `main`/);
+    assert.match(planner, /`a6g pr --title "<what it holds>" --body-file <file>`: after a push/);
+    assert.doesNotMatch(compile(loadTeam(home), "builder"), /`a6g pr --title/);
+    assert.doesNotMatch(compile(loadTeam(makeRepo(baseTeam({ push: { remote: "origin" } }))), "planner"), /a6g pr/);
 
     const { env } = machine();
-    const checked = await e9g(["check", home], { cwd: home, env: { PATH: env.PATH } });
+    const checked = await a6g(["check", home], { cwd: home, env: { PATH: env.PATH } });
     assert.doesNotMatch(checked.out, /^FAIL {2}guard:/m, checked.out);
-    assert.match(checked.out, /^ok {4}e9g pr opens the planner's pull request on acme\/app, from e9g\/next into main$/m);
-    assert.match(checked.out, /pushes: only the planner, e9g\/next to origin, with a pull request into main \(e9g pr\) for you to merge/);
+    assert.match(checked.out, /^ok {4}a6g pr opens the planner's pull request on acme\/app, from a6g\/next into main$/m);
+    assert.match(checked.out, /pushes: only the planner, a6g\/next to origin, with a pull request into main \(a6g pr\) for you to merge/);
   });
 });

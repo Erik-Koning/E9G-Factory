@@ -1,6 +1,6 @@
-// e9g blast: the files a change touches, what imports them, what usually changes with them, the tests among those,
+// a6g blast: the files a change touches, what imports them, what usually changes with them, the tests among those,
 // whether it touches UI and how much, and which of the team's critical paths it reaches.
-import { baseTeam, commit, E9G, e9g, git, makeRepo, ROOT, tmp, write } from "./helpers.ts";
+import { baseTeam, commit, A6G, a6g, git, makeRepo, ROOT, tmp, write } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -22,7 +22,7 @@ test("importers: an exact tsconfig paths key that names nothing of its file's na
     "src/boot.ts": 'import { start } from "@app";\nexport const boot = start;\n',
   });
   branch(dir, { "src/main.ts": "export const start = 1;\n" });
-  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, ["src/boot.ts"]);
+  assert.deepEqual(blastRadius(dir, { base: "a6g/next" }).importers, ["src/boot.ts"]);
 });
 
 test("importers: relative, .js-suffixed and tsconfig paths imports, two levels and no further", () => {
@@ -52,8 +52,8 @@ test("importers: relative, .js-suffixed and tsconfig paths imports, two levels a
     "src/other.ts": "export const other = 2;\n",
   });
   branch(dir, { "src/lib/core.ts": "export const core = 2;\n" });
-  const radius = blastRadius(join(dir, "src"), { base: "e9g/next" });
-  assert.equal(radius.base, "e9g/next");
+  const radius = blastRadius(join(dir, "src"), { base: "a6g/next" });
+  assert.equal(radius.base, "a6g/next");
   assert.equal(radius.ref, "HEAD");
   assert.deepEqual(radius.changed, ["src/lib/core.ts"]);
   // One level: a, alias, side, lazy, old.cjs and lib/index; two: b (a), via-alias (alias) and folder (lib/index).
@@ -78,7 +78,7 @@ test("importers: relative, .js-suffixed and tsconfig paths imports, two levels a
 
   // A tsconfig.json that isn't JSON even so is ignored: the aliases go, the rest stays.
   write(dir, { "tsconfig.json": '{ "compilerOptions": { "paths": ' });
-  const without = blastRadius(dir, { base: "e9g/next" });
+  const without = blastRadius(dir, { base: "a6g/next" });
   assert.deepEqual(
     without.importers,
     radius.importers.filter((file) => file !== "src/alias.ts" && file !== "src/via-alias.ts")
@@ -117,7 +117,7 @@ test("importers: a workspace's packages by name, through exports, main or module
   });
   // One level: the package's index, and through exports ./button, ./icons/* and a path in the folder; two: Page,
   // which imports the package itself (its index).
-  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, [
+  assert.deepEqual(blastRadius(dir, { base: "a6g/next" }).importers, [
     "apps/web/src/Direct.tsx",
     "apps/web/src/Page.tsx",
     "apps/web/src/Rating.tsx",
@@ -137,7 +137,7 @@ test("importers: a workspace's packages by name, through exports, main or module
     "src/b.ts": 'import { fmt } from "@acme/fmt";\nexport const b = fmt;\n',
   });
   branch(yarn, { "libs/shared/lib/main.ts": "export const shared = 2;\n", "libs/fmt/src/index.ts": "export const fmt = 2;\n" });
-  assert.deepEqual(blastRadius(yarn, { base: "e9g/next" }).importers, ["src/a.ts", "src/b.ts"]);
+  assert.deepEqual(blastRadius(yarn, { base: "a6g/next" }).importers, ["src/a.ts", "src/b.ts"]);
 });
 
 test("importers: paths from the nearest jsconfig.json or tsconfig.json above the importing file, baseUrl relative to it", () => {
@@ -150,7 +150,7 @@ test("importers: paths from the nearest jsconfig.json or tsconfig.json above the
     "tools/build.ts": 'import { core } from "~/lib/core";\n',
   });
   branch(dir, { "src/lib/core.js": "export const core = 2;\n" });
-  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, ["src/app.jsx"]);
+  assert.deepEqual(blastRadius(dir, { base: "a6g/next" }).importers, ["src/app.jsx"]);
 });
 
 test("importers: a package's tsconfig.json with the paths of the base it extends, baseUrl relative to the base", () => {
@@ -177,7 +177,7 @@ test("importers: a package's tsconfig.json with the paths of the base it extends
     "scripts/release.ts": 'import { core } from "@shared/core";\n',
   });
   branch(dir, { "packages/shared/src/core.ts": "export const core = 2;\n" });
-  assert.deepEqual(blastRadius(dir, { base: "e9g/next" }).importers, ["packages/app/src/main.ts", "packages/cli/src/run.ts", "packages/loop/index.ts"]);
+  assert.deepEqual(blastRadius(dir, { base: "a6g/next" }).importers, ["packages/app/src/main.ts", "packages/cli/src/run.ts", "packages/loop/index.ts"]);
 });
 
 test("importers: a barrel (export … from and nothing else) isn't a level; what imports it is at its level", () => {
@@ -199,7 +199,7 @@ test("importers: a barrel (export … from and nothing else) isn't a level; what
     "src/deeper.ts": 'import { feature } from "./feature";\n',
   });
   branch(dir, { "src/ui/components/Button.tsx": "export const Button = () => 1;\nexport type ButtonProps = {};\n" });
-  const radius = blastRadius(dir, { base: "e9g/next" });
+  const radius = blastRadius(dir, { base: "a6g/next" });
   // One level: lib/index, and through the barrels (components/index, ui/index, right and left) Home and Label; two:
   // Home's test, About and feature. Not App or deeper, three levels away.
   assert.deepEqual(radius.importers, [
@@ -228,10 +228,10 @@ test("importers: only the files that name a changed file are read, so few are pl
     "src/use.ts": 'import { core } from "./lib/core";\nexport const use = core;\n',
   });
   branch(dir, { "src/lib/core.ts": "export const core = 2;\n" });
-  const radius = blastRadius(dir, { base: "e9g/next", maxSources: 3 });
+  const radius = blastRadius(dir, { base: "a6g/next", maxSources: 3 });
   assert.deepEqual([radius.importers, radius.truncated], [["src/use.ts"], false]);
   // Three files name core (besides itself), and only two are read: importers may be missing, and it says so.
-  assert.equal(blastRadius(dir, { base: "e9g/next", maxSources: 2 }).truncated, true);
+  assert.equal(blastRadius(dir, { base: "a6g/next", maxSources: 2 }).truncated, true);
 });
 
 test("related: files that changed together in at least 3 commits and 30% of the changed file's, still in the tree", () => {
@@ -267,7 +267,7 @@ test("related: files that changed together in at least 3 commits and 30% of the 
   for (let i = 1; i <= 3; i++) commit(dir, { "src/hub.ts": `seldom ${i}\n`, "src/seldom.ts": `${i}\n` }, `hub and seldom ${i}`);
 
   branch(dir, { "src/billing/invoice.ts": "export const invoice = 9;\n", "src/busy.ts": "9\n", "src/hub.ts": "9\n" });
-  const radius = blastRadius(dir, { base: "e9g/next" });
+  const radius = blastRadius(dir, { base: "a6g/next" });
   assert.deepEqual(radius.changed, ["src/billing/invoice.ts", "src/busy.ts", "src/hub.ts"]);
   // api.ts changes with invoice too, but it imports it: it's an importer, not related. old.ts is gone.
   assert.deepEqual(radius.importers, ["src/billing/api.ts"]);
@@ -289,7 +289,7 @@ test("tests: by folder and by name among the changed, importing and related file
     "test/fixtures/data.json": "{}\n",
   });
   branch(dir, { "src/price.ts": "export const price = 2;\n", "src/billing/index.ts": "export const billing = 2;\n", "test/changed.test.ts": "// 2\n" });
-  const radius = blastRadius(dir, { base: "e9g/next" });
+  const radius = blastRadius(dir, { base: "a6g/next" });
   assert.deepEqual(radius.importers, ["e2e/checkout.ts", "src/__tests__/cart.ts", "src/cart.ts", "src/format_spec.mjs"]);
   // e2e/ and __tests__/ by folder, format_spec by name, the changed test itself, price.test.ts by price.ts's stem
   // and billing.test.ts by billing/index.ts's (its folder's name).
@@ -319,13 +319,13 @@ test("UI: view files by extension and templates in view folders; never a test, a
     "src/server.ts": "y\n",
     "src/application/main.ts": "export {};\n",
   });
-  const radius = blastRadius(dir, { base: "e9g/next" });
+  const radius = blastRadius(dir, { base: "a6g/next" });
   assert.equal(radius.ui, true);
   assert.deepEqual(radius.uiFiles, ["app/views/home/index.html.erb", "docs/index.html", "src/components/Button.tsx", "src/styles/site.css"]);
   assert.equal(radius.uiLines, 10);
   assert.deepEqual(radius.tests, ["src/components/Button.test.tsx"]);
   assert.equal(radius.truncated, false);
-  const touches = blastRadius(dir, { base: "e9g/next", touches: true });
+  const touches = blastRadius(dir, { base: "a6g/next", touches: true });
   assert.deepEqual([touches.uiLines, touches.importers, touches.related], [10, [], []], "touches alone reads no imports or history");
 });
 
@@ -345,7 +345,7 @@ test("UI: pages under routes/, plain-JS components and what styles every page; n
     "routes/users.js": "module.exports = 1;\n", // an Express router
     "app/models/user.js": "module.exports = 1;\n",
   });
-  assert.deepEqual(blastRadius(dir, { base: "e9g/next", touches: true }).uiFiles, [
+  assert.deepEqual(blastRadius(dir, { base: "a6g/next", touches: true }).uiFiles, [
     "app/routes/_index.tsx",
     "public/logo.svg",
     "src/Button.styles.ts",
@@ -359,25 +359,25 @@ test("UI: pages under routes/, plain-JS components and what styles every page; n
 test("critical: the team's critical regexes, as given, that match a changed file or one that imports it", () => {
   const dir = makeRepo(baseTeam(), { "src/billing/invoice.ts": "0\n", "db/001.sql": "select 0;\n", "infra/main.tf": "0\n" });
   branch(dir, { "src/billing/invoice.ts": "1\n", "db/001.sql": "select 1;\n" });
-  const radius = blastRadius(dir, { base: "e9g/next", critical: ["^src/billing/", "^infra/", "\\.sql$"] });
+  const radius = blastRadius(dir, { base: "a6g/next", critical: ["^src/billing/", "^infra/", "\\.sql$"] });
   assert.deepEqual(radius.critical, ["\\.sql$", "^src/billing/"]);
   // Against another ref and base: nothing changed between them.
-  const none = blastRadius(dir, { base: "main", ref: "e9g/next", critical: ["^src/billing/"] });
-  assert.deepEqual([none.base, none.ref, none.changed, none.critical], ["main", "e9g/next", [], []]);
-  assert.throws(() => blastRadius(dir, { base: "e9g/next", ref: "no-such-ref" }), /no-such-ref isn't a commit/);
+  const none = blastRadius(dir, { base: "main", ref: "a6g/next", critical: ["^src/billing/"] });
+  assert.deepEqual([none.base, none.ref, none.changed, none.critical], ["main", "a6g/next", [], []]);
+  assert.throws(() => blastRadius(dir, { base: "a6g/next", ref: "no-such-ref" }), /no-such-ref isn't a commit/);
   // A helper billing imports reaches billing; reading only what changed, it doesn't.
   const helper = makeRepo(baseTeam(), {
     "src/lib/round.ts": "export const round = 0;\n",
     "src/billing/total.ts": 'import { round } from "../lib/round.ts";\nexport const t = round;\n',
   });
   branch(helper, { "src/lib/round.ts": "export const round = 1;\n" });
-  assert.deepEqual(blastRadius(helper, { base: "e9g/next", critical: ["^src/billing/"] }).critical, ["^src/billing/"]);
-  assert.deepEqual(blastRadius(helper, { base: "e9g/next", critical: ["^src/billing/"], touches: true }).critical, []);
+  assert.deepEqual(blastRadius(helper, { base: "a6g/next", critical: ["^src/billing/"] }).critical, ["^src/billing/"]);
+  assert.deepEqual(blastRadius(helper, { base: "a6g/next", critical: ["^src/billing/"], touches: true }).critical, []);
 });
 
-// The command as bin/e9g.ts runs it, and whether bin/e9g.ts dispatches it yet.
+// The command as bin/a6g.ts runs it, and whether bin/a6g.ts dispatches it yet.
 const COMMAND = pathToFileURL(join(ROOT, "lib", "commands", "blast.ts")).href;
-const wired = readFileSync(E9G, "utf8").includes("commands/blast.ts");
+const wired = readFileSync(A6G, "utf8").includes("commands/blast.ts");
 function blastCommand(args: string[], { cwd, env = {} }: { cwd: string; env?: NodeJS.ProcessEnv }): Promise<{ code: number | null; out: string }> {
   return new Promise((done) => {
     const script = `import { blast } from ${JSON.stringify(COMMAND)}; process.exitCode = await blast(process.argv.slice(1));`;
@@ -394,58 +394,58 @@ function teamWithWorktree(): { home: string; worktree: string } {
     "src/billing/invoice.ts": "export const invoice = 0;\n",
     "src/billing/api.ts": 'import { invoice } from "./invoice.js";\nexport const api = invoice;\n',
   });
-  const worktree = join(tmp("e9g-worktree-"), "builder-1");
-  git(home, "worktree", "add", "-q", "-b", "e9g/builder/1", worktree, "e9g/next");
+  const worktree = join(tmp("a6g-worktree-"), "builder-1");
+  git(home, "worktree", "add", "-q", "-b", "a6g/builder/1", worktree, "a6g/next");
   commit(worktree, { "src/billing/invoice.ts": "export const invoice = 1;\n" }, "invoice 1");
   return { home, worktree };
 }
 
-test("e9g blast: the radius of the worktree it's run in, against the team's branch, with the team's critical paths", async () => {
+test("a6g blast: the radius of the worktree it's run in, against the team's branch, with the team's critical paths", async () => {
   const { home, worktree } = teamWithWorktree();
-  const env = { E9G_HOME_DIR: home };
+  const env = { A6G_HOME_DIR: home };
   const json = await blastCommand(["--json"], { cwd: worktree, env });
   assert.equal(json.code, 0, json.out);
   const radius = JSON.parse(json.out) as ReturnType<typeof blastRadius>;
-  assert.deepEqual(radius, blastRadius(worktree, { base: "e9g/next", critical: ["^src/billing/"] }));
+  assert.deepEqual(radius, blastRadius(worktree, { base: "a6g/next", critical: ["^src/billing/"] }));
   assert.deepEqual(
     [radius.base, radius.ref, radius.changed, radius.importers, radius.critical],
-    ["e9g/next", "HEAD", ["src/billing/invoice.ts"], ["src/billing/api.ts"], ["^src/billing/"]]
+    ["a6g/next", "HEAD", ["src/billing/invoice.ts"], ["src/billing/api.ts"], ["^src/billing/"]]
   );
 
   const shown = await blastCommand([], { cwd: worktree, env });
   assert.equal(shown.code, 0, shown.out);
-  assert.match(shown.out, /^HEAD against e9g\/next: 1 file changed, 1 importer, 0 related files, 0 tests$/m);
+  assert.match(shown.out, /^HEAD against a6g\/next: 1 file changed, 1 importer, 0 related files, 0 tests$/m);
   assert.match(shown.out, /^changed \(1\):\n {2}src\/billing\/invoice\.ts$/m);
   assert.match(shown.out, /^importers \(up to two levels\) \(1\):\n {2}src\/billing\/api\.ts$/m);
   assert.match(shown.out, /^UI: no$/m);
   assert.match(shown.out, /^critical paths it reaches: \^src\/billing\/$/m);
 
   // A ref and --base of one's own: the team's branch against main changes nothing.
-  const other = await blastCommand(["e9g/next", "--base", "main", "--json"], { cwd: worktree, env });
+  const other = await blastCommand(["a6g/next", "--base", "main", "--json"], { cwd: worktree, env });
   assert.equal(other.code, 0, other.out);
   assert.deepEqual((JSON.parse(other.out) as ReturnType<typeof blastRadius>).changed, []);
-  assert.match((await blastCommand(["e9g/next", "--base", "main"], { cwd: worktree, env })).out, /^e9g\/next changes nothing since main$/m);
+  assert.match((await blastCommand(["a6g/next", "--base", "main"], { cwd: worktree, env })).out, /^a6g\/next changes nothing since main$/m);
 });
 
-test("e9g blast: a bad ref, a bad argument, or no git checkout exits 2 and says why", async () => {
+test("a6g blast: a bad ref, a bad argument, or no git checkout exits 2 and says why", async () => {
   const { home, worktree } = teamWithWorktree();
-  const env = { E9G_HOME_DIR: home };
+  const env = { A6G_HOME_DIR: home };
   const bad = await blastCommand(["no-such-ref", "--json"], { cwd: worktree, env });
   assert.equal(bad.code, 2);
   assert.match(bad.out, /^blast: no-such-ref isn't a commit in /m);
   const noBase = await blastCommand(["--base"], { cwd: worktree, env });
   assert.equal(noBase.code, 2);
-  assert.match(noBase.out, /usage: e9g blast/);
-  const outside = await blastCommand(["--json"], { cwd: tmp("e9g-not-git-"), env });
+  assert.match(noBase.out, /usage: a6g blast/);
+  const outside = await blastCommand(["--json"], { cwd: tmp("a6g-not-git-"), env });
   assert.equal(outside.code, 2);
   assert.match(outside.out, /^blast: git rev-parse --show-toplevel failed: /m);
 });
 
-test("e9g blast runs from the CLI", { skip: wired ? false : "bin/e9g.ts doesn't dispatch blast yet" }, async () => {
+test("a6g blast runs from the CLI", { skip: wired ? false : "bin/a6g.ts doesn't dispatch blast yet" }, async () => {
   const { home, worktree } = teamWithWorktree();
-  const { code, out } = await e9g(["blast", "--json"], { cwd: worktree, env: { E9G_HOME_DIR: home } });
+  const { code, out } = await a6g(["blast", "--json"], { cwd: worktree, env: { A6G_HOME_DIR: home } });
   assert.equal(code, 0, out);
-  assert.deepEqual(JSON.parse(out), blastRadius(worktree, { base: "e9g/next", critical: ["^src/billing/"] }));
+  assert.deepEqual(JSON.parse(out), blastRadius(worktree, { base: "a6g/next", critical: ["^src/billing/"] }));
 });
 
 test("tests by each language's convention, and not a document in a test folder", async () => {

@@ -1,26 +1,26 @@
 // Email from the factory itself, with no model: the watchdog's alerts and the planner's outbox reach the operator
-// away from this Mac, and their replies reach the planner. `e9g connect email` sets it up. It goes through Resend
+// away from this Mac, and their replies reach the planner. `a6g connect email` sets it up. It goes through Resend
 // with the operator's own API key (in the Keychain, lib/keychain.ts); the address, the sender and the receiving
-// domain are in ~/.e9g/email.json.
+// domain are in ~/.a6g/email.json.
 //
-// Replies: an email about a team has Reply-To e9g-<team>@<the account's receiving domain>. The watchdog lists what
+// Replies: an email about a team has Reply-To a6g-<team>@<the account's receiving domain>. The watchdog lists what
 // Resend received there and passes on only what came from the operator's address, signed by its domain (DKIM) or
 // passing its DMARC policy. Resend's receiving server checks both, so a forged From fails them.
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import type { Channel, Replies } from "./channels.ts";
 import { forgetSecret, hasSecret, readSecret, storeSecret } from "./keychain.ts";
-import { E9G_HOME, PACKAGE } from "./paths.ts";
+import { A6G_HOME, PACKAGE } from "./paths.ts";
 import { escapeRegex, hash, readJson, writeJson } from "./util.ts";
 
-export const EMAIL_FILE = join(E9G_HOME, "email.json");
+export const EMAIL_FILE = join(A6G_HOME, "email.json");
 // Resend's shared sender. Until the operator verifies a domain at Resend, it sends only to the address they signed up with.
-export const DEFAULT_FROM = "E9G Factory <onboarding@resend.dev>";
+export const DEFAULT_FROM = "Anything Factory <onboarding@resend.dev>";
 export const ADDRESS = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 export const RESEND_KEY = /^re_\w+$/;
-const KEYCHAIN = ["ca.e9g.email", "resend"] as const;
-// E9G_RESEND_URL is for the tests.
-const api = (): string => process.env.E9G_RESEND_URL ?? "https://api.resend.com";
+const KEYCHAIN = ["ca.a6g.email", "resend"] as const;
+// A6G_RESEND_URL is for the tests.
+const api = (): string => process.env.A6G_RESEND_URL ?? "https://api.resend.com";
 
 export interface EmailSettings {
   provider: "resend";
@@ -35,7 +35,7 @@ export const emailSettings = (): EmailSettings | null => readJson<EmailSettings>
 export const saveEmailSettings = (settings: EmailSettings): void => writeJson(EMAIL_FILE, settings);
 export const readKey = (): string | null => readSecret(...KEYCHAIN);
 export const hasKey = (): boolean => hasSecret(...KEYCHAIN);
-export const storeKey = (key: string): boolean => RESEND_KEY.test(key) && storeSecret(...KEYCHAIN, "E9G Factory email", key);
+export const storeKey = (key: string): boolean => RESEND_KEY.test(key) && storeSecret(...KEYCHAIN, "Anything Factory email", key);
 export function forgetEmail(): void {
   forgetSecret(...KEYCHAIN);
   rmSync(EMAIL_FILE, { force: true });
@@ -47,7 +47,7 @@ async function resend<T>(key: string, path: string, body?: unknown, headers: Rec
   try {
     response = await fetch(`${api()}${path}`, {
       method: body === undefined ? "GET" : "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "User-Agent": `e9g/${PACKAGE.version}`, ...headers },
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "User-Agent": `a6g/${PACKAGE.version}`, ...headers },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       signal: AbortSignal.timeout(15_000),
     });
@@ -72,7 +72,7 @@ export async function sendEmail(
     key,
     "/emails",
     { from: settings.from, to: [settings.to], subject, text, ...(replyTo ? { reply_to: [replyTo] } : {}) },
-    id ? { "Idempotency-Key": `e9g-${hash(id, settings.to)}` } : {}
+    id ? { "Idempotency-Key": `a6g-${hash(id, settings.to)}` } : {}
   );
   return answer.ok ? null : answer.problem;
 }
@@ -84,7 +84,7 @@ export async function canReadReplies(key: string): Promise<string | null> {
   return [401, 403].includes(answer.status) ? "this key can only send; replies need a key with full access" : answer.problem;
 }
 
-export const replyAddress = (domain: string, team: string): string => `e9g-${team}@${domain}`;
+export const replyAddress = (domain: string, team: string): string => `a6g-${team}@${domain}`;
 
 interface Received {
   id: string;
@@ -166,7 +166,7 @@ async function readReplies(settings: EmailSettings, domain: string, key: string,
   const since = Date.parse(settings.connectedAt);
   const listed = await listReceived(key, since);
   if ("problem" in listed) return { replies: [], ignored: [], problem: listed.problem };
-  const ours = new RegExp(`^e9g-([a-z][a-z0-9-]{0,30})@${escapeRegex(domain.toLowerCase())}$`);
+  const ours = new RegExp(`^a6g-([a-z][a-z0-9-]{0,30})@${escapeRegex(domain.toLowerCase())}$`);
   const result: Replies = { replies: [], ignored: [] };
   const fresh = listed.filter((item) => !seen.has(item.id) && time(item.created_at) >= since).sort((a, b) => time(a.created_at) - time(b.created_at));
   for (const item of fresh) {
@@ -179,11 +179,11 @@ async function readReplies(settings: EmailSettings, domain: string, key: string,
     }
     const { from, text, html, authentication } = email.body;
     if (address(from) !== settings.to.toLowerCase() || !(authentication?.dkim === "pass" || authentication?.dmarc === "pass")) {
-      result.ignored.push({ id: item.id, why: `an email to e9g-${team} that isn't from the operator's address, signed or passing DMARC` });
+      result.ignored.push({ id: item.id, why: `an email to a6g-${team} that isn't from the operator's address, signed or passing DMARC` });
       continue;
     }
     const answer = replyText(typeof text === "string" ? text : htmlText(typeof html === "string" ? html : ""));
-    if (!answer) result.ignored.push({ id: item.id, why: `an empty reply to e9g-${team}` });
+    if (!answer) result.ignored.push({ id: item.id, why: `an empty reply to a6g-${team}` });
     else result.replies.push({ id: item.id, team, subject: typeof item.subject === "string" ? item.subject : "", text: answer, via: "email" });
   }
   return result;

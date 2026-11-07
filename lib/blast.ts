@@ -1,4 +1,4 @@
-// The blast radius of a change (e9g blast): the files it touches, the files that import them, the files that usually
+// The blast radius of a change (a6g blast): the files it touches, the files that import them, the files that usually
 // change with them, the tests among all of those, whether it touches UI and how much, and which of the team's
 // critical paths it reaches. Reviewers and testers start from it, and a review's approval reads ui and uiLines to ask
 // for screenshots of a UI change that isn't trivial.

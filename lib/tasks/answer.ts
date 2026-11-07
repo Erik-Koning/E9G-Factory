@@ -69,6 +69,6 @@ export function answersMessage(answers: PendingAnswer[]): string {
     "",
     ...lines,
     "",
-    `Each answer is a note on its task already (e9g task show <id>), so don't note it again. Act on it as your rules say: add it to .e9g/decisions.md, re-check the other open questions against it, and move each task on.`,
+    `Each answer is a note on its task already (a6g task show <id>), so don't note it again. Act on it as your rules say: add it to .a6g/decisions.md, re-check the other open questions against it, and move each task on.`,
   ].join("\n");
 }

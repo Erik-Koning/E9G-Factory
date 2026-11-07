@@ -26,7 +26,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Searc
   return (
     <div className="narrow">
       <h1>Sign in</h1>
-      <p className="lede">E9G is by invitation. Use the address you were invited with.</p>
+      <p className="lede">Anything Factory is by invitation. Use the address you were invited with.</p>
       {error ? (
         <p className="notice error" role="alert">
           {ERRORS[error] ?? "That didn't sign you in. Try again."}

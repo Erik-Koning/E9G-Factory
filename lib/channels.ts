@@ -1,10 +1,10 @@
-// The ways the factory reaches the operator away from this Mac, each set up with `e9g connect`. The watchdog sends
+// The ways the factory reaches the operator away from this Mac, each set up with `a6g connect`. The watchdog sends
 // its alerts and the planner's outbox through every connected one, and gives the planner the operator's replies
 // from those that take them.
 import { join } from "node:path";
 import { emailSettings, hasKey, mailer } from "./email.ts";
 import { PLANNER_TAG } from "./labels.ts";
-import { E9G_HOME } from "./paths.ts";
+import { A6G_HOME } from "./paths.ts";
 import { readJson, writeJson } from "./util.ts";
 import { hasToken, whatsappChannel, whatsappSettings } from "./whatsapp.ts";
 
@@ -37,7 +37,7 @@ export interface Channel {
 export const channels = (): Channel[] => [mailer(), whatsappChannel()].filter((channel) => channel !== null);
 
 // How each channel's last send went, written by the watchdog: the planner is told a channel works only while it does.
-const SENDS = join(E9G_HOME, "channel-sends.json");
+const SENDS = join(A6G_HOME, "channel-sends.json");
 type LastSend = { ok: boolean; at: string; problem?: string };
 const lastSends = (): Record<string, LastSend> => {
   try {
@@ -62,7 +62,7 @@ export function reachSummary(): { working: string[]; failing: string[] } {
   try {
     email = emailSettings();
   } catch {
-    summary.failing.push("email (~/.e9g/email.json doesn't read)");
+    summary.failing.push("email (~/.a6g/email.json doesn't read)");
   }
   if (email) {
     const problem = hasKey() ? failingSend("email") : "its key isn't in the Keychain";
@@ -73,7 +73,7 @@ export function reachSummary(): { working: string[]; failing: string[] } {
   try {
     whatsapp = whatsappSettings();
   } catch {
-    summary.failing.push("WhatsApp (~/.e9g/whatsapp.json doesn't read)");
+    summary.failing.push("WhatsApp (~/.a6g/whatsapp.json doesn't read)");
   }
   // No phone number: the planner's context reaches its log and its tickets.
   if (whatsapp) {
@@ -86,7 +86,7 @@ export function reachSummary(): { working: string[]; failing: string[] } {
 
 // A draft from the planner's outbox (<date>-<topic>.md) as a message: a first line of "Subject: …" or "# …" is its
 // subject, otherwise the topic; either way labelled as the planner's and under the team's title, as its own emails
-// are ("[E9G-Planner] [<title>] …"), whether or not the draft already says so.
+// are ("[A6G-Planner] [<title>] …"), whether or not the draft already says so.
 export function outboxMessage(title: string, file: string, markdown: string): { subject: string; text: string } {
   const lines = markdown.replace(/^\s*\n/, "").split("\n");
   const heading = /^(?:subject:\s*|#\s+)(.+)$/i.exec(lines[0] ?? "")?.[1]?.trim();

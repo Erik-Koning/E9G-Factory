@@ -1,4 +1,4 @@
-// e9g cycle close --report-file <file> | list: a cycles team's cycles (team.json mode "cycles"). Closing one records
+// a6g cycle close --report-file <file> | list: a cycles team's cycles (team.json mode "cycles"). Closing one records
 // what was done since the last, and puts the planner's report in its outbox for the operator, where the watchdog
 // sends it with the next message the team's contact setting allows.
 import { readFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { parseArgs, text as optionText, writeFileAtomic } from "../util.ts";
 export async function cycle(argv: string[]): Promise<number> {
   const [sub = "list", ...rest] = argv;
   const { positional, options } = parseArgs(rest);
-  const who = asOperator() ? OPERATOR : process.env.E9G_ROLE || "unknown";
+  const who = asOperator() ? OPERATOR : process.env.A6G_ROLE || "unknown";
   const { home, team, run } = teamSession();
   if (team.board.type !== "tasks" || team.mode !== "cycles") {
     console.error('cycle: this team works to a finish line (team.json mode); cycles are for "mode": "cycles"');
@@ -29,7 +29,7 @@ export async function cycle(argv: string[]): Promise<number> {
       return 0;
     }
     if (sub !== "close") {
-      console.error("usage: e9g cycle close --report-file <file> | e9g cycle list");
+      console.error("usage: a6g cycle close --report-file <file> | a6g cycle list");
       return 2;
     }
     if (who !== "planner" && who !== OPERATOR) {
@@ -63,7 +63,7 @@ export async function cycle(argv: string[]): Promise<number> {
     // The pull request says what it holds as of this cycle (plugin/agents/planner.md, Cycles).
     if (team.push?.pullRequest)
       console.info(
-        `then the pull request: push ${team.push.branch} if it isn't pushed (git push ${team.push.remote} ${team.push.branch}), and e9g pr --title "Cycle ${number}: …" --body-file ${file ?? "<the report's file>"}`
+        `then the pull request: push ${team.push.branch} if it isn't pushed (git push ${team.push.remote} ${team.push.branch}), and a6g pr --title "Cycle ${number}: …" --body-file ${file ?? "<the report's file>"}`
       );
     return 0;
   } finally {

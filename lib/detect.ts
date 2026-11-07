@@ -1,4 +1,4 @@
-// What e9g init can learn about a repository without asking: its git setup, package manager and scripts, what CI
+// What a6g init can learn about a repository without asking: its git setup, package manager and scripts, what CI
 // runs, how it can reach outside the machine (deploy targets, hosted data, publishing), its tests and UI, and the
 // agent configuration it already has. The setup agent starts from this, so the operator is asked only the rest.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -247,7 +247,7 @@ export function draftTeam(found: Detected, { name, branch, owner }: { name: stri
   };
   if (roles["tester"] && roles["builder"] && tests) roles["builder"].deny = [tests];
   return {
-    $schema: "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
+    $schema: "https://raw.githubusercontent.com/Erik-Koning/Anything-Factory/main/schema/team.schema.json",
     name,
     title: name,
     factory: PACKAGE.version,
@@ -257,15 +257,15 @@ export function draftTeam(found: Detected, { name, branch, owner }: { name: stri
     push: null,
     board: "tasks",
     roles,
-    gate: { full: ".e9g/adapters/gate.sh", quick: ".e9g/adapters/gate.sh --quick", concurrency: 2 },
+    gate: { full: ".a6g/adapters/gate.sh", quick: ".a6g/adapters/gate.sh --quick", concurrency: 2 },
     environment: app
-      ? { script: ".e9g/adapters/env.sh", health: [], needsDocker: found.surfaces.some((s) => s.id === "supabase") }
+      ? { script: ".a6g/adapters/env.sh", health: [], needsDocker: found.surfaces.some((s) => s.id === "supabase") }
       : { script: null, health: [], needsDocker: false },
-    afterMerge: app ? ".e9g/adapters/after-merge.sh" : null,
+    afterMerge: app ? ".a6g/adapters/after-merge.sh" : null,
     finish: null,
     policies,
     never: [],
-    docs: [".e9g/brief.md", ".e9g/notes.md", ...(found.ui.length ? [".e9g/rubric.md"] : [])],
+    docs: [".a6g/brief.md", ".a6g/notes.md", ...(found.ui.length ? [".a6g/rubric.md"] : [])],
     worktreeSetup: found.installCommand,
   };
 }

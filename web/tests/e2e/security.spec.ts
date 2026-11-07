@@ -31,10 +31,10 @@ test("only requests through the CDN reach the app; its health check is open", as
   // Nor by looking like a prefetch, which Next could otherwise let past the proxy.
   const prefetches: Record<string, string>[] = [{ "next-router-prefetch": "1" }, { purpose: "prefetch" }];
   for (const prefetch of prefetches)
-    expect((await fetch(`${base}/t/shop`, { redirect: "manual", headers: { ...prefetch, "x-e9g-viewer-ip": "10.9.8.7" } })).status).toBe(403);
+    expect((await fetch(`${base}/t/shop`, { redirect: "manual", headers: { ...prefetch, "x-a6g-viewer-ip": "10.9.8.7" } })).status).toBe(403);
   const forged = await fetch(`${base}/api/auth/sign-in/email`, {
     method: "POST",
-    headers: { "content-type": "application/json", origin: base, "x-e9g-viewer-ip": "10.9.8.7", "x-e9g-origin": "guessed" },
+    headers: { "content-type": "application/json", origin: base, "x-a6g-viewer-ip": "10.9.8.7", "x-a6g-origin": "guessed" },
     body: JSON.stringify({ email: "x@example.com", password: "x" }),
   });
   expect(forged.status).toBe(403);
@@ -133,7 +133,7 @@ test("anyone can turn on an authenticator; then every sign-in asks for its code,
   await first.page.getByRole("button", { name: "Set up an authenticator" }).click();
   await expect(first.page.getByRole("img", { name: "QR code for your authenticator app" })).toBeVisible();
   const key = (await first.page.locator("code.key").textContent()) ?? "";
-  const uri = `otpauth://totp/E9G?secret=${key}`;
+  const uri = `otpauth://totp/A6G?secret=${key}`;
   await first.page.getByLabel("6-digit code").fill("123456");
   await first.page.getByRole("button", { name: "Turn it on" }).click();
   await expect(first.page.locator("main").getByRole("alert")).toContainText("That code isn't right");

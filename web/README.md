@@ -1,4 +1,4 @@
-# E9G web app
+# Anything Factory web app
 
 A small Next.js app, on the same MongoDB as the teams' task graphs, where people beyond the operator's machine send
 **requests** to a team and follow its work, members **suggest tasks** for the planner to triage, and the operator
@@ -9,8 +9,8 @@ they run, and everyone chooses what they're **emailed** about. The plan is
 It has no rules of its own. It imports the factory's task code from `../lib/tasks/` (no copies) and writes only through
 it: a request is the factory's `addRequest`, a person's stakeholder record its `stakeholderFor`, a task its `addTask`,
 and an admin's decision its `decide`, as the operator, with the team's approval rules from the `teams` document
-`e9g register` publishes. An approval from the web is exactly `e9g task approve` by the operator, and a task an admin
-adds is exactly `e9g task add` by the operator (`--approved` when they approve it as they add it). A member's
+`a6g register` publishes. An approval from the web is exactly `a6g task approve` by the operator, and a task an admin
+adds is exactly `a6g task add` by the operator (`--approved` when they approve it as they add it). A member's
 suggestion is a task in `triage` by `stakeholder`. Either way the task records who added it, as their stakeholder id
 (`from`, and in its first history event), never their name: the board shows them as "you", by name to an admin and by
 role to anyone else.
@@ -66,7 +66,7 @@ request (Article 8).
   journey, after other tasks) or Suggest a task (members: title, kind, how bad it is for a bug or a UX problem, and
   what's needed, at least 20 characters; it goes to triage, and the planner never approves it itself: it makes it its
   own proposal for the approver or the operator).
-- `/t/<team>/tasks/<id>` (members and admins): one task, as `e9g task show` prints it: where it stands, its journey and
+- `/t/<team>/tasks/<id>` (members and admins): one task, as `a6g task show` prints it: where it stands, its journey and
   dependencies, who holds it, who it came from, its gate and score, notes and history (people in it said as you may
   read them). For an admin, a proposal or a task in triage has a Decide button. The board, journeys, merges, the
   Decisions page and a request's page link here.
@@ -128,8 +128,8 @@ admin plugin), gives it its role on the team and a stakeholder record there, and
   HTTP; the app calls them from its server actions after its own checks. (`server/auth.ts` has the sign-in rules in
   one place.)
 - **The viewer's address comes from the CDN**, never from what a browser says: CloudFront's function sets
-  `x-e9g-viewer-ip` (`CLIENT_IP_HEADER`), and the app refuses every request without CloudFront's secret
-  (`ORIGIN_SECRET`, sent as `x-e9g-origin`; `proxy.ts`), so nobody reaches it around CloudFront or makes the header up.
+  `x-a6g-viewer-ip` (`CLIENT_IP_HEADER`), and the app refuses every request without CloudFront's secret
+  (`ORIGIN_SECRET`, sent as `x-a6g-origin`; `proxy.ts`), so nobody reaches it around CloudFront or makes the header up.
   Sessions, rate limits, the new-address check and the audit log all read the same address.
 - Sessions are revocable from the account page; a ban ends all of a person's sessions and keeps them out.
 - Rate limits: Better Auth's, kept in the database (from one IP address, 5 password sign-ins, 5 link requests and 5
@@ -152,7 +152,7 @@ npm run dev            # http://localhost:3000
 
 Without a mail service, sign-in links and invitations are printed to the dev server's console (`[mail] to=… link=…`):
 only while the app's address is this machine (`http://localhost`), never where a log could hand someone a link.
-A team shows up once its settings are in the `teams` collection: `e9g register` publishes them for a team whose tasks
+A team shows up once its settings are in the `teams` collection: `a6g register` publishes them for a team whose tasks
 are in Mongo (team.json `tasks.store: "mongo"`), and the lead's watchdog keeps its status current.
 
 ### Environment variables
@@ -160,16 +160,16 @@ are in Mongo (team.json `tasks.store: "mongo"`), and the lead's watchdog keeps i
 | Variable                                                   | Needed                      | What                                                                                                                  |
 | ---------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | `MONGODB_URI`                                              | yes                         | The connection string (`mongodb+srv://…`), the app's own database user                                                |
-| `E9G_DATABASE`                                             | no (`e9g`)                  | The task graphs' database (team.json `tasks.database`)                                                                |
-| `AUTH_DATABASE`                                            | no (`e9g_web`)              | The app's accounts (Better Auth's users, sessions, passkeys, two-factor, rate limits; memberships)                    |
+| `A6G_DATABASE`                                             | no (`a6g`)                  | The task graphs' database (team.json `tasks.database`)                                                                |
+| `AUTH_DATABASE`                                            | no (`a6g_web`)              | The app's accounts (Better Auth's users, sessions, passkeys, two-factor, rate limits; memberships)                    |
 | `BETTER_AUTH_SECRET`                                       | yes                         | At least 32 random characters (`openssl rand -base64 32`); signs cookies, encrypts TOTP secrets                       |
-| `BETTER_AUTH_URL`                                          | yes                         | The app's address (`https://e9g.example.com`): email links, and the passkeys' relying party and origin                |
+| `BETTER_AUTH_URL`                                          | yes                         | The app's address (`https://a6g.example.com`): email links, and the passkeys' relying party and origin                |
 | `SES_REGION`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` | served for real (or Resend) | Amazon SES and a key that may only send as the sender (`sst.config.ts` makes both)                                    |
 | `RESEND_API_KEY`                                           | served for real (or SES)    | Resend's API key, instead of SES                                                                                      |
-| `MAIL_FROM`                                                | served for real             | The sender, verified with the mail service (`E9G <e9g@example.com>`)                                                  |
+| `MAIL_FROM`                                                | served for real             | The sender, verified with the mail service (`Anything Factory <a6g@example.com>`)                                     |
 | `MAIL_LOG`                                                 | no                          | `1` prints emails to the console when there's no mail service: only while `BETTER_AUTH_URL` is `http://localhost`     |
-| `CLIENT_IP_HEADER`                                         | served for real             | The one header that carries the viewer's IP address (`x-e9g-viewer-ip` behind CloudFront; `x-forwarded-for` if unset) |
-| `ORIGIN_SECRET`                                            | served for real             | At least 32 characters, the same as the CDN sends in `x-e9g-origin`; requests without it are refused                  |
+| `CLIENT_IP_HEADER`                                         | served for real             | The one header that carries the viewer's IP address (`x-a6g-viewer-ip` behind CloudFront; `x-forwarded-for` if unset) |
+| `ORIGIN_SECRET`                                            | served for real             | At least 32 characters, the same as the CDN sends in `x-a6g-origin`; requests without it are refused                  |
 | `AUDIT_RETENTION_DAYS`                                     | no (400)                    | How long the audit log keeps each event                                                                               |
 | `NOTIFY_EVERY_SECONDS`                                     | no (60)                     | How often the notifier looks for what to email; `0` turns notifications off                                           |
 | `NOTIFY_TIME_ZONE`                                         | no (`UTC`)                  | The daily digest's time zone for someone who hasn't chosen theirs (`America/Toronto`)                                 |
@@ -202,8 +202,8 @@ taken elsewhere and “it wasn't me”, a member's authenticator and every sign-
 audit log. Playwright's Chromium must be installed (`npx playwright install chromium`).
 
 `npm run test:e2e:atlas` runs the same suite against a real cluster: it reads `DB_USER`, `DB_PASSWORD` and `DB_HOST`
-from the repository's `.env` (gitignored; or `E2E_MONGODB_URI`), and uses databases of its own, `e9g_e2e` and
-`e9g_web_e2e`, which every run empties first (it refuses any name that doesn't end in `_e2e`, so it never touches the
+from the repository's `.env` (gitignored; or `E2E_MONGODB_URI`), and uses databases of its own, `a6g_e2e` and
+`a6g_web_e2e`, which every run empties first (it refuses any name that doesn't end in `_e2e`, so it never touches the
 app's own). It leaves them after the run, with that run's admin (the e2e user) in `web/.env.e2e`: its address,
 password, authenticator link and unused backup codes, to sign in with `npm run dev` against the same databases. The
 tests' sign-ins come from 198.51.100.7, so one from your own address asks for an email confirmation first (printed to
@@ -233,8 +233,8 @@ app's email (SES or Resend) must reach them before the first admin can get in.
 The operator deploys the app; teams never do (Article 7). `sst.config.ts` (SST 4) makes all of it in one AWS account:
 
 ```
- viewer ──https──▶ CloudFront ──https + x-e9g-origin──▶ Lightsail container service ──▶ the app (Dockerfile)
-                    │ its function sets x-e9g-viewer-ip and x-forwarded-host; /_next/static/* cached
+ viewer ──https──▶ CloudFront ──https + x-a6g-origin──▶ Lightsail container service ──▶ the app (Dockerfile)
+                    │ its function sets x-a6g-viewer-ip and x-forwarded-host; /_next/static/* cached
 ```
 
 - **The image** (`Dockerfile`, built from the repository's root since the app compiles `../lib/tasks`): Next's
@@ -245,26 +245,26 @@ The operator deploys the app; teams never do (Article 7). `sst.config.ts` (SST 4
   app's environment. Its health check calls `/api/health`, the one path open without the origin secret.
 - **CloudFront** (SST's `Cdn`): everything passed through uncached with every viewer header but Host, except Next's
   hashed static files; HTTPS only; a viewer-request function that sets the viewer's address and the public host; the
-  origin secret (made by SST, kept in its state) on every request to Lightsail. With `E9G_WEB_DOMAIN`, a certificate and
+  origin secret (made by SST, kept in its state) on every request to Lightsail. With `A6G_WEB_DOMAIN`, a certificate and
   DNS records for that domain in the account's Route 53 zone.
 
 ### Before the first deploy
 
 1. **AWS**: credentials for the account (`aws configure` or SSO), AWS's `lightsailctl` plugin
    (`brew install aws/tap/lightsailctl`), and Docker running (SST builds the image). On an
-   Apple-silicon Mac, run `scripts/rosetta-builder.sh` once and deploy with `BUILDX_BUILDER=e9g-rosetta`: the default
+   Apple-silicon Mac, run `scripts/rosetta-builder.sh` once and deploy with `BUILDX_BUILDER=a6g-rosetta`: the default
    builder emulates amd64 with QEMU, where `next build` hangs.
 2. **MongoDB Atlas**: a database user for the app alone (below), and its `mongodb+srv://` connection string. Put the
-   cluster in the same place as the app (an AWS cluster in `E9G_WEB_REGION`): every page waits on several round trips
+   cluster in the same place as the app (an AWS cluster in `A6G_WEB_REGION`): every page waits on several round trips
    to it, a millisecond each next door and tens of milliseconds across a continent or between clouds.
 3. **Email (Amazon SES)**: once per domain, not per stage, make the sender's domain an SES sender: with its Route 53
    zone in the account, `AWS_REGION=us-east-2 scripts/ses-domain.sh a6gfactory.dev` adds the SES identity with DKIM,
    its own MAIL FROM (`mail.<domain>`, for SPF) and a DMARC policy, so mail from it is signed, authorised and not spam.
-   Each stage then sends from `E9G_WEB_SENDER` (`no-reply@a6gfactory.dev`) with an IAM user's key that may send from
+   Each stage then sends from `A6G_WEB_SENDER` (`no-reply@a6gfactory.dev`) with an IAM user's key that may send from
    that address alone. Until the account has SES production access (asked for in the SES console), SES sends only to
    verified addresses, 200 a day: verify each person's address in SES meanwhile. Sign-in links, invitations and
    new-address confirmations all go by email; the first admin can't get in without them.
-4. **The domain**: pick it now (`E9G_WEB_DOMAIN`, in a Route 53 hosted zone of the account). Passkeys belong to the
+4. **The domain**: pick it now (`A6G_WEB_DOMAIN`, in a Route 53 hosted zone of the account). Passkeys belong to the
    domain they were made on, so moving later means everyone adds theirs again. Without one the app is on CloudFront's
    `*.cloudfront.net` address.
 5. **The secrets**, per stage (SST keeps them encrypted in the account; never in the repository):
@@ -282,13 +282,13 @@ The operator deploys the app; teams never do (Article 7). `sst.config.ts` (SST 4
 
 ```sh
 cd web
-E9G_WEB_SENDER=no-reply@a6gfactory.dev E9G_WEB_DOMAIN=app.a6gfactory.dev npx sst deploy --stage production
+A6G_WEB_SENDER=no-reply@a6gfactory.dev A6G_WEB_DOMAIN=app.a6gfactory.dev npx sst deploy --stage production
 ```
 
 It prints the app's `url` and Lightsail's `origin`. Then make the first admin (above) against the production database
 and sign in. A later deploy builds the image again and moves Lightsail to the new digest; the origin secret, the
-certificate and the distribution stay. `E9G_WEB_REGION` (`us-east-2`, where the account's organization allows Lightsail, SSM and ECR), `E9G_WEB_POWER` (`micro`) and
-`E9G_WEB_SCALE` (1) change where and how big it runs. The production stage is protected and retained: removing it
+certificate and the distribution stay. `A6G_WEB_REGION` (`us-east-2`, where the account's organization allows Lightsail, SSM and ECR), `A6G_WEB_POWER` (`micro`) and
+`A6G_WEB_SCALE` (1) change where and how big it runs. The production stage is protected and retained: removing it
 takes an explicit change.
 
 Things to know:
@@ -299,12 +299,12 @@ Things to know:
   without CloudFront's secret, except `/api/health` (which says `ok` and nothing else).
 - **Server actions** compare the browser's Origin with the public host CloudFront passes in `x-forwarded-host`. If a
   setup in front ever drops that header, list the public host in `SERVER_ACTIONS_ORIGINS` at build (the image build
-  sets it to `E9G_WEB_DOMAIN`).
+  sets it to `A6G_WEB_DOMAIN`).
 
 ### Atlas
 
 1. **A database user for the app alone**, with a custom role that gives only what it needs (Database Access → Custom
-   Roles). On the task graphs' database (`e9g`):
+   Roles). On the task graphs' database (`a6g`):
    - `find` on the whole database;
    - `insert` on `requests` (the app only adds them; the planner changes them, through the factory's commands);
    - `insert` and `update` on `stakeholders` (linking a person's account) and `counters` (new ids come from them);
@@ -317,13 +317,13 @@ Things to know:
    - `createIndex` on `tasks`, `requests`, `stakeholders`, `cycles` and `controls` (the store asks for its index;
      refused, it carries on).
 
-   On the accounts database (`e9g_web`): `find`, `insert`, `update` and `remove` on each of Better Auth's collections
+   On the accounts database (`a6g_web`): `find`, `insert`, `update` and `remove` on each of Better Auth's collections
    and the app's own (`user`, `session`, `account`, `verification`, `twoFactor`, `passkey`, `rateLimit`, `memberships`,
    `request_counts`, `magic_link_sends`, `known_ips`, `ip_challenges`, `code_attempts`, and the notifier's
    `notification_prefs`, `notification_queue`, `notification_tests` and `notifier`), and only `find` and `insert`
    on `audit`, so the app can't change or delete what it recorded, nor add an index that would expire it early
    (MongoDB's own expiry still removes old events). The indexes are an operator's to make (`npm run create-indexes`);
-   the app tries its own too and carries on when refused. Nothing else: no `remove` on `e9g`, nothing on other
+   the app tries its own too and carries on when refused. Nothing else: no `remove` on `a6g`, nothing on other
    databases, no admin roles. Give it a long random password.
 
 2. **Network access**: Lightsail containers have no fixed outbound address, so allow `0.0.0.0/0`, and let the narrow

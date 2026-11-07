@@ -1,14 +1,14 @@
-// e9g pages: the finish line for teams that build pages (team.json "pages"). For each page, viewport and colour
+// a6g pages: the finish line for teams that build pages (team.json "pages"). For each page, viewport and colour
 // scheme it loads the page on the team's app and records the HTTP status, uncaught errors, console errors,
 // horizontal overflow at that width, and axe's WCAG A/AA violations (serious and critical), plus a full-page
 // screenshot that builders and the UX specialist look at. Results are keyed to the pages' source, so a change to
-// it has to be checked again, and UX verdicts (e9g verdict ux <page>) count only for the source they saw.
+// it has to be checked again, and UX verdicts (a6g verdict ux <page>) count only for the source they saw.
 //
-//   e9g pages run [ids…]                     check the team's app and record the results (the planner)
-//   e9g pages shots --base <url> [--out dir] [--path /x] [ids…]   the same checks on any server, or any path (such
+//   a6g pages run [ids…]                     check the team's app and record the results (the planner)
+//   a6g pages shots --base <url> [--out dir] [--path /x] [ids…]   the same checks on any server, or any path (such
 //                                            as the original page), recording nothing
-//   e9g pages status [--brief]               one line per page
-//   e9g pages done                           exit 0 only when every page meets the finish line
+//   a6g pages status [--brief]               one line per page
+//   a6g pages done                           exit 0 only when every page meets the finish line
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -167,7 +167,7 @@ async function check(base: string, chosen: PageSpec[], outDir: string | null): P
           if (run.axe?.length) run.problems.push(`axe: ${run.axe.join(", ")}`);
           if (errors.length) run.problems.push(`errors: ${errors.slice(0, 3).join(" | ")}`);
           if (consoleErrors.length) run.problems.push(`console: ${consoleErrors.slice(0, 3).join(" | ")}`);
-          if (!axePath) run.problems.push("axe-core not found (reinstall E9G Factory: e9g self-install)");
+          if (!axePath) run.problems.push("axe-core not found (reinstall Anything Factory: a6g self-install)");
           runs.push(run);
           await context.close();
         }
@@ -304,14 +304,14 @@ export async function run(argv: string[]): Promise<number> {
     print(results);
     const all = rows();
     console.info(
-      `pages: ${all.filter((row) => row.checks === "pass").length}/${all.length} pass their checks at ${commit}; UX: ${all.map((row) => `${row.id} ${row.ux}`).join(", ")}. Screenshots in .e9g/run/shots/.`
+      `pages: ${all.filter((row) => row.checks === "pass").length}/${all.length} pass their checks at ${commit}; UX: ${all.map((row) => `${row.id} ${row.ux}`).join(", ")}. Screenshots in .a6g/run/shots/.`
     );
   } else if (command === "shots") {
     const base = option("--base");
     const path = option("--path");
     const out = resolve(option("--out") ?? join("/tmp", `pages-${Date.now()}`));
     if (!base) {
-      console.error("usage: e9g pages shots --base <url> [--out dir] [--path /x] [ids…]");
+      console.error("usage: a6g pages shots --base <url> [--out dir] [--path /x] [ids…]");
       return 2;
     }
     const chosen = path ? [{ id: path.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "") || "root", path }] : pick(rest);
@@ -337,7 +337,7 @@ export async function run(argv: string[]): Promise<number> {
     }
     console.info(`Done: every page passes its checks on the current source and has a UX pass for it.`);
   } else {
-    console.error("usage: e9g pages run [ids…] | shots --base <url> [--out dir] [--path /x] [ids…] | status [--brief] | done");
+    console.error("usage: a6g pages run [ids…] | shots --base <url> [--out dir] [--path /x] [ids…] | status [--brief] | done");
     return 2;
   }
   return 0;

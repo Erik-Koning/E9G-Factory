@@ -1,19 +1,19 @@
 ---
 name: review
-description: The E9G reviewer's procedure for one branch — blast radius first, then goals, edge cases, tangential code, tests, a before-and-after look at anything a person sees, and a judgment of how much it could break — persisting until each holds or the branch goes back with a numbered list. Use for every review on an E9G team.
+description: The Anything Factory reviewer's procedure for one branch — blast radius first, then goals, edge cases, tangential code, tests, a before-and-after look at anything a person sees, and a judgment of how much it could break — persisting until each holds or the branch goes back with a numbered list. Use for every review on an Anything Factory team.
 ---
 
 # Reviewing a branch
 
 You approve a branch only when every section below holds. Persistence is the job: a check you skip is a defect you
 approve. Don't stop at the first problem: finish every section, then send the whole list back at once, so the next
-round is the last. Work from the exact commit you review (`git rev-parse <branch>`, or the commit `e9g task fetch <id>` prints on a team on several machines, noted before
+round is the last. Work from the exact commit you review (`git rev-parse <branch>`, or the commit `a6g task fetch <id>` prints on a team on several machines, noted before
 you start) in a
 detached copy (`git worktree add --detach /tmp/review-<n> <sha>`), and remove the copy before you answer.
 
 ## 1. Know what it touches
 
-Run `e9g blast <sha>` in the detached copy (`--json` for the whole lists): it reads the files there, so it sees the
+Run `a6g blast <sha>` in the detached copy (`--json` for the whole lists): it reads the files there, so it sees the
 commit you review. It lists the files changed, what imports
 them (two levels), what usually changes with them, the tests among those, whether it touches UI and how much, and
 which of the team's critical paths it reaches. Everything after this is scoped by it: the importers and related
@@ -22,7 +22,7 @@ gets every section in full, whatever its size.
 
 ## 2. It does what the task asks
 
-Read the task (`e9g task show <id>`: the number in the branch's name): its outcome, what done looks like, its notes
+Read the task (`a6g task show <id>`: the number in the branch's name): its outcome, what done looks like, its notes
 (earlier rounds' findings, the approver's note) and the journey it belongs to. Check that every part is done, that
 nothing unrelated came along, and that earlier rounds' findings are fixed rather than moved. A partial fix is
 "changes".
@@ -70,7 +70,7 @@ base and at the branch, on desktop and phone, light and dark, in T3 Code's brows
 - `preview_snapshot` with `save: true` for each, which returns the screenshot's path, and `preview_act` to reach
   the states that need a click or typing.
 
-Without T3 Code's browser, `e9g pages shots --base <url> --out <dir>` takes the same screenshots. Look at every
+Without T3 Code's browser, `a6g pages shots --base <url> --out <dir>` takes the same screenshots. Look at every
 screenshot, then compare the pairs:
 
 - the change looks as the task and the rubric intend, pixel for pixel: alignment, spacing, type, colour and contrast
@@ -105,9 +105,9 @@ it anyway.
 
 ## The verdict
 
-- Every section holds: `e9g verdict review <branch> approve --sha <sha> --risk low|medium|high [--shots <dir>] --note
+- Every section holds: `a6g verdict review <branch> approve --sha <sha> --risk low|medium|high [--shots <dir>] --note
 "<one line, with why that risk>"`.
-- Otherwise: `e9g verdict review <branch> changes --sha <sha> --note "<the gist>"`, and answer with `VERDICT: changes`
+- Otherwise: `a6g verdict review <branch> changes --sha <sha> --note "<the gist>"`, and answer with `VERDICT: changes`
   and a numbered list: each item with the file and line, what's wrong, why it matters, and what would fix it in the
   codebase's own terms. Order it by severity. Optional suggestions go after it, marked as such; don't ask for changes
   on taste alone.
@@ -115,5 +115,5 @@ it anyway.
 The team's rules cap the rounds of changes a task gets; after that it goes to the planner. So make each round count:
 a short list that misses a problem costs another round.
 
-Problems outside the branch's scope are separate findings: file them (`e9g task add … --sev …`) rather than holding
+Problems outside the branch's scope are separate findings: file them (`a6g task add … --sev …`) rather than holding
 up this branch.

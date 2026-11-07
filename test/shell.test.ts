@@ -152,7 +152,7 @@ describe("parseShell: what runs inside other commands", () => {
 });
 
 describe("parseShell: where each command runs", () => {
-  const base = tmp("e9g-shell-");
+  const base = tmp("a6g-shell-");
   mkdirSync(join(base, "web/src"), { recursive: true });
   const web = join(base, "web");
 
@@ -167,13 +167,13 @@ describe("parseShell: where each command runs", () => {
   });
 
   test("a cd that fails leaves the shell where it was: after ; or || only to a folder that exists", () => {
-    assert.equal(cwdOf("cd /tmp/e9g-does-not-exist; git reset --hard HEAD~1", "git", base), base);
-    assert.equal(cwdOf("cd /tmp/e9g-does-not-exist || git reset --hard", "git", base), base);
+    assert.equal(cwdOf("cd /tmp/a6g-does-not-exist; git reset --hard HEAD~1", "git", base), base);
+    assert.equal(cwdOf("cd /tmp/a6g-does-not-exist || git reset --hard", "git", base), base);
     // After &&, the commands it guards run there if they run at all, until the and-list ends.
-    assert.equal(cwdOf("cd /tmp/e9g-does-not-exist && git reset --hard", "git", base), "/tmp/e9g-does-not-exist");
-    assert.equal(cwdOf("cd /tmp/e9g-does-not-exist && true; git reset --hard", "git", base), base);
+    assert.equal(cwdOf("cd /tmp/a6g-does-not-exist && git reset --hard", "git", base), "/tmp/a6g-does-not-exist");
+    assert.equal(cwdOf("cd /tmp/a6g-does-not-exist && true; git reset --hard", "git", base), base);
     // A folder an earlier command made is found, though it doesn't exist yet.
-    assert.equal(cwdOf("git worktree add --detach /tmp/e9g-new b && cd /tmp/e9g-new; git status", "git", base), "/tmp/e9g-new");
+    assert.equal(cwdOf("git worktree add --detach /tmp/a6g-new b && cd /tmp/a6g-new; git status", "git", base), "/tmp/a6g-new");
     assert.equal(cwdOf("mkdir -p fresh; cd fresh; git init", "git", base), join(base, "fresh"));
   });
 
@@ -202,32 +202,32 @@ describe("unwrap, lines and free text", () => {
     ]);
     for (const [wrapped, inner] of [
       ["env FOO=1 nohup nice -n 5 vercel deploy", "vercel deploy"],
-      ["e9g lock app -- pnpm --filter web exec vercel deploy", "vercel deploy"],
+      ["a6g lock app -- pnpm --filter web exec vercel deploy", "vercel deploy"],
       ["find . -name x -exec vercel deploy {} ;", "vercel deploy {}"],
       ["xargs -n1 vercel deploy", "vercel deploy"],
-      ["arch -arm64 e9g pause fixture", "e9g pause fixture"],
-      ["source .e9g/adapters/env.sh reset", ".e9g/adapters/env.sh reset"],
-      [". .e9g/adapters/env.sh reset", ".e9g/adapters/env.sh reset"],
+      ["arch -arm64 a6g pause fixture", "a6g pause fixture"],
+      ["source .a6g/adapters/env.sh reset", ".a6g/adapters/env.sh reset"],
+      [". .a6g/adapters/env.sh reset", ".a6g/adapters/env.sh reset"],
       ["bash -x scripts/env.sh down", "scripts/env.sh down"],
     ] as const)
       assert.equal(unwrap(wrapped.split(" ")).at(-1)?.join(" "), inner, wrapped);
   });
 
-  test("the factory's CLI by its path reads as e9g, past the runtime's own options", () => {
+  test("the factory's CLI by its path reads as a6g, past the runtime's own options", () => {
     for (const command of [
-      "node ~/.e9g/versions/0.3.0/bin/e9g.ts pause fixture",
-      "node --no-warnings ~/.e9g/versions/0.3.0/bin/e9g.ts pause fixture",
-      "node --import tsx --experimental-strip-types /Users/x/.e9g/versions/dev/bin/e9g.ts pause fixture",
-      "bun run ~/.e9g/versions/0.3.0/bin/e9g.ts pause fixture",
-      "deno run -A ~/.e9g/versions/0.3.0/bin/e9g.ts pause fixture",
-      "tsx bin/e9g.ts pause fixture",
-      "~/.e9g/bin/e9g pause fixture",
+      "node ~/.a6g/versions/0.3.0/bin/a6g.ts pause fixture",
+      "node --no-warnings ~/.a6g/versions/0.3.0/bin/a6g.ts pause fixture",
+      "node --import tsx --experimental-strip-types /Users/x/.a6g/versions/dev/bin/a6g.ts pause fixture",
+      "bun run ~/.a6g/versions/0.3.0/bin/a6g.ts pause fixture",
+      "deno run -A ~/.a6g/versions/0.3.0/bin/a6g.ts pause fixture",
+      "tsx bin/a6g.ts pause fixture",
+      "~/.a6g/bin/a6g pause fixture",
     ])
       assert.ok(
-        unwrap(command.split(" ")).some((variant) => variant.join(" ") === "e9g pause fixture"),
+        unwrap(command.split(" ")).some((variant) => variant.join(" ") === "a6g pause fixture"),
         command
       );
-    assert.equal(unwrap(["node", "scripts/check.mjs", "e9g.ts"]).length, 1, "a script's own argument isn't the CLI");
+    assert.equal(unwrap(["node", "scripts/check.mjs", "a6g.ts"]).length, 1, "a script's own argument isn't the CLI");
   });
 
   test("withoutText leaves out messages, titles, bodies and what echo prints", () => {
@@ -244,8 +244,8 @@ describe("unwrap, lines and free text", () => {
       "x",
     ]);
     assert.deepEqual(withoutText(["echo", "vercel", "deploy"]), ["echo"]);
-    assert.deepEqual(withoutText(["e9g", "log", "merged b1"]), ["e9g", "log"]);
-    assert.deepEqual(withoutText(["e9g", "verdict", "review", "b", "approve", "--note", "x"]), ["e9g", "verdict", "review", "b", "approve", "--note"]);
+    assert.deepEqual(withoutText(["a6g", "log", "merged b1"]), ["a6g", "log"]);
+    assert.deepEqual(withoutText(["a6g", "verdict", "review", "b", "approve", "--note", "x"]), ["a6g", "verdict", "review", "b", "approve", "--note"]);
   });
 
   test("lines: each variant as the plain command, with or without its text, separators in a word blanked", () => {

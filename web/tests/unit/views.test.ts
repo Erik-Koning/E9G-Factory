@@ -120,7 +120,7 @@ test("the board: a lane per step, journeys aside, each in its order, and rejecte
   const claim = (at: string, until: string) => ({ role: "builder", machine: "studio", worktree: "/w", at, until });
   const late = task("building", { claim: claim("2026-10-31T11:00:00.000Z", "2026-10-31T13:00:00.000Z") });
   const early = task("building", { claim: claim("2026-10-31T10:00:00.000Z", "2026-10-31T11:30:00.000Z") });
-  const reviewing = task("review", { branch: "e9g/b9-x", sha: "abcdef0123" });
+  const reviewing = task("review", { branch: "a6g/b9-x", sha: "abcdef0123" });
   const dep = task("building");
   const low = task("approved", { priority: 10 });
   const blocker = task("approved", { severity: "blocker", after: [dep.id, low.id, "999"] });

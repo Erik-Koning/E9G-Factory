@@ -40,7 +40,7 @@ const said = (id: string, at: string, model: string, branch: string, usage: Reco
 
 describe("counting what a team used", () => {
   function world() {
-    const root = tmp("e9g-usage-");
+    const root = tmp("a6g-usage-");
     const projects = join(root, "projects");
     const home = "/Users/x/code/app";
     const worktrees = "/Users/x/.t3/worktrees/app";
@@ -60,25 +60,25 @@ describe("counting what a team used", () => {
     writeFileSync(
       join(w.ours, "planner.jsonl"),
       [
-        agent("e9g:planner"),
-        said("m1", at("2026-11-02"), "claude-opus-5-5", "e9g/next", usage),
-        said("m1", at("2026-11-02"), "claude-opus-5-5", "e9g/next", usage),
-        said("m2", at("2026-11-02"), "<synthetic>", "e9g/next", usage),
+        agent("a6g:planner"),
+        said("m1", at("2026-11-02"), "claude-opus-5-5", "a6g/next", usage),
+        said("m1", at("2026-11-02"), "claude-opus-5-5", "a6g/next", usage),
+        said("m2", at("2026-11-02"), "<synthetic>", "a6g/next", usage),
         "",
       ].join("\n")
     );
     writeFileSync(
       join(w.tree, "builder.jsonl"),
       [
-        agent("e9g:builder"),
-        said("b1", at("2026-11-02"), "claude-sonnet-5-5", "e9g/b12-save-the-card", {
+        agent("a6g:builder"),
+        said("b1", at("2026-11-02"), "claude-sonnet-5-5", "a6g/b12-save-the-card", {
           ...usage,
           cache_creation: { ephemeral_5m_input_tokens: 1000, ephemeral_1h_input_tokens: 3000 },
         }),
         "",
       ].join("\n")
     );
-    writeFileSync(join(w.theirs, "x.jsonl"), [agent("e9g:planner"), said("z", at("2026-11-02"), "claude-opus-5-5", "main", usage), ""].join("\n"));
+    writeFileSync(join(w.theirs, "x.jsonl"), [agent("a6g:planner"), said("z", at("2026-11-02"), "claude-opus-5-5", "main", usage), ""].join("\n"));
     writeFileSync(join(w.ours, "plain.jsonl"), [said("p", at("2026-11-02"), "claude-opus-5-5", "main", usage), ""].join("\n"));
 
     const first = collectUsage({ run: w.run, team: "app", machine: "studio", dirs });
@@ -113,10 +113,10 @@ describe("counting what a team used", () => {
     assert.deepEqual(collectUsage({ run: w.run, team: "app", machine: "studio", dirs }), []);
     appendFileSync(
       join(w.ours, "planner.jsonl"),
-      `${said("m1", at("2026-11-02"), "claude-opus-5-5", "e9g/next", usage)}\n${said("m3", at("2026-11-03"), "claude-opus-5-5", "e9g/next", usage).slice(0, 40)}`
+      `${said("m1", at("2026-11-02"), "claude-opus-5-5", "a6g/next", usage)}\n${said("m3", at("2026-11-03"), "claude-opus-5-5", "a6g/next", usage).slice(0, 40)}`
     );
     assert.deepEqual(collectUsage({ run: w.run, team: "app", machine: "studio", dirs }), []);
-    appendFileSync(join(w.ours, "planner.jsonl"), `${said("m3", at("2026-11-03"), "claude-opus-5-5", "e9g/next", usage).slice(40)}\n`);
+    appendFileSync(join(w.ours, "planner.jsonl"), `${said("m3", at("2026-11-03"), "claude-opus-5-5", "a6g/next", usage).slice(40)}\n`);
     const later = collectUsage({ run: w.run, team: "app", machine: "studio", dirs });
     assert.deepEqual(
       later.map((d) => [d.day, d.rows.map((r) => `${r.role} ${r.requests}`)]),
@@ -131,9 +131,9 @@ describe("counting what a team used", () => {
     writeFileSync(
       join(w.ours, "p.jsonl"),
       [
-        agent("e9g:planner"),
-        said("a", at("2026-11-01"), "claude-opus-5-5", "e9g/next", usage),
-        said("b", at("2026-11-02"), "claude-opus-5-5", "e9g/next", usage),
+        agent("a6g:planner"),
+        said("a", at("2026-11-01"), "claude-opus-5-5", "a6g/next", usage),
+        said("b", at("2026-11-02"), "claude-opus-5-5", "a6g/next", usage),
         "",
       ].join("\n")
     );
@@ -145,11 +145,11 @@ describe("counting what a team used", () => {
         ["2026-11-02", "studio", 1],
       ]
     );
-    assert.deepEqual(countedDays(tmp("e9g-empty-"), "app", "studio"), []);
+    assert.deepEqual(countedDays(tmp("a6g-empty-"), "app", "studio"), []);
   });
 
   test("folders named as Claude Code names them; a sibling team's worktrees, alike in name, aren't counted", () => {
-    const root = tmp("e9g-usage-");
+    const root = tmp("a6g-usage-");
     const projects = join(root, "projects");
     const home = "/Users/x/My Code/shop_app";
     const worktrees = "/Users/x/.t3/worktrees/shop_app";
@@ -162,12 +162,12 @@ describe("counting what a team used", () => {
         type: "assistant",
         timestamp: at("2026-11-02"),
         cwd,
-        gitBranch: "e9g/next",
+        gitBranch: "a6g/next",
         message: { id, model: "claude-opus-5-5", usage: { input_tokens: 1 } },
       });
-    writeFileSync(join(ours, "a.jsonl"), [agent("e9g:planner"), line("a", home), ""].join("\n"));
-    writeFileSync(join(tree, "b.jsonl"), [agent("e9g:builder"), line("b", `${worktrees}/t3-1`), ""].join("\n"));
-    writeFileSync(join(sibling, "c.jsonl"), [agent("e9g:builder"), line("c", "/Users/x/.t3/worktrees/shop_app-admin/t3-2"), ""].join("\n"));
+    writeFileSync(join(ours, "a.jsonl"), [agent("a6g:planner"), line("a", home), ""].join("\n"));
+    writeFileSync(join(tree, "b.jsonl"), [agent("a6g:builder"), line("b", `${worktrees}/t3-1`), ""].join("\n"));
+    writeFileSync(join(sibling, "c.jsonl"), [agent("a6g:builder"), line("c", "/Users/x/.t3/worktrees/shop_app-admin/t3-2"), ""].join("\n"));
     const dirs = transcriptDirs(home, worktrees, projects);
     assert.equal(dirs.length, 3, "the sibling's folder looks like ours by name");
     const [day] = collectUsage({ run: join(root, "run"), team: "shop", machine: "studio", dirs, home, worktrees });
@@ -181,7 +181,7 @@ describe("counting what a team used", () => {
     const w = world();
     writeFileSync(
       join(w.ours, "p.jsonl"),
-      [agent("e9g:planner"), said("u", at("2026-11-02"), "claude-new-6", "e9g/next", { input_tokens: 5 }), ""].join("\n")
+      [agent("a6g:planner"), said("u", at("2026-11-02"), "claude-new-6", "a6g/next", { input_tokens: 5 }), ""].join("\n")
     );
     const [day] = collectUsage({ run: w.run, team: "app", machine: "studio", dirs: transcriptDirs(w.home, w.worktrees, w.projects) });
     assert.deepEqual(
@@ -247,7 +247,7 @@ describe("what a team spent", () => {
   });
 
   test("the file store keeps a document per day and machine, replaced whole", async () => {
-    const store = fileStore(tmp("e9g-run-"), "app");
+    const store = fileStore(tmp("a6g-run-"), "app");
     await store.usage.publish(days);
     await store.usage.publish([day("2026-11-04", "studio", [3, "12"])]);
     const read = await store.usage.since("2026-11-02");
@@ -263,13 +263,13 @@ describe("what a team spent", () => {
 });
 
 describe("the watchdog counts what a team used", () => {
-  test("a full run publishes this machine's days and keeps what the team spent; e9g status shows it", async () => {
+  test("a full run publishes this machine's days and keeps what the team spent; a6g status shows it", async () => {
     const { fakeWorld } = await import("./fake-t3.ts");
     const w = await fakeWorld();
     try {
-      const file = join(w.e9gHome, "teams", "fixture.json");
-      write(join(w.e9gHome, "teams"), {
-        "fixture.json": { ...JSON.parse(readFileSync(file, "utf8")), tasks: { store: "files", database: "e9g", lead: null } },
+      const file = join(w.a6gHome, "teams", "fixture.json");
+      write(join(w.a6gHome, "teams"), {
+        "fixture.json": { ...JSON.parse(readFileSync(file, "utf8")), tasks: { store: "files", database: "a6g", lead: null } },
       });
       write(w.run, { "planner-thread": "mcp:planner\n" });
       const transcripts = join(w.root, "home", ".claude", "projects", encodePath(w.home));
@@ -277,13 +277,13 @@ describe("the watchdog counts what a team used", () => {
       const now = new Date().toISOString();
       writeFileSync(
         join(transcripts, "p.jsonl"),
-        [agent("e9g:planner"), said("m1", now, "claude-opus-5-5", "e9g/next", { input_tokens: 1_000_000, output_tokens: 100_000 }), ""].join("\n")
+        [agent("a6g:planner"), said("m1", now, "claude-opus-5-5", "a6g/next", { input_tokens: 1_000_000, output_tokens: 100_000 }), ""].join("\n")
       );
-      assert.equal((await w.e9g("watchdog", "run", "fixture")).code, 0);
+      assert.equal((await w.a6g("watchdog", "run", "fixture")).code, 0);
       const spend = JSON.parse(readFileSync(join(w.run, "spend.json"), "utf8"));
       assert.equal(spend.today, 6);
       assert.ok(existsSync(join(w.run, "usage-days")));
-      assert.match((await w.e9g("status", "fixture")).out, /Spent \(API-equivalent\): \$6\.00 today, \$6\.00 this week, \$6\.00 in all\./);
+      assert.match((await w.a6g("status", "fixture")).out, /Spent \(API-equivalent\): \$6\.00 today, \$6\.00 this week, \$6\.00 in all\./);
     } finally {
       await w.close();
     }

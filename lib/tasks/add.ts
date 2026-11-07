@@ -27,7 +27,7 @@ export interface TaskInput {
   parent?: string | null;
   after?: string[];
   request?: string | null;
-  // The operator's own task, approved as it's added (e9g task add --approved).
+  // The operator's own task, approved as it's added (a6g task add --approved).
   approved?: boolean;
   // The person who added or suggested it from the web app, as their stakeholder id, never a name (Article 8).
   from?: string | null;

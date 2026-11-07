@@ -120,9 +120,9 @@ export async function challenge({
   const where = address === UNKNOWN_IP ? "an IP address we couldn't read" : `the IP address ${address}`;
   await sendMail({
     to: email,
-    subject: "Confirm it's you signing in to E9G",
+    subject: "Confirm it's you signing in to Anything Factory",
     text: [
-      `Someone signed in to your E9G account from ${where}, on ${deviceOf(userAgent)}, at ${now.toUTCString()}.`,
+      `Someone signed in to your Anything Factory account from ${where}, on ${deviceOf(userAgent)}, at ${now.toUTCString()}.`,
       `If it was you, open this link within ${LINK_MINUTES} minutes and confirm it: ${link}`,
       "If it wasn't you, open the link and choose “It wasn't me”: every session on your account ends at once. Then tell the operator.",
     ].join("\n\n"),

@@ -1,4 +1,4 @@
-import { e9g, tmp, write } from "./helpers.ts";
+import { a6g, tmp, write } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, readFileSync, rmSync, utimesSync } from "node:fs";
 import { createServer } from "node:http";
@@ -10,7 +10,7 @@ import { alertChannels, passReplies, sendOutbox } from "../lib/commands/watchdog
 import { address, EMAIL_FILE, mailer, replyText, saveEmailSettings, storeKey } from "../lib/email.ts";
 
 // A stand-in for macOS's security tool: one generic password in a file, and every call's arguments in another.
-const keychain = tmp("e9g-security-");
+const keychain = tmp("a6g-security-");
 write(keychain, {
   security: `#!/bin/sh
 echo "$@" >> "${keychain}/calls"
@@ -65,16 +65,16 @@ const server = createServer((request, response) => {
 before(() =>
   new Promise<void>((done) => server.listen(0, "127.0.0.1", () => done())).then(() => {
     resend.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    process.env.E9G_RESEND_URL = resend.url;
+    process.env.A6G_RESEND_URL = resend.url;
   })
 );
 after(() => server.close());
 
-describe("e9g connect email", () => {
+describe("a6g connect email", () => {
   test("keeps the key only after a test email goes through, and never passes it as an argument", async () => {
-    const run = (args: string[], input?: string) => e9g(args, input === undefined ? {} : { input });
+    const run = (args: string[], input?: string) => a6g(args, input === undefined ? {} : { input });
 
-    assert.equal((await run(["connect"])).out.split("\n")[0], "email  not connected: e9g connect email");
+    assert.equal((await run(["connect"])).out.split("\n")[0], "email  not connected: a6g connect email");
     assert.equal((await run(["connect", "email", "--to", "op@example.com"], "not-a-key\n")).code, 2);
     assert.equal(resend.sent.length, 0, "a key that isn't Resend's is refused before anything is sent");
 
@@ -94,13 +94,13 @@ describe("e9g connect email", () => {
     const sent = resend.sent.at(-1);
     assert.equal(sent?.authorization, "Bearer re_test_123");
     assert.deepEqual(sent?.body.to, ["op@example.com"]);
-    assert.equal(sent?.body.from, "E9G Factory <onboarding@resend.dev>");
+    assert.equal(sent?.body.from, "Anything Factory <onboarding@resend.dev>");
     assert.equal(sent?.body.reply_to, undefined);
     assert.equal(readFileSync(join(keychain, "secret"), "utf8"), "re_test_123");
     assert.equal((JSON.parse(readFileSync(EMAIL_FILE, "utf8")) as { to: string }).to, "op@example.com");
     assert.doesNotMatch(readFileSync(join(keychain, "calls"), "utf8"), /re_test_123/);
 
-    assert.match((await run(["connect"])).out, /^email {2}to op@example\.com, from E9G Factory <onboarding@resend\.dev>, no replies, since /);
+    assert.match((await run(["connect"])).out, /^email {2}to op@example\.com, from Anything Factory <onboarding@resend\.dev>, no replies, since /);
     assert.equal((await run(["connect", "email", "--test"])).code, 0);
     assert.equal(resend.sent.length, 3);
 
@@ -108,7 +108,7 @@ describe("e9g connect email", () => {
       ["connect", "email", "--test"],
       ["disconnect", "email"],
     ]) {
-      const agent = await e9g(args, { env: { E9G_TEAM: "fixture" } });
+      const agent = await a6g(args, { env: { A6G_TEAM: "fixture" } });
       assert.notEqual(agent.code, 0);
       assert.match(agent.out, /is the operator's/);
     }
@@ -121,18 +121,18 @@ describe("e9g connect email", () => {
 
   test("replies need a key that may read what Resend received; reconnecting keeps the start", async () => {
     resend.receiving = { status: 401, body: { name: "restricted_api_key", message: "This API key is restricted to only send emails." } };
-    const restricted = await e9g(["connect", "email", "--to", "op@example.com", "--replies", "abc123.resend.app"], { input: "re_send_only\n" });
+    const restricted = await a6g(["connect", "email", "--to", "op@example.com", "--replies", "abc123.resend.app"], { input: "re_send_only\n" });
     assert.equal(restricted.code, 1);
     assert.match(restricted.out, /full access/);
     assert.ok(!existsSync(EMAIL_FILE));
 
     resend.receiving = { status: 200, body: { object: "list", has_more: false, data: [] } };
-    assert.equal((await e9g(["connect", "email", "--to", "op@example.com", "--replies", "abc 123"], { input: "re_full_123\n" })).code, 2);
-    const connected = await e9g(["connect", "email", "--to", "op@example.com", "--replies", "abc123.resend.app"], { input: "re_full_123\n" });
+    assert.equal((await a6g(["connect", "email", "--to", "op@example.com", "--replies", "abc 123"], { input: "re_full_123\n" })).code, 2);
+    const connected = await a6g(["connect", "email", "--to", "op@example.com", "--replies", "abc123.resend.app"], { input: "re_full_123\n" });
     assert.equal(connected.code, 0, connected.out);
-    assert.match((await e9g(["connect"])).out, /replies through abc123\.resend\.app/);
+    assert.match((await a6g(["connect"])).out, /replies through abc123\.resend\.app/);
     const start = (JSON.parse(readFileSync(EMAIL_FILE, "utf8")) as { connectedAt: string }).connectedAt;
-    assert.equal((await e9g(["connect", "email", "--to", "op@example.com"], { input: "re_full_456\n" })).code, 0);
+    assert.equal((await a6g(["connect", "email", "--to", "op@example.com"], { input: "re_full_456\n" })).code, 0);
     assert.equal((JSON.parse(readFileSync(EMAIL_FILE, "utf8")) as { connectedAt: string }).connectedAt, start);
   });
 });
@@ -143,7 +143,7 @@ describe("email replies", () => {
     saveEmailSettings({
       provider: "resend",
       to: "op@example.com",
-      from: "E9G Factory <onboarding@resend.dev>",
+      from: "Anything Factory <onboarding@resend.dev>",
       replyDomain: "abc123.resend.app",
       connectedAt,
     });
@@ -157,11 +157,11 @@ describe("email replies", () => {
 
   test("only what the operator wrote, above the quote", () => {
     assert.equal(
-      replyText("Go with Postgres.\n\nOn Sat, Oct 25, 2026 at 5:02 PM E9G Factory <\nonboarding@resend.dev> wrote:\n> Which database?\n"),
+      replyText("Go with Postgres.\n\nOn Sat, Oct 25, 2026 at 5:02 PM Anything Factory <\nonboarding@resend.dev> wrote:\n> Which database?\n"),
       "Go with Postgres."
     );
     assert.equal(replyText("B, please\r\n> quoted\r\nthanks\r\n-----Original Message-----\r\nFrom: x"), "B, please\nthanks");
-    assert.equal(replyText("Yes\n\nFrom: E9G Factory <onboarding@resend.dev>\nSent: today"), "Yes");
+    assert.equal(replyText("Yes\n\nFrom: Anything Factory <onboarding@resend.dev>\nSent: today"), "Yes");
   });
 
   test("an address is the one in angle brackets, never one in the display name", () => {
@@ -174,8 +174,8 @@ describe("email replies", () => {
   test("a team's email can be answered, and only the operator's signed or DMARC-passing answers come back", async () => {
     const mail = connectWithReplies();
     assert.equal(await mail.send("[My app] Which database?", "Postgres or SQLite?", "my-app", "my-app/2026-10-25-db.md"), null);
-    assert.deepEqual(resend.sent.at(-1)?.body.reply_to, ["e9g-my-app@abc123.resend.app"]);
-    assert.match(resend.sent.at(-1)?.idempotency ?? "", /^e9g-[0-9a-f]{16}$/, "a retry isn't delivered twice");
+    assert.deepEqual(resend.sent.at(-1)?.body.reply_to, ["a6g-my-app@abc123.resend.app"]);
+    assert.match(resend.sent.at(-1)?.idempotency ?? "", /^a6g-[0-9a-f]{16}$/, "a retry isn't delivered twice");
 
     resend.pages = {};
     resend.receiving = {
@@ -184,18 +184,18 @@ describe("email replies", () => {
         object: "list",
         has_more: false,
         data: [
-          item("r-forged", "e9g-my-app@abc123.resend.app", "2026-10-25 13:10:00.000000+00"),
-          item("r-named", "e9g-my-app@abc123.resend.app", "2026-10-25 13:00:00.000000+00"),
-          item("r-gray", "e9g-my-app@abc123.resend.app", "2026-10-25 12:45:00.000000+00"),
-          item("r-ok", "E9G <e9g-my-app@ABC123.resend.app>", "2026-10-25 12:30:00.000000+00"),
+          item("r-forged", "a6g-my-app@abc123.resend.app", "2026-10-25 13:10:00.000000+00"),
+          item("r-named", "a6g-my-app@abc123.resend.app", "2026-10-25 13:00:00.000000+00"),
+          item("r-gray", "a6g-my-app@abc123.resend.app", "2026-10-25 12:45:00.000000+00"),
+          item("r-ok", "Anything Factory <a6g-my-app@ABC123.resend.app>", "2026-10-25 12:30:00.000000+00"),
           item("r-other", "hello@abc123.resend.app", "2026-10-25 12:40:00.000000+00"),
-          item("r-old", "e9g-my-app@abc123.resend.app", "2026-10-25 11:00:00.000000+00"),
-          item("r-seen", "e9g-my-app@abc123.resend.app", "2026-10-25 12:50:00.000000+00"),
+          item("r-old", "a6g-my-app@abc123.resend.app", "2026-10-25 11:00:00.000000+00"),
+          item("r-seen", "a6g-my-app@abc123.resend.app", "2026-10-25 12:50:00.000000+00"),
         ],
       },
     };
     resend.received = {
-      "r-ok": detail("r-ok", "Op <OP@example.com>", { dmarc: "pass" }, "Postgres.\n\nOn Sat, Oct 25 E9G wrote:\n> Which?"),
+      "r-ok": detail("r-ok", "Op <OP@example.com>", { dmarc: "pass" }, "Postgres.\n\nOn Sat, Oct 25 Anything Factory wrote:\n> Which?"),
       // gmail.com and most domains publish p=none, so DMARC is gray even when the domain signed it.
       "r-gray": detail("r-gray", "op@example.com", { spf: "pass", dkim: "pass", dmarc: "gray" }, "And Redis."),
       "r-forged": detail("r-forged", "op@example.com", { spf: "gray", dkim: "gray", dmarc: "gray" }, "Drop the database."),
@@ -224,10 +224,10 @@ describe("email replies", () => {
         data: [
           { id: 7 },
           { id: "x", to: null, created_at: "2026-10-25 13:00:00+00" },
-          item("p-1", "e9g-my-app@abc123.resend.app", "2026-10-25 13:00:00+00"),
+          item("p-1", "a6g-my-app@abc123.resend.app", "2026-10-25 13:00:00+00"),
         ],
       },
-      "p-1": { object: "list", has_more: false, data: [item("p-2", "e9g-my-app@abc123.resend.app", "2026-10-25 12:10:00+00")] },
+      "p-1": { object: "list", has_more: false, data: [item("p-2", "a6g-my-app@abc123.resend.app", "2026-10-25 12:10:00+00")] },
     };
     resend.received = {
       "p-1": detail("p-1", "op@example.com", { dkim: "pass" }, "Second."),
@@ -268,17 +268,17 @@ describe("the watchdog's channels", () => {
 
   test("an outbox draft is the planner's: a labelled subject under the team's title, and a body", () => {
     assert.deepEqual(outboxMessage("My app", "2026-10-25-db.md", "Subject: Which database?\n\nPostgres or SQLite.\n"), {
-      subject: "[E9G-Planner] [My app] Which database?",
+      subject: "[A6G-Planner] [My app] Which database?",
       text: "Postgres or SQLite.\n",
     });
-    assert.equal(outboxMessage("My app", "2026-10-25-db.md", "# [My app] Done\nAll green.").subject, "[E9G-Planner] [My app] Done");
-    assert.equal(outboxMessage("My app", "2026-10-25-db.md", "Subject: [E9G-Planner] [My app] Done\n").subject, "[E9G-Planner] [My app] Done");
-    assert.equal(outboxMessage("My app", "2026-10-25-db.md", "Subject: [E9G-Planner] Done\n").subject, "[E9G-Planner] [My app] Done");
-    assert.equal(outboxMessage("My app", "2026-10-25-1430-pick-a-db.md", "Which one?").subject, "[E9G-Planner] [My app] pick a db");
+    assert.equal(outboxMessage("My app", "2026-10-25-db.md", "# [My app] Done\nAll green.").subject, "[A6G-Planner] [My app] Done");
+    assert.equal(outboxMessage("My app", "2026-10-25-db.md", "Subject: [A6G-Planner] [My app] Done\n").subject, "[A6G-Planner] [My app] Done");
+    assert.equal(outboxMessage("My app", "2026-10-25-db.md", "Subject: [A6G-Planner] Done\n").subject, "[A6G-Planner] [My app] Done");
+    assert.equal(outboxMessage("My app", "2026-10-25-1430-pick-a-db.md", "Which one?").subject, "[A6G-Planner] [My app] pick a db");
   });
 
   test("each settled draft goes once through each channel, a failed one again, and old or fresh ones not yet", async () => {
-    const outbox = join(tmp("e9g-run-"), "outbox");
+    const outbox = join(tmp("a6g-run-"), "outbox");
     const connectedAt = new Date(Date.now() - 60 * 60_000).toISOString();
     write(outbox, {
       "2026-10-25-old.md": "Subject: before connecting\n",
@@ -298,13 +298,13 @@ describe("the watchdog's channels", () => {
     const whatsapp = channel("whatsapp", connectedAt);
     await sendOutbox([email, whatsapp], outbox, "My app", "my-app", log);
     await sendOutbox([email, whatsapp], outbox, "My app", "my-app", log);
-    const once = [{ subject: "[E9G-Planner] [My app] Which database?", text: "Postgres?\n", team: "my-app", id: "my-app/2026-10-25-new.md" }];
+    const once = [{ subject: "[A6G-Planner] [My app] Which database?", text: "Postgres?\n", team: "my-app", id: "my-app/2026-10-25-new.md" }];
     assert.deepEqual(email.sent, once);
     assert.deepEqual(whatsapp.sent, once);
   });
 
   test("digest: settled drafts wait for the window and go as one message; Urgent once per window; Done always", async () => {
-    const run = tmp("e9g-run-");
+    const run = tmp("a6g-run-");
     const outbox = join(run, "outbox");
     const connectedAt = new Date(Date.now() - 60 * 60_000).toISOString();
     const settle = (...names: string[]) => {
@@ -328,7 +328,7 @@ describe("the watchdog's channels", () => {
     const email = channel("email", connectedAt);
     await deliver(email);
     assert.equal(email.sent.length, 1, "one message for both");
-    assert.equal(email.sent[0]?.subject, "[E9G-Planner] [My app] 2 messages: Which sign-in?; Which database?");
+    assert.equal(email.sent[0]?.subject, "[A6G-Planner] [My app] 2 messages: Which sign-in?; Which database?");
     assert.match(email.sent[0]?.text ?? "", /^1\. Which sign-in\?\n\nEmail links\?\n\n---\n\n2\. Which database\?\n\nPostgres\?\n$/);
     assert.deepEqual(shown, [`The team has 2 messages for you. They're in ${outbox}.`]);
 
@@ -341,7 +341,7 @@ describe("the watchdog's channels", () => {
     await deliver(email);
     assert.deepEqual(
       email.sent.slice(1).map(({ subject }) => subject),
-      ["[E9G-Planner] [My app] Urgent: nobody can sign in"],
+      ["[A6G-Planner] [My app] Urgent: nobody can sign in"],
       "the first urgent draft goes; the second waits with the ordinary one"
     );
     write(outbox, { "2026-10-26-1200-down.md": "Subject: Urgent: down a third time\n", "2026-10-26-1300-done.md": "Subject: Done\n\nAll green.\n" });
@@ -349,7 +349,7 @@ describe("the watchdog's channels", () => {
     await deliver(email);
     assert.deepEqual(
       email.sent.slice(2).map(({ subject }) => subject),
-      ["[E9G-Planner] [My app] Done"],
+      ["[A6G-Planner] [My app] Done"],
       "the third urgent waits; Done goes"
     );
 
@@ -358,14 +358,14 @@ describe("the watchdog's channels", () => {
     shown.length = 0;
     await deliver(email);
     assert.equal(email.sent.length, 4);
-    assert.equal(email.sent[3]?.subject, "[E9G-Planner] [My app] 3 messages: Which cache?; Urgent: still down; Urgent: down a third time");
+    assert.equal(email.sent[3]?.subject, "[A6G-Planner] [My app] 3 messages: Which cache?; Urgent: still down; Urgent: down a third time");
     assert.deepEqual(shown, [`The team has 3 messages for you. They're in ${outbox}.`]);
     await deliver(email);
     assert.equal(email.sent.length, 4, "nothing twice");
   });
 
   test("priority: each settled draft goes as it comes", async () => {
-    const run = tmp("e9g-run-");
+    const run = tmp("a6g-run-");
     const outbox = join(run, "outbox");
     write(outbox, { "2026-10-26-a.md": "Subject: A?\n", "2026-10-26-b.md": "Subject: B?\n" });
     for (const name of ["2026-10-26-a.md", "2026-10-26-b.md"])
@@ -375,12 +375,12 @@ describe("the watchdog's channels", () => {
     await sendOutbox([email], outbox, "My app", "my-app", () => {}, { mode: "priority", everyMin: 240 });
     assert.deepEqual(
       email.sent.map(({ subject }) => subject),
-      ["[E9G-Planner] [My app] A?", "[E9G-Planner] [My app] B?"]
+      ["[A6G-Planner] [My app] A?", "[A6G-Planner] [My app] B?"]
     );
   });
 
   test("an alert goes through each channel at most every 6 hours, and a failed one is tried again", async () => {
-    const dir = tmp("e9g-run-");
+    const dir = tmp("a6g-run-");
     const at = "2026-01-01T00:00:00Z";
     assert.match((await alertChannels([channel("email", at, true)], dir, "stuck", "[My app] stuck", "The planner looks stuck.")).join(), /couldn't send/);
     const email = channel("email", at);
@@ -391,14 +391,14 @@ describe("the watchdog's channels", () => {
     assert.deepEqual(await alertChannels([email], dir, "waiting", "[My app] waiting", "The planner is waiting."), ["sent the waiting alert by email"]);
     assert.equal(email.sent.length, 2);
     assert.equal(email.sent[0]?.team, "my-app", "the operator can answer it");
-    assert.match(email.sent[0]?.text ?? "", /^The planner looks stuck\.\n\nSent by the E9G Factory watchdog on /);
+    assert.match(email.sent[0]?.text ?? "", /^The planner looks stuck\.\n\nSent by the Anything Factory watchdog on /);
     assert.deepEqual(await alertChannels([], dir, "t3-down", "x", "y"), []);
     const throws: Channel = { name: "email", to: "x", connectedAt: at, send: async () => Promise.reject(new Error("boom")) };
-    assert.deepEqual(await alertChannels([throws], tmp("e9g-run-"), "stuck", "s", "t"), ["couldn't send the stuck alert by email: boom"]);
+    assert.deepEqual(await alertChannels([throws], tmp("a6g-run-"), "stuck", "s", "t"), ["couldn't send the stuck alert by email: boom"]);
   });
 
   test("a reply reaches the planner once, and one it couldn't take is tried again", () => {
-    const run = tmp("e9g-run-");
+    const run = tmp("a6g-run-");
     const reply: Reply = { id: "r-1", team: "my-app", subject: "Re: [My app] Which database?", text: "Postgres.", via: "email" };
     const seen = new Set<string>();
     const told: string[] = [];

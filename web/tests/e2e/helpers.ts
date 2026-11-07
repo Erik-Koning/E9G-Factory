@@ -9,7 +9,7 @@ import type { World } from "./seed.ts";
 
 export interface State extends World {
   mongoUri: string;
-  e9gDatabase: string;
+  a6gDatabase: string;
   authDatabase: string;
   log: string;
   baseURL: string;
@@ -19,7 +19,7 @@ export const state = (): State => JSON.parse(readFileSync(process.env.E2E_STATE 
 let client: MongoClient | null = null;
 export async function databases(): Promise<{ graph: Db; accounts: Db }> {
   client ??= await new MongoClient(state().mongoUri).connect();
-  return { graph: client.db(state().e9gDatabase), accounts: client.db(state().authDatabase) };
+  return { graph: client.db(state().a6gDatabase), accounts: client.db(state().authDatabase) };
 }
 export async function closeDatabases(): Promise<void> {
   await client?.close();
@@ -48,7 +48,7 @@ export async function newPage(
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
     baseURL: state().baseURL,
-    extraHTTPHeaders: { "x-e9g-viewer-ip": ip, "x-e9g-origin": ORIGIN_SECRET },
+    extraHTTPHeaders: { "x-a6g-viewer-ip": ip, "x-a6g-origin": ORIGIN_SECRET },
     ...(storageState ? { storageState } : {}),
   });
   return { context, page: await context.newPage() };

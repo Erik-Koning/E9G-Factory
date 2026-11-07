@@ -289,9 +289,9 @@ export async function deliveryOf(userId: string): Promise<{ lastSent: Date | nul
 }
 
 // Started once per server (instrumentation.ts): a run every NOTIFY_EVERY_SECONDS, never two at once.
-const runner = globalThis as typeof globalThis & { e9gNotifier?: ReturnType<typeof setInterval> };
+const runner = globalThis as typeof globalThis & { a6gNotifier?: ReturnType<typeof setInterval> };
 export function startNotifier(): void {
-  if (runner.e9gNotifier) return;
+  if (runner.a6gNotifier) return;
   let every: number;
   try {
     every = config().notifyEverySeconds;
@@ -314,7 +314,7 @@ export function startNotifier(): void {
       running = false;
     }
   };
-  runner.e9gNotifier = setInterval(run, every * 1000);
-  runner.e9gNotifier.unref?.();
+  runner.a6gNotifier = setInterval(run, every * 1000);
+  runner.a6gNotifier.unref?.();
   setTimeout(run, Math.min(every, 5) * 1000).unref?.();
 }

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
+  "$schema": "https://raw.githubusercontent.com/Erik-Koning/Anything-Factory/main/schema/team.schema.json",
   "name": "web-concept",
   "title": "Web concept pages",
   "owner": "you@example.com",
@@ -17,16 +17,16 @@
     "reviewer": { "limit": 1 },
     "ux-specialist": { "limit": 1 }
   },
-  "gate": { "full": ".e9g/adapters/gate.sh", "quick": ".e9g/adapters/gate.sh --quick", "concurrency": 2 },
-  "environment": { "script": ".e9g/adapters/env.sh", "health": ["http://localhost:3200/"] },
-  "afterMerge": ".e9g/adapters/after-merge.sh",
-  "finish": "e9g pages done",
-  "progress": "e9g pages status",
+  "gate": { "full": ".a6g/adapters/gate.sh", "quick": ".a6g/adapters/gate.sh --quick", "concurrency": 2 },
+  "environment": { "script": ".a6g/adapters/env.sh", "health": ["http://localhost:3200/"] },
+  "afterMerge": ".a6g/adapters/after-merge.sh",
+  "finish": "a6g pages done",
+  "progress": "a6g pages status",
   "pages": {
     "appUrl": "http://localhost:3200",
     "base": "main",
     "content": ["apps/web/src/app/(concept)/", "apps/web/src/components/concept/", "apps/web/public/concept/"],
-    "allowedChanges": ["^apps/web/src/app/\\(concept\\)/", "^apps/web/src/components/concept/", "^apps/web/public/concept/", "^\\.e9g/"],
+    "allowedChanges": ["^apps/web/src/app/\\(concept\\)/", "^apps/web/src/components/concept/", "^apps/web/public/concept/", "^\\.a6g/"],
     "list": [
       { "id": "landing", "path": "/concept", "exclude": ["^apps/web/src/app/\\(concept\\)/concept/settings/"] },
       { "id": "settings", "path": "/concept/settings", "exclude": ["^apps/web/src/app/\\(concept\\)/concept/page\\.tsx$"] }
@@ -37,10 +37,10 @@
   "policies": { "dependencies": "deny" },
   "never": [{ "rule": "\\bdeploy-all\\.sh\\b", "reason": "the deploy scripts are off limits.", "example": "./scripts/deploy-all.sh" }],
   "context": [
-    { "title": "Pages", "command": "e9g pages status --brief" },
-    { "title": "Board", "command": "grep -h -m1 '^status:' .e9g/run/board/*.md 2>/dev/null | sort | uniq -c | tr '\\n' ' '" }
+    { "title": "Pages", "command": "a6g pages status --brief" },
+    { "title": "Board", "command": "grep -h -m1 '^status:' .a6g/run/board/*.md 2>/dev/null | sort | uniq -c | tr '\\n' ' '" }
   ],
-  "docs": [".e9g/brief.md", ".e9g/notes.md", ".e9g/style.md", ".e9g/rubric.md"],
+  "docs": [".a6g/brief.md", ".a6g/notes.md", ".a6g/style.md", ".a6g/rubric.md"],
   "polishRounds": 1,
   "worktreeSetup": "pnpm install --frozen-lockfile --prefer-offline --filter 'web...' --ignore-scripts",
   "watchdog": { "tickEvery": "15m", "stuckAfter": "40m", "pruneAfter": "2h" }

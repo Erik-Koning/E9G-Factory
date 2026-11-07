@@ -61,7 +61,7 @@ export default async function InboxPage({ searchParams }: { searchParams: Search
         </p>
       ) : null}
       {!teams.length ? (
-        <p className="panel empty">No team has published its settings yet: e9g register publishes a team whose tasks are in Mongo.</p>
+        <p className="panel empty">No team has published its settings yet: a6g register publishes a team whose tasks are in Mongo.</p>
       ) : null}
     </>
   );

@@ -271,7 +271,7 @@ test("the admin approves one proposal with a note and rejects another with a rea
   await page.getByRole("button", { name: `Reject #${reject}` }).click();
   await expect(page.getByRole("status")).toContainText(`#${reject} rejected.`);
 
-  // Exactly what e9g task approve and reject write, as the operator.
+  // Exactly what a6g task approve and reject write, as the operator.
   const { graph } = await databases();
   const approved = await graph.collection("tasks").findOne({ _id: `shop:${approve}` as never });
   expect(approved).toMatchObject({ status: "approved", approval: { by: "operator", note: "Ship it before the holidays" } });
@@ -503,7 +503,7 @@ test("the admin adds a proposal, and a task approved under a journey after anoth
   await expect(page.getByRole("status")).toContainText("added, approved.");
   await expect(page.getByRole("region", { name: "Where it stands" }).getByRole("link", { name: `#${journey?.id} Checkout` })).toBeVisible();
   await expect(page.getByRole("region", { name: "Where it stands" }).getByRole("link", { name: `#${paid?.id} Pay by card` })).toBeVisible();
-  // Exactly what e9g task add --approved writes, as the operator.
+  // Exactly what a6g task add --approved writes, as the operator.
   expect(await graph.collection("tasks").findOne({ team: "shop", title: "Refund from the order page" })).toMatchObject({
     status: "approved",
     by: "operator",
@@ -950,12 +950,12 @@ test("only the app makes an invitation: a stranger's text never reaches an email
   const before = subjects().length;
   const ask = () =>
     request.post("/api/auth/sign-in/magic-link", {
-      data: { email: to, metadata: { team: "ACME. URGENT: re-verify at https://evil.example/e9g" } },
+      data: { email: to, metadata: { team: "ACME. URGENT: re-verify at https://evil.example/a6g" } },
       headers: { origin: state().baseURL },
     });
   expect((await ask()).status()).toBe(200);
   await expect.poll(() => subjects().length).toBe(before + 1);
-  expect(subjects().at(-1)).toBe(JSON.stringify("Your E9G sign-in link"));
+  expect(subjects().at(-1)).toBe(JSON.stringify("Your Anything Factory sign-in link"));
   expect((await ask()).status(), "the same answer").toBe(200);
   await new Promise((done) => setTimeout(done, 1000));
   expect(subjects().length, "no second link within a minute").toBe(before + 1);

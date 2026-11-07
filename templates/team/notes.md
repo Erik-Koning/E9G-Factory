@@ -5,7 +5,7 @@ matter, conventions and traps. Facts about rules (limits, lanes, policies) live 
 
 ## The team's environment
 
-`e9g env status` shows it. Only the planner starts, resets and stops it (`e9g env up|reset|down`).
+`a6g env status` shows it. Only the planner starts, resets and stops it (`a6g env up|reset|down`).
 
 {{ENVIRONMENT}}
 

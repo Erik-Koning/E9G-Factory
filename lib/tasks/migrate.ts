@@ -1,4 +1,4 @@
-// Moving a team's task graph between stores (e9g task migrate): every task, request, stakeholder, closed cycle and
+// Moving a team's task graph between stores (a6g task migrate): every task, request, stakeholder, closed cycle and
 // control, each keeping its id, into a store that has none of the team's yet. A file store moved from is marked, and
 // opening it again is refused, so a team can't go on writing to two graphs.
 import { existsSync, readFileSync } from "node:fs";

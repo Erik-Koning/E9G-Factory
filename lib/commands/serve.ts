@@ -1,10 +1,10 @@
-// e9g serve: the operator's page for one team, on the always-on machine. Stakeholders' feature requests come in through
+// a6g serve: the operator's page for one team, on the always-on machine. Stakeholders' feature requests come in through
 // its form; it shows the open requests (with who sent them, which only this page and the operator's own commands
 // show), the board by status, the proposals waiting for the operator with Approve and Reject, and the task graph.
-// Approving and rejecting run `e9g task` as the operator, so every rule there applies here too.
+// Approving and rejecting run `a6g task` as the operator, so every rule there applies here too.
 //
 // It's node:http and nothing else: no dependencies, no external assets, the CSS and the little JS inline. It binds
-// 127.0.0.1 unless told otherwise, and always asks for a token: E9G_SERVE_TOKEN, or one made at start and printed in
+// 127.0.0.1 unless told otherwise, and always asks for a token: A6G_SERVE_TOKEN, or one made at start and printed in
 // the address to open. Loopback alone isn't enough, since the team's own agents run on this machine and could approve
 // their own work or read stakeholders' names and addresses; and a token on the command line is readable by any process.
 import { spawn } from "node:child_process";
@@ -21,7 +21,7 @@ import { Refused, type Store } from "../tasks/store.ts";
 import { parseArgs, text as optionText } from "../util.ts";
 import { addRequest, keyHash, stakeholderFor } from "../tasks/requests.ts";
 
-export const USAGE = "usage: e9g serve [--port 4600] [--host 127.0.0.1] [--team <name>]   (the token: E9G_SERVE_TOKEN, or one made for you)";
+export const USAGE = "usage: a6g serve [--port 4600] [--host 127.0.0.1] [--team <name>]   (the token: A6G_SERVE_TOKEN, or one made for you)";
 
 const BODY_LIMIT = 64 * 1024;
 // Past the limit the rest of a body is read and dropped, so the client gets its 413 instead of a broken pipe; past
@@ -30,7 +30,7 @@ const BODY_CEILING = 4 * 1024 * 1024;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const PROPOSALS: Status[] = ["proposed", "researching", "question"];
 // The environment keys that make a command act as a member of a team: the operator's runs go without them.
-const MEMBER_KEYS = ["E9G_TEAM", "E9G_ROLE", "E9G_HOME_DIR", "E9G_SETUP"];
+const MEMBER_KEYS = ["A6G_TEAM", "A6G_ROLE", "A6G_HOME_DIR", "A6G_SETUP"];
 
 export interface ServeOptions {
   home: string;
@@ -41,17 +41,17 @@ export interface ServeOptions {
   token: string | null;
 }
 
-// e9g serve [--port 4600] [--host 127.0.0.1] [--team <name>]: runs until SIGINT or SIGTERM.
+// a6g serve [--port 4600] [--host 127.0.0.1] [--team <name>]: runs until SIGINT or SIGTERM.
 export async function serve(argv: string[]): Promise<number> {
   operatorOnly("serve");
   const { positional, options } = parseArgs(argv);
   const rawPort = optionText(options["port"]) ?? "4600";
   const host = optionText(options["host"]) ?? "127.0.0.1";
   if (options["token"] !== undefined) {
-    console.error("serve: give the token in E9G_SERVE_TOKEN, not --token: any process on this machine can read a command's arguments");
+    console.error("serve: give the token in A6G_SERVE_TOKEN, not --token: any process on this machine can read a command's arguments");
     return 2;
   }
-  const token = process.env.E9G_SERVE_TOKEN || randomBytes(18).toString("base64url");
+  const token = process.env.A6G_SERVE_TOKEN || randomBytes(18).toString("base64url");
   if (positional.length || !/^\d+$/.test(rawPort) || Number(rawPort) > 65535 || options["host"] === true) {
     console.error(USAGE);
     return 2;
@@ -71,10 +71,10 @@ export async function serve(argv: string[]): Promise<number> {
     }
     throw error;
   }
-  console.info(`e9g serve: ${server.url}`);
+  console.info(`a6g serve: ${server.url}`);
   console.info(
-    process.env.E9G_SERVE_TOKEN
-      ? "Open it once with ?token=<E9G_SERVE_TOKEN>; the browser keeps it after that."
+    process.env.A6G_SERVE_TOKEN
+      ? "Open it once with ?token=<A6G_SERVE_TOKEN>; the browser keeps it after that."
       : `Open ${server.url}/?token=${token} once; the browser keeps it after that. The token lasts until this stops.`
   );
   await new Promise<void>((done) => {
@@ -222,20 +222,20 @@ export async function startServer({ home, run, team, host, port, token }: ServeO
     // Without a token the page is loopback's alone, and only by a loopback name: a page elsewhere that points its own
     // name at 127.0.0.1 (DNS rebinding) is refused, since it would otherwise count as this page's own origin.
     const hostHeader = req.headers.host ?? "";
-    if (!token && !isLoopback(hostOfHeader(hostHeader))) return refuse(403, "e9g serve answers to its loopback address only (127.0.0.1, localhost)");
-    // Who's asking: the operator, by the page's own token, or a stakeholder, by a link of their own (e9g request
+    if (!token && !isLoopback(hostOfHeader(hostHeader))) return refuse(403, "a6g serve answers to its loopback address only (127.0.0.1, localhost)");
+    // Who's asking: the operator, by the page's own token, or a stakeholder, by a link of their own (a6g request
     // stakeholders add), which opens only the request form and their own requests.
     let stakeholder: Stakeholder | null = null;
     if (token) {
       const fromQuery = where.searchParams.get("token");
-      const header = req.headers["x-e9g-token"];
+      const header = req.headers["x-a6g-token"];
       const given = fromQuery ?? (typeof header === "string" ? header : undefined) ?? cookiesOf(req).get(cookie);
       const operator = given !== undefined && sameSecret(given, token);
       if (!operator && given !== undefined) {
         const hash = keyHash(given);
         stakeholder = (await store.stakeholders.all()).find((s) => typeof s.key === "string" && sameSecret(hash, s.key)) ?? null;
       }
-      if (!operator && !stakeholder) return refuse(401, "e9g serve needs its token: open the page once with ?token=<token>, or send x-e9g-token");
+      if (!operator && !stakeholder) return refuse(401, "a6g serve needs its token: open the page once with ?token=<token>, or send x-a6g-token");
       // The first visit's token is kept in a cookie the page's scripts can't read and other sites can't send.
       if (fromQuery !== null) headers["set-cookie"] = `${cookie}=${encodeURIComponent(fromQuery)}; HttpOnly; SameSite=Strict; Path=/`;
     }
@@ -325,7 +325,7 @@ export async function startServer({ home, run, team, host, port, token }: ServeO
   }
   const listening = (server.address() as AddressInfo).port;
   url = `http://${urlHost(host)}:${listening}`;
-  cookie = `e9g_serve_${listening}`;
+  cookie = `a6g_serve_${listening}`;
   return {
     url,
     close: async () => {
@@ -338,11 +338,11 @@ export async function startServer({ home, run, team, host, port, token }: ServeO
   };
 }
 
-// Runs the factory's own command line as the operator, from the team's checkout, so `e9g task`'s rules decide.
+// Runs the factory's own command line as the operator, from the team's checkout, so `a6g task`'s rules decide.
 // Each value goes as --flag=value, so a note that starts with -- stays a note.
 // It runs beside the server, which keeps answering meanwhile.
 function asOperator(home: string, run: string, args: string[]): Promise<{ ok: boolean; output: string }> {
-  const env: NodeJS.ProcessEnv = { ...process.env, E9G_RUN: run };
+  const env: NodeJS.ProcessEnv = { ...process.env, A6G_RUN: run };
   for (const key of MEMBER_KEYS) delete env[key];
   return new Promise((done) => {
     const child = spawn(process.execPath, [entryOf(FACTORY_ROOT), ...args], { cwd: home, env, timeout: 120_000 });
@@ -407,7 +407,7 @@ async function page(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(team.title)}: e9g</title>
+<title>${esc(team.title)}: a6g</title>
 <style nonce="${esc(nonce)}">${CSS}</style>
 </head>
 <body>
@@ -563,7 +563,7 @@ function boardSection(tasks: Task[]): string {
 </section>`;
 }
 
-// The graph as inline SVG, from the same layout as e9g task graph: a band per journey (and one for tasks in none), a
+// The graph as inline SVG, from the same layout as a6g task graph: a band per journey (and one for tasks in none), a
 // box per task in columns by how many tasks come first, and a line for each dependency.
 const BOX_W = 200;
 const BOX_H = 52;

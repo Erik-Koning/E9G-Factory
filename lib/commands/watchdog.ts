@@ -1,15 +1,15 @@
-// The watchdog: one launchd job (ca.e9g.watchdog) that looks after every registered team every 5 minutes, and applies
-// the operator's new pauses, resumes and budgets every minute between (lib/holds.ts). It uses no model. macOS doesn't let launchd jobs read ~/Documents, so it runs the installed copy in ~/.e9g and never
-// touches a checkout (E9G_LAUNCHD tells it it's that job). It reads T3 Code (its CLI and database), Docker, each
+// The watchdog: one launchd job (ca.a6g.watchdog) that looks after every registered team every 5 minutes, and applies
+// the operator's new pauses, resumes and budgets every minute between (lib/holds.ts). It uses no model. macOS doesn't let launchd jobs read ~/Documents, so it runs the installed copy in ~/.a6g and never
+// touches a checkout (A6G_LAUNCHD tells it it's that job). It reads T3 Code (its CLI and database), Docker, each
 // team's health URLs and its run folder, and sends anything that needs a checkout to the team's planner as a
-// message. What needs the operator also goes through every channel they've connected (e9g connect,
-// lib/channels.ts), and their replies go to the planner. Run from a terminal (e9g watchdog run, e9g start) it also
+// message. What needs the operator also goes through every channel they've connected (a6g connect,
+// lib/channels.ts), and their replies go to the planner. Run from a terminal (a6g watchdog run, a6g start) it also
 // clears finished worktrees. A run of every team ends by pinging the heartbeat, if one is connected (lib/heartbeat.ts).
 //
 // Per team, in its run folder: watchdog.log, planner-thread, heartbeat/, outbox/, replies/, paused, hold.json,
 // budget.json, controls-applied, complete.
 //
-//   e9g watchdog install | remove | run [<team>]
+//   a6g watchdog install | remove | run [<team>]
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
@@ -22,7 +22,7 @@ import { budgetCheck } from "../budget.ts";
 import { applyControls, clearNotes, holdNote, markApplied, pendingNotes, progressHold, queueNote, readHold, readLimits } from "../holds.ts";
 import { PLANNER_TAG } from "../labels.ts";
 import { acquireSlot } from "../lock.ts";
-import { E9G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
+import { A6G_HOME, entryOf, readRegistry, type RegistryEntry, teamsDir } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
 import { machineName } from "../machine.ts";
 import { type Control, describeHold, holdOf, settledControl } from "../tasks/controls.ts";
@@ -36,11 +36,11 @@ import * as t3 from "../t3.ts";
 import { die, readJson, which, writeFileAtomic, writeJson } from "../util.ts";
 import { settleTeamWaits } from "../waits.ts";
 
-const LABEL = "ca.e9g.watchdog";
+const LABEL = "ca.a6g.watchdog";
 const PLIST = join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
-const GLOBAL_LOG = join(E9G_HOME, "watchdog.log");
+const GLOBAL_LOG = join(A6G_HOME, "watchdog.log");
 // When the last full run started; the minute-by-minute runs between full ones apply controls only.
-const FULL_RUN = join(E9G_HOME, ".stamp-full-run");
+const FULL_RUN = join(A6G_HOME, ".stamp-full-run");
 const FULL_EVERY_MIN = 4.5;
 const stamp = () => new Date().toISOString().replace(/\.\d+Z$/, "Z");
 
@@ -80,7 +80,7 @@ export async function alertChannels(reach: Channel[], dir: string, kind: string,
   for (const channel of reach) {
     const mark = join(dir, `.stamp-${channel.name}-${kind}`);
     if (minutesSince(mark) < RESEND_ALERT_MIN) continue;
-    const problem = await sendThrough(channel, subject, `${text}\n\nSent by the E9G Factory watchdog on ${hostname()}.\n`, team);
+    const problem = await sendThrough(channel, subject, `${text}\n\nSent by the Anything Factory watchdog on ${hostname()}.\n`, team);
     if (problem) said.push(`couldn't send the ${kind} alert by ${channel.name}: ${problem}`);
     else {
       writeFileSync(mark, "");
@@ -201,10 +201,10 @@ const strip = (subject: string, title: string): string => subject.replace(PLANNE
 function warnFailing(reach: Channel[], glog: (text: string) => void): void {
   for (const channel of reach) {
     const problem = failingSend(channel.name);
-    const mark = join(E9G_HOME, `.stamp-failing-${channel.name}`);
+    const mark = join(A6G_HOME, `.stamp-failing-${channel.name}`);
     if (!problem || minutesSince(mark) < 60) continue;
     writeFileSync(mark, "");
-    notify("E9G Factory", `Can't reach you by ${channel.name}: ${problem}. e9g connect ${channel.name} --test checks it.`);
+    notify("Anything Factory", `Can't reach you by ${channel.name}: ${problem}. a6g connect ${channel.name} --test checks it.`);
     glog(`${channel.name} is failing: ${problem}`);
   }
 }
@@ -221,7 +221,7 @@ async function readReplies(reach: Channel[], seen: Set<string>, glog: (text: str
     } catch (error) {
       got = { replies: [], ignored: [], problem: (error as Error).message };
     }
-    const mark = join(E9G_HOME, `.stamp-replies-${channel.name}`);
+    const mark = join(A6G_HOME, `.stamp-replies-${channel.name}`);
     if (got.problem && minutesSince(mark) >= 60) {
       writeFileSync(mark, "");
       glog(`couldn't read the ${channel.name} replies: ${got.problem}`);
@@ -285,7 +285,7 @@ export const BUSY = ["running", "starting", "preparing", "queued"];
 // Whether T3 Code answers, restarting it when it hasn't for two checks a minute or more apart: one slow answer
 // isn't a crash, and a restart interrupts every member of every team.
 async function t3Answers(glog: (text: string) => void, reach: Channel[]): Promise<boolean> {
-  const unanswered = join(E9G_HOME, ".stamp-t3-unanswered");
+  const unanswered = join(A6G_HOME, ".stamp-t3-unanswered");
   if (await t3.serverUp()) {
     rmSync(unanswered, { force: true });
     return true;
@@ -306,12 +306,12 @@ async function t3Answers(glog: (text: string) => void, reach: Channel[]): Promis
       return true;
     }
   }
-  const mark = join(E9G_HOME, ".stamp-t3-down");
+  const mark = join(A6G_HOME, ".stamp-t3-down");
   if (minutesSince(mark) >= 60) {
     writeFileSync(mark, "");
     const text = `T3 Code won't start, so every team is stopped. See ${GLOBAL_LOG}.`;
-    notify("E9G Factory", text);
-    for (const said of await alertChannels(reach, E9G_HOME, "t3-down", "[E9G Factory] T3 Code won't start", text)) glog(said);
+    notify("Anything Factory", text);
+    for (const said of await alertChannels(reach, A6G_HOME, "t3-down", "[Anything Factory] T3 Code won't start", text)) glog(said);
   }
   return false;
 }
@@ -319,7 +319,7 @@ async function t3Answers(glog: (text: string) => void, reach: Channel[]): Promis
 // Watches every team, or only one. `before` runs for that team inside its lock, ahead of the watch; a sentence it
 // returns stops it there. Resolves to why the watch didn't happen, or null.
 export async function watchOnce(only?: string, before?: (entry: RegistryEntry) => string | null): Promise<string | null> {
-  mkdirSync(E9G_HOME, { recursive: true });
+  mkdirSync(A6G_HOME, { recursive: true });
   const glog = (text: string) => appendFileSync(GLOBAL_LOG, `${stamp()} ${text}\n`);
   // Nothing about the channels stops the watchdog's own work: a bad settings file means no channels this run.
   let reach: Channel[] = [];
@@ -328,9 +328,9 @@ export async function watchOnce(only?: string, before?: (entry: RegistryEntry) =
   } catch (error) {
     glog(`couldn't read how the operator is connected: ${(error as Error).message}`);
   }
-  if (!(await t3Answers(glog, reach))) return "T3 Code isn't answering (see ~/.e9g/watchdog.log)";
+  if (!(await t3Answers(glog, reach))) return "T3 Code isn't answering (see ~/.a6g/watchdog.log)";
   // Ids of replies already passed on or passed over; only those Resend still lists matter, so the newest few hundred.
-  const seenFile = join(E9G_HOME, "replies-seen.json");
+  const seenFile = join(A6G_HOME, "replies-seen.json");
   let seen = new Set<string>();
   try {
     seen = new Set(readJson<string[]>(seenFile, []));
@@ -347,7 +347,7 @@ export async function watchOnce(only?: string, before?: (entry: RegistryEntry) =
   for (const name of names) {
     const entry = readRegistry(name);
     if (!entry) continue;
-    // One watcher per team at a time: launchd's run and e9g start can overlap, and both would start a planner.
+    // One watcher per team at a time: launchd's run and a6g start can overlap, and both would start a planner.
     mkdirSync(entry.run, { recursive: true });
     const release = await acquireRun(entry.run);
     if (!release) {
@@ -376,7 +376,7 @@ export async function watchOnce(only?: string, before?: (entry: RegistryEntry) =
   return skipped;
 }
 
-// The heartbeat (lib/heartbeat.ts), last, so a ping says a whole run got through; a run that watches one team (e9g
+// The heartbeat (lib/heartbeat.ts), last, so a ping says a whole run got through; a run that watches one team (a6g
 // start) doesn't ping. A failing ping is logged at most hourly: the service's own alert is what tells the operator.
 async function beat(glog: (text: string) => void): Promise<void> {
   let settings: ReturnType<typeof heartbeatSettings> = null;
@@ -388,7 +388,7 @@ async function beat(glog: (text: string) => void): Promise<void> {
   }
   if (!settings) return;
   const problem = await ping(settings.url);
-  const mark = join(E9G_HOME, ".stamp-heartbeat-failing");
+  const mark = join(A6G_HOME, ".stamp-heartbeat-failing");
   if (!problem) rmSync(mark, { force: true });
   else if (minutesSince(mark) >= 60) {
     writeFileSync(mark, "");
@@ -410,7 +410,7 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
   // What needs the operator: on this Mac, and through each channel they've connected.
   const alert = async (kind: string, text: string): Promise<void> => {
     notify(title, text);
-    for (const said of await alertChannels(reach, run, kind, `[${title}] ${text}`, `${text}\n\ne9g status ${entry.name} shows the team.`, entry.name))
+    for (const said of await alertChannels(reach, run, kind, `[${title}] ${text}`, `${text}\n\na6g status ${entry.name} shows the team.`, entry.name))
       log(said);
   };
   mkdirSync(join(run, "heartbeat"), { recursive: true });
@@ -541,7 +541,7 @@ async function watchTeam(entry: RegistryEntry, reach: Channel[], replies: Reply[
   let envNote = "";
   for (const target of entry.health ?? []) {
     if (!(await answers(target)))
-      envNote = ` The team's environment is down (${target.replace(/^any:/, "")} isn't answering): run e9g env up before anything else.`;
+      envNote = ` The team's environment is down (${target.replace(/^any:/, "")} isn't answering): run a6g env up before anything else.`;
   }
   if (envNote && oncePer("env-down-log", 30)) log("the team's environment is down");
 
@@ -644,7 +644,7 @@ function trimLog(run: string): void {
 
 // The operator's controls the run folder hasn't applied yet (lib/holds.ts), passed on to the planner: a resume or a
 // graceful pause wakes it; a pause "now" only reaches one in the middle of a turn. A team whose tickets live on a
-// GitHub board has no controls (e9g pause still pauses it). Resolves to whether any was applied.
+// GitHub board has no controls (a6g pause still pauses it). Resolves to whether any was applied.
 export async function applyTeamControls(entry: RegistryEntry, log: (text: string) => void, problem: (text: string) => void): Promise<boolean> {
   if (!entry.tasks || entry.worker) return false;
   let controls: Control[];
@@ -773,7 +773,7 @@ async function enforceBudget(
   }
 }
 
-// The web app's view of a Mongo team, now (e9g pause, resume and budget call it after applying a control).
+// The web app's view of a Mongo team, now (a6g pause, resume and budget call it after applying a control).
 export async function reportTeamState(entry: RegistryEntry): Promise<void> {
   if (entry.tasks?.store === "mongo" && !entry.worker) await reportState(entry, entry.run, () => {});
 }
@@ -783,7 +783,7 @@ async function reportState(entry: RegistryEntry, run: string, log: (text: string
   const flag = (name: string): boolean => existsSync(join(run, name));
   const file = join(run, "planner-thread");
   const planner = existsSync(file) ? readFileSync(file, "utf8").trim() : "";
-  const prefix = `e9g-${entry.name}-`;
+  const prefix = `a6g-${entry.name}-`;
   const pending = readHold(run);
   const hold = pending && !pending.settledAt && pending.scope !== "now";
   const members: Record<string, number> = {};
@@ -814,7 +814,7 @@ async function reportState(entry: RegistryEntry, run: string, log: (text: string
 // and counts those still busy; and it starts at most one member per slot each half hour, so members that end without
 // claiming anything aren't started again every five minutes.
 export const WORKER_PROMPT =
-  "Claim a task from the team's task graph and build it: run e9g task claim first, then work as your role's instructions say, and hand it in with e9g task submit.";
+  "Claim a task from the team's task graph and build it: run a6g task claim first, then work as your role's instructions say, and hand it in with a6g task submit.";
 const WORKER_WINDOW_MIN = 30;
 type WorkerThreads = Record<string, { id: string; at: string }[]>;
 async function fillWorkerSlots(entry: RegistryEntry, log: (text: string) => void): Promise<void> {
@@ -843,7 +843,7 @@ async function fillWorkerSlots(entry: RegistryEntry, log: (text: string) => void
     const kept = [...new Map([...running, ...recent].map((thread) => [thread.id, thread])).values()];
     for (let i = 0; i < n; i++) {
       const { id, error } = t3.threadStart(entry.project, WORKER_PROMPT, {
-        instance: `e9g-${entry.name}-${role}`,
+        instance: `a6g-${entry.name}-${role}`,
         model: entry.model,
         title: `${entry.title} · ${role} (${machineName()})`,
         worktree: entry.branch ?? "HEAD",
@@ -881,7 +881,7 @@ export function pruneWorktrees(entry: RegistryEntry): void {
   if (!entry.worktreesDir || existsSync(join(run, "paused"))) return;
   // The launchd job doesn't reach into a checkout: in ~/Documents that would ask macOS for access to the folder on
   // node's behalf. The merge queue and the operator's own commands prune instead.
-  if (process.env.E9G_LAUNCHD) return;
+  if (process.env.A6G_LAUNCHD) return;
   // Nor does any other process that can't read the checkout; it leaves the turn to one that can.
   if (spawnSync("git", ["-C", entry.home, "rev-parse", "--git-dir"], { stdio: "ignore" }).status !== 0) return;
   if (!oncePer("prune", 60)) return;
@@ -901,7 +901,7 @@ export function pruneWorktrees(entry: RegistryEntry): void {
   }
   if (freed) log(`removed ${freed} finished worktrees`);
   if (kept.length && oncePer("prune-kept", 1440)) log(`kept ${kept.length} finished worktrees that may hold work: ${kept.join("; ")}`);
-  // For e9g status and e9g doctor: nothing deletes these, so the operator has to see them.
+  // For a6g status and a6g doctor: nothing deletes these, so the operator has to see them.
   writeFileAtomic(join(run, "worktrees-kept.json"), `${JSON.stringify({ at: new Date().toISOString(), kept }, null, 2)}\n`);
 }
 
@@ -927,7 +927,7 @@ function workIn(path: string): string | null {
   return null;
 }
 
-// The plist runs the installed current version from ~/.e9g, which launchd can read.
+// The plist runs the installed current version from ~/.a6g, which launchd can read.
 export function ensureWatchdog(): void {
   if (!existsSync(PLIST)) install();
 }
@@ -947,8 +947,8 @@ function stableNode(): string {
 
 function install(): void {
   const node = stableNode();
-  const entry = entryOf(join(E9G_HOME, "current"));
-  if (!existsSync(entry)) die(`no installed version at ${dirname(dirname(entry))}; run e9g self-install first`);
+  const entry = entryOf(join(A6G_HOME, "current"));
+  if (!existsSync(entry)) die(`no installed version at ${dirname(dirname(entry))}; run a6g self-install first`);
   const path = [
     dirname(node),
     dirname(which("t3") ?? join(homedir(), ".local/bin/t3")),
@@ -971,13 +971,13 @@ function install(): void {
   <key>Label</key><string>${LABEL}</string>
   <key>ProgramArguments</key>
   <array><string>${node}</string><string>${entry}</string><string>watchdog</string><string>run</string></array>
-  <key>WorkingDirectory</key><string>${E9G_HOME}</string>
+  <key>WorkingDirectory</key><string>${A6G_HOME}</string>
   <key>EnvironmentVariables</key>
-  <dict><key>PATH</key><string>${[...new Set(path)].join(":")}</string><key>E9G_HOME</key><string>${E9G_HOME}</string><key>NODE_COMPILE_CACHE</key><string>${join(E9G_HOME, "current", ".cache")}</string><key>E9G_NODE_CACHE</key><string>1</string><key>E9G_LAUNCHD</key><string>1</string></dict>
+  <dict><key>PATH</key><string>${[...new Set(path)].join(":")}</string><key>A6G_HOME</key><string>${A6G_HOME}</string><key>NODE_COMPILE_CACHE</key><string>${join(A6G_HOME, "current", ".cache")}</string><key>A6G_NODE_CACHE</key><string>1</string><key>A6G_LAUNCHD</key><string>1</string></dict>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>
-  <key>StandardOutPath</key><string>${join(E9G_HOME, "watchdog.launchd.log")}</string>
-  <key>StandardErrorPath</key><string>${join(E9G_HOME, "watchdog.launchd.log")}</string>
+  <key>StandardOutPath</key><string>${join(A6G_HOME, "watchdog.launchd.log")}</string>
+  <key>StandardErrorPath</key><string>${join(A6G_HOME, "watchdog.launchd.log")}</string>
 </dict>
 </plist>
 `
@@ -991,7 +991,7 @@ function install(): void {
     loaded = spawnSync("launchctl", ["bootstrap", domain, PLIST], { encoding: "utf8" });
   }
   if (loaded.status !== 0) die(`launchctl couldn't load ${PLIST}: ${loaded.stderr.trim()}`);
-  console.info(`e9g: watchdog installed (${LABEL}, every minute for controls and every 5 for the rest, runs ${entry})`);
+  console.info(`a6g: watchdog installed (${LABEL}, every minute for controls and every 5 for the rest, runs ${entry})`);
 }
 
 export const watchdogLoaded = (): boolean => spawnSync("launchctl", ["print", `gui/${process.getuid?.()}/${LABEL}`], { stdio: "ignore" }).status === 0;
@@ -1006,12 +1006,12 @@ export async function watchdog(argv: string[]): Promise<number> {
       operatorOnly("watchdog remove");
       spawnSync("launchctl", ["bootout", `gui/${process.getuid?.()}/${LABEL}`], { stdio: "ignore" });
       rmSync(PLIST, { force: true });
-      console.info("e9g: watchdog removed");
+      console.info("a6g: watchdog removed");
       return 0;
     case "run":
       // launchd runs this every minute: the full run every five, and only the operator's controls in between. Run from a
       // terminal, it's always the full run.
-      if (!argv[1] && process.env["E9G_LAUNCHD"] === "1" && minutesSince(FULL_RUN) < FULL_EVERY_MIN) {
+      if (!argv[1] && process.env["A6G_LAUNCHD"] === "1" && minutesSince(FULL_RUN) < FULL_EVERY_MIN) {
         await applyControlsOnce();
         return 0;
       }
@@ -1019,6 +1019,6 @@ export async function watchdog(argv: string[]): Promise<number> {
       await watchOnce(argv[1]);
       return 0;
     default:
-      die("usage: e9g watchdog install | remove | run [<team>]");
+      die("usage: a6g watchdog install | remove | run [<team>]");
   }
 }

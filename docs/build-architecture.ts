@@ -1,4 +1,4 @@
-// E9G Factory's architecture as a BetterDiagram (docs/architecture.json), validated with the BetterDiagrams
+// Anything Factory's architecture as a BetterDiagram (docs/architecture.json), validated with the BetterDiagrams
 // contract. Open it with `npx @mosphere/better-diagrams docs/architecture.json`.
 //
 //   BETTER_DIAGRAMS=<better-diagrams package dist folder> node docs/build-architecture.ts [<svg out>]
@@ -31,7 +31,7 @@ const e = (source: string, target: string, label: string, extra: Record<string, 
 const c = (i: number): number => 24 + i * 200;
 const doc = {
   version: 1,
-  meta: { title: "E9G Factory: a software engineering team in any repository, on T3 Code", routing: "orthogonal", versionTag: "0.2" },
+  meta: { title: "Anything Factory: a software engineering team in any repository, on T3 Code", routing: "orthogonal", versionTag: "0.2" },
   zones: [{ id: "mac", label: "Your Mac", shape: "rounded", x: 0, y: 0, w: 1440, h: 1300, provider: "onprem", providers: ["onprem"], outline: "dashed" }],
   nodes: [
     { id: "t3", label: "T3 Code server · 127.0.0.1:3773", kind: "group", icon: "server", x: 40, y: 40, w: 1040, h: 330, zoneId: "mac" },
@@ -44,18 +44,18 @@ const doc = {
     { id: "checkout", label: "The team's checkout", kind: "group", icon: "branch", x: 40, y: 420, w: 1040, h: 330, zoneId: "mac" },
     n("checker", "Finish line", "service", "activity", c(0), 56, { parentId: "checkout", description: "a command, exit 0" }),
     n("env", "Team's app", "service", "window", c(1), 56, { parentId: "checkout", description: "own ports, data" }),
-    n("queue", "Merge queue", "service", "gear", c(2), 56, { parentId: "checkout", description: "e9g merge --queue" }),
-    n("branch", "Integration", "database", "branch", c(3), 56, { parentId: "checkout", description: "e9g/next, …" }),
-    n("sources", ".e9g/", "io", "doc", c(4), 56, { parentId: "checkout", description: "team.json, brief" }),
+    n("queue", "Merge queue", "service", "gear", c(2), 56, { parentId: "checkout", description: "a6g merge --queue" }),
+    n("branch", "Integration", "database", "branch", c(3), 56, { parentId: "checkout", description: "a6g/next, …" }),
+    n("sources", ".a6g/", "io", "doc", c(4), 56, { parentId: "checkout", description: "team.json, brief" }),
     n("state", "Run state", "database", "folder", c(0), 216, { parentId: "checkout", description: "verdicts, results" }),
     n("board", "Board", "io", "doc", c(1), 216, { parentId: "checkout", description: "issues or files" }),
     n("locks", "Locks", "service", "lock", c(2), 216, { parentId: "checkout", description: "gate, merge, app" }),
 
-    { id: "factory", label: "E9G Factory · ~/.e9g", kind: "group", icon: "layers", x: 40, y: 800, w: 1040, h: 220, zoneId: "mac" },
+    { id: "factory", label: "Anything Factory · ~/.a6g", kind: "group", icon: "layers", x: 40, y: 800, w: 1040, h: 220, zoneId: "mac" },
     n("plugin", "Plugin", "io", "folder", c(0), 56, { parentId: "factory", description: "roles and hooks" }),
     n("guard", "Guard", "service", "shield", c(1), 56, { parentId: "factory", description: "lanes, policies" }),
     n("prompts", "Prompts", "io", "doc", c(2), 56, { parentId: "factory", description: "compiled per role" }),
-    n("cli", "e9g CLI", "service", "gear", c(3), 56, { parentId: "factory", description: "init, check, register" }),
+    n("cli", "a6g CLI", "service", "gear", c(3), 56, { parentId: "factory", description: "init, check, register" }),
     n("constitution", "Constitution", "io", "doc", c(4), 56, { parentId: "factory", description: "articles for agents" }),
 
     n("watchdog", "Watchdog", "service", "clock", 1180, 180, { zoneId: "mac", description: "launchd, 5 min" }),

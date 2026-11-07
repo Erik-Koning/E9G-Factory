@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// PreToolUse guard for every agent on an E9G team. The rules are in lib/guard.ts; this entry reads the call and
-// fails closed around them. Inert outside a team (and outside setup, E9G_SETUP=1). Otherwise anything that goes
+// PreToolUse guard for every agent on an Anything Factory team. The rules are in lib/guard.ts; this entry reads the call and
+// fails closed around them. Inert outside a team (and outside setup, A6G_SETUP=1). Otherwise anything that goes
 // wrong (input it can't read, a module that doesn't load, rules it can't read, a bug) refuses the call, except reading
 // a file that holds no secrets: Claude Code treats any exit but 2 as "go ahead" (hooks.json's onFailure: block also
 // refuses when node itself can't run this).
@@ -9,10 +9,10 @@ import { readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { HookInput } from "../../lib/session.ts";
 
-if (!process.env.E9G_TEAM && process.env.E9G_SETUP !== "1") process.exit(0);
+if (!process.env.A6G_TEAM && process.env.A6G_SETUP !== "1") process.exit(0);
 
 function refuse(role: string, reason: string): never {
-  process.stderr.write(`Refused by the E9G guard (${role || "no role"}): ${reason}`);
+  process.stderr.write(`Refused by the Anything Factory guard (${role || "no role"}): ${reason}`);
   process.exit(2);
 }
 
@@ -25,7 +25,7 @@ try {
     throw new Error("not a tool call");
   input = parsed as HookInput;
 } catch {
-  refuse(process.env.E9G_ROLE ?? "", "the guard couldn't read this tool call, so it doesn't run.");
+  refuse(process.env.A6G_ROLE ?? "", "the guard couldn't read this tool call, so it doesn't run.");
 }
 
 // A path with its symlinks and .. resolved, as far as it exists.
@@ -70,6 +70,6 @@ try {
     .split("\n")
     .slice(0, 4)
     .join(" ");
-  refuse(process.env.E9G_ROLE ?? "", `the guard itself failed (${why}), so nothing but reading runs until the operator fixes it.`);
+  refuse(process.env.A6G_ROLE ?? "", `the guard itself failed (${why}), so nothing but reading runs until the operator fixes it.`);
 }
 process.exit(0);

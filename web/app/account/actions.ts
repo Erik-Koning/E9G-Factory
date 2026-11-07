@@ -60,7 +60,7 @@ export interface AuthenticatorState {
 const BASE32 = /^[A-Z2-7]{16,128}=*$/;
 async function qrFor(key: string, email: string): Promise<string | null> {
   if (!BASE32.test(key)) return null;
-  const uri = `otpauth://totp/${encodeURIComponent(`E9G:${email}`)}?secret=${key}&issuer=E9G`;
+  const uri = `otpauth://totp/${encodeURIComponent(`Anything Factory:${email}`)}?secret=${key}&issuer=Anything%20Factory`;
   return QRCode.toString(uri, { type: "svg", margin: 1, errorCorrectionLevel: "M" });
 }
 const codesOf = (value: unknown): string[] =>

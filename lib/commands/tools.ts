@@ -1,5 +1,5 @@
 // The commands team members run: verdict, log, lock, gate, env, finish, progress and drain. Each works for the
-// team the caller belongs to (its instance sets E9G_HOME_DIR) or the checkout a person runs it in.
+// team the caller belongs to (its instance sets A6G_HOME_DIR) or the checkout a person runs it in.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,7 +15,7 @@ import { git, list, localTime, minutes, parseArgs, text as optionText, writeJson
 
 // On a team, some commands are the planner's alone (the guard says so too; this holds when it's bypassed).
 const plannerOnly = (what: string): boolean => {
-  if (!inTeam() || process.env.E9G_ROLE === "planner") return false;
+  if (!inTeam() || process.env.A6G_ROLE === "planner") return false;
   console.error(`${what}: only the planner does this`);
   return true;
 };
@@ -30,11 +30,11 @@ const commitOf = (home: string, ref: string): string | null => {
 };
 
 const VERDICT_USAGE =
-  'usage: e9g verdict review <branch> approve --sha <the commit you reviewed> --risk low|medium|high [--shots <dir>] [--note "…"] | review <branch> changes --sha <commit> [--note "…"] | ux <subject> pass|issues --ref <the commit you audited> [--note "…"] | show review|ux <name>';
+  'usage: a6g verdict review <branch> approve --sha <the commit you reviewed> --risk low|medium|high [--shots <dir>] [--note "…"] | review <branch> changes --sha <commit> [--note "…"] | ux <subject> pass|issues --ref <the commit you audited> [--note "…"] | show review|ux <name>';
 
-// e9g verdict review <branch> approve|changes --sha <commit> [--note "…"]
-// e9g verdict ux <subject> pass|issues --ref <commit> [--note "…"]
-// e9g verdict show review|ux <name>
+// a6g verdict review <branch> approve|changes --sha <commit> [--note "…"]
+// a6g verdict ux <subject> pass|issues --ref <commit> [--note "…"]
+// a6g verdict show review|ux <name>
 // Pinned to the exact commit judged, never to whatever a name points at when it's recorded: a review names the
 // commit the reviewer read, refused when the branch has moved past it (the merge queue accepts only an approval of
 // the tip it merges), and a UX verdict names the commit the specialist audited and counts only for that source.
@@ -59,7 +59,7 @@ export async function verdict(argv: string[]): Promise<number> {
   }
   // Belt and braces with the guard: on a team, only the role that owns a verdict records it.
   const owner = spec.owner;
-  if (inTeam() && process.env.E9G_ROLE !== owner) {
+  if (inTeam() && process.env.A6G_ROLE !== owner) {
     console.error(`verdict: only the ${owner} records a ${kind} verdict`);
     return 2;
   }
@@ -108,7 +108,7 @@ export async function verdict(argv: string[]): Promise<number> {
       return 2;
     }
   }
-  // How much could break, as the reviewer judges it: a high-risk change merges only with its tests (e9g merge). Whether
+  // How much could break, as the reviewer judges it: a high-risk change merges only with its tests (a6g merge). Whether
   // to look at a change a person sees is the reviewer's call (the review skill); a UI change approved without
   // screenshots says so in the task's notes, for the planner to see.
   const risk = optionText(options["risk"]);
@@ -132,7 +132,7 @@ export async function verdict(argv: string[]): Promise<number> {
     ...(shots ? { shots } : {}),
     ...(risk ? { risk } : {}),
     note: optionText(options["note"]) ?? "",
-    by: process.env.E9G_ROLE ?? "operator",
+    by: process.env.A6G_ROLE ?? "operator",
     at: new Date().toISOString(),
   };
   writeJson(file(kind, name), record);
@@ -184,14 +184,14 @@ export async function verdict(argv: string[]): Promise<number> {
   return 0;
 }
 
-// e9g log [--label "merge 27"] "What changed, what's running, what's next."
-// Prepends one entry to the planner's log (.e9g/run/state/log.md, newest first) with the real local time.
+// a6g log [--label "merge 27"] "What changed, what's running, what's next."
+// Prepends one entry to the planner's log (.a6g/run/state/log.md, newest first) with the real local time.
 export function log(argv: string[]): number {
   if (plannerOnly("log")) return 2;
   const { positional, options } = parseArgs(argv);
   const text = positional.join(" ").trim();
   if (!text) {
-    console.error('usage: e9g log [--label "merge 27"] "<entry>"');
+    console.error('usage: a6g log [--label "merge 27"] "<entry>"');
     return 2;
   }
   const { home, team } = teamSession();
@@ -206,10 +206,10 @@ export function log(argv: string[]): number {
   return 0;
 }
 
-// e9g lock <name> [--slots N] [--wait-min M] -- <command> [args…]
+// a6g lock <name> [--slots N] [--wait-min M] -- <command> [args…]
 // The wait takes minutes or a duration (30, 30m, 2h). Exits 75 when no slot came free in time.
 export async function lock(argv: string[]): Promise<number> {
-  const usage = "usage: e9g lock <name> [--slots N] [--wait-min M] -- <command> [args…]";
+  const usage = "usage: a6g lock <name> [--slots N] [--wait-min M] -- <command> [args…]";
   const { positional, options } = parseArgs(argv);
   const command = list(options["--"]);
   const name = positional[0] ?? "";
@@ -241,7 +241,7 @@ export async function lock(argv: string[]): Promise<number> {
   return withLock(home, name, command, { slots, waitMin });
 }
 
-// e9g gate [--quick]: the team's checks in the checkout you're in (a worktree, or the team's own checkout).
+// a6g gate [--quick]: the team's checks in the checkout you're in (a worktree, or the team's own checkout).
 export async function gate(argv: string[]): Promise<number> {
   const { options } = parseArgs(argv, { booleans: ["quick"] });
   const { home, team } = teamSession();
@@ -254,7 +254,7 @@ export async function gate(argv: string[]): Promise<number> {
   return withLock(home, "gate", ["sh", "-c", command], { slots: team.gate.concurrency, waitMin: 60, cwd });
 }
 
-// e9g env up|reset|restart|down|status: the team's environment script, run from the team's checkout.
+// a6g env up|reset|restart|down|status: the team's environment script, run from the team's checkout.
 export function env(argv: string[]): number {
   const sub = argv[0] ?? "status";
   if (sub !== "status" && plannerOnly(`env ${sub}`)) return 2;
@@ -266,7 +266,7 @@ export function env(argv: string[]): number {
   return runIn(home, team.environment.script, [sub, ...argv.slice(1)]);
 }
 
-// e9g finish / e9g progress: the team's finish line and its status, run from the team's checkout.
+// a6g finish / a6g progress: the team's finish line and its status, run from the team's checkout.
 export function finish(): number {
   const { home, team } = teamSession();
   if (!team.finish) {
@@ -284,7 +284,7 @@ export function progress(): number {
   return runIn(home, team.progress);
 }
 
-// e9g drain <role…> | off: no new members of those roles start (the guard refuses them) until drained off.
+// a6g drain <role…> | off: no new members of those roles start (the guard refuses them) until drained off.
 export function drain(argv: string[]): number {
   if (argv.length && argv[0] !== "status" && plannerOnly("drain")) return 2;
   const { home } = teamSession();
@@ -300,6 +300,6 @@ export function drain(argv: string[]): number {
   }
   mkdirSync(stateDir(home), { recursive: true });
   writeFileSync(file, `${argv.join(" ")}\n`);
-  console.info(`drain: no new ${argv.join(", ")} until e9g drain off`);
+  console.info(`drain: no new ${argv.join(", ")} until a6g drain off`);
   return 0;
 }

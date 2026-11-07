@@ -31,7 +31,7 @@ export default async function ConfirmSignInPage({ searchParams }: { searchParams
     <div className="narrow stack">
       <h1>Confirm it&apos;s you</h1>
       <p>
-        This is the first time you&apos;ve used E9G from{" "}
+        This is the first time you&apos;ve used Anything Factory from{" "}
         {viewer.ip && viewer.ip !== UNKNOWN_IP ? (
           <>
             the IP address <b>{viewer.ip}</b>
@@ -42,7 +42,7 @@ export default async function ConfirmSignInPage({ searchParams }: { searchParams
         . We&apos;ve emailed <b>{viewer.email}</b> a link to confirm it was you.
       </p>
       <ol>
-        <li>Open the email &ldquo;Confirm it&apos;s you signing in to E9G&rdquo;, on any device.</li>
+        <li>Open the email &ldquo;Confirm it&apos;s you signing in to Anything Factory&rdquo;, on any device.</li>
         <li>Choose &ldquo;Yes, it was me&rdquo;.</li>
         <li>
           Come back and <Link href="/">continue</Link>.

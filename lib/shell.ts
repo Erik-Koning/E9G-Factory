@@ -737,7 +737,7 @@ export function quotedIn(code: string): string[] {
 }
 
 // A word as a path from `cwd`: ~ and the variables set in this environment expanded, and a glob's wildcards
-// dropped (.e9g/* is judged as .e9g/, .env* as .env). Null when it can't be known: a $( … ), an unset variable.
+// dropped (.a6g/* is judged as .a6g/, .env* as .env). Null when it can't be known: a $( … ), an unset variable.
 export function expandPath(word: string, cwd: string): string | null {
   const path = word
     .replace(/^~(?=\/|$)/, homedir())
@@ -790,7 +790,7 @@ function peel(words: string[]): string[] | null {
     case "unbuffer":
     case "source":
     case ".":
-      // source and . run a script with its arguments: . .e9g/adapters/env.sh reset runs env.sh reset.
+      // source and . run a script with its arguments: . .a6g/adapters/env.sh reset runs env.sh reset.
       return rest;
     case "time":
       return options(rest, ["-f", "-o", "--format", "--output"]);
@@ -852,8 +852,8 @@ function peel(words: string[]): string[] | null {
       if (verb === "run") return ["bun", "run", ...options(more, ["--filter", "-F", "--cwd"])];
       return ["bun", ...after];
     }
-    case "e9g": {
-      // e9g lock <name> [--slots N] [--wait-min M] -- <command>
+    case "a6g": {
+      // a6g lock <name> [--slots N] [--wait-min M] -- <command>
       const dash = rest.indexOf("--");
       return rest[0] === "lock" && dash >= 0 ? rest.slice(dash + 1) : null;
     }
@@ -878,31 +878,31 @@ function peel(words: string[]): string[] | null {
   }
 }
 
-// The factory's CLI called by its path (~/.e9g/bin/e9g, node …/bin/e9g.ts) reads as e9g, past the runtime's own
-// options (node --no-warnings --import x …/e9g.ts, deno run -A …/e9g.ts, bun run …/e9g.ts).
+// The factory's CLI called by its path (~/.a6g/bin/a6g, node …/bin/a6g.ts) reads as a6g, past the runtime's own
+// options (node --no-warnings --import x …/a6g.ts, deno run -A …/a6g.ts, bun run …/a6g.ts).
 const RUNTIMES = /^(node|nodejs|bun|tsx|ts-node|deno)$/;
-function e9gCli(words: string[]): string[] {
-  const e9g = (word: string | undefined) => /^e9g(\.ts|\.mjs|\.js)?$/.test(basename(word ?? ""));
+function a6gCli(words: string[]): string[] {
+  const a6g = (word: string | undefined) => /^a6g(\.ts|\.mjs|\.js)?$/.test(basename(word ?? ""));
   if (RUNTIMES.test(basename(words[0] ?? "")))
     for (let i = 1; i < words.length; i++) {
       const word = words[i] as string;
-      if (e9g(word)) return ["e9g", ...words.slice(i + 1)];
+      if (a6g(word)) return ["a6g", ...words.slice(i + 1)];
       const previous = words[i - 1] as string;
       // An option, the value of one before it (--import tsx), or deno run / bun run.
       if (word.startsWith("-") || (i > 1 && /^-/.test(previous) && !previous.includes("=")) || (i === 1 && word === "run")) continue;
       break;
     }
-  if (e9g(words[0]) && words[0] !== "e9g") return ["e9g", ...words.slice(1)];
+  if (a6g(words[0]) && words[0] !== "a6g") return ["a6g", ...words.slice(1)];
   return words;
 }
 
 // The command as written, then with each wrapper taken off, one at a time: timeout 600 npx vercel deploy is also
-// npx vercel deploy and vercel deploy, and e9g lock app -- pnpm --filter web deploy is also pnpm deploy. The last
+// npx vercel deploy and vercel deploy, and a6g lock app -- pnpm --filter web deploy is also pnpm deploy. The last
 // variant is the command that actually runs.
 export function unwrap(words: string[]): string[][] {
   const variants: string[][] = [];
   for (let current: string[] | null = words; current?.length && variants.length < 16; ) {
-    const cli = e9gCli(current);
+    const cli = a6gCli(current);
     if (variants.some((seen) => seen.length === cli.length && seen.every((word, i) => word === cli[i]))) break;
     variants.push(cli);
     current = peel(cli);
@@ -936,18 +936,18 @@ export function gitGlobals(words: string[]): { args: string[]; dirs: string[]; t
 // Each command read as the plain command the rules name: git without its global options.
 export const normalize = (words: string[]): string[] => (basename(words[0] ?? "") === "git" ? ["git", ...gitGlobals(words).args] : words);
 
-// Free text: messages, titles and bodies (git commit -m, gh issue create --body), the e9g log's entry and notes, and
+// Free text: messages, titles and bodies (git commit -m, gh issue create --body), the a6g log's entry and notes, and
 // what echo and printf print. A rule never matches inside it, unless it's one that reads free text (a live key); a
 // command substitution in it was read on its own.
 const GIT_TEXT = /^(commit|merge|tag|stash|notes|commit-tree)$/;
 const GH_TEXT = ["-b", "--body", "-t", "--title", "--subject", "--notes", "--description"];
-const E9G_TEXT = ["--note", "--label"];
+const A6G_TEXT = ["--note", "--label"];
 export function withoutText(words: string[]): string[] {
   const [name = "", sub = ""] = words;
   if (name === "echo" || name === "printf") return [name];
-  if (name === "e9g" && sub === "log") return ["e9g", "log"];
+  if (name === "a6g" && sub === "log") return ["a6g", "log"];
   const git = name === "git" && GIT_TEXT.test(sub);
-  const valued = git ? ["-m", "--message"] : name === "gh" ? GH_TEXT : name === "e9g" ? E9G_TEXT : null;
+  const valued = git ? ["-m", "--message"] : name === "gh" ? GH_TEXT : name === "a6g" ? A6G_TEXT : null;
   if (!valued) return words;
   const kept: string[] = [];
   for (let i = 0; i < words.length; i++) {

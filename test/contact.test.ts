@@ -14,15 +14,15 @@ const hoursAgo = (n: number) => new Date(Date.now() - n * 3_600_000);
 
 describe("how often the planner writes (team.json contact)", () => {
   test("a message's kind is in its subject, after the labels", () => {
-    assert.equal(messageKind("[E9G-Planner] [My app] Done"), "done");
+    assert.equal(messageKind("[A6G-Planner] [My app] Done"), "done");
     assert.equal(messageKind("Done: all green"), "done");
-    assert.equal(messageKind("[E9G-Planner] [My app] Urgent: the app can't sign in"), "urgent");
-    assert.equal(messageKind("[E9G-Planner] [My app] 3 questions"), "normal");
-    assert.equal(messageKind("[E9G-Planner] [My app] Is it done yet?"), "normal", "only a subject that starts with it");
+    assert.equal(messageKind("[A6G-Planner] [My app] Urgent: the app can't sign in"), "urgent");
+    assert.equal(messageKind("[A6G-Planner] [My app] 3 questions"), "normal");
+    assert.equal(messageKind("[A6G-Planner] [My app] Is it done yet?"), "normal", "only a subject that starts with it");
   });
 
   test("digest: one ordinary message per window, one urgent per window, Done always; priority: whenever", () => {
-    const run = tmp("e9g-run-");
+    const run = tmp("a6g-run-");
     const now = Date.now();
     for (const kind of ["normal", "urgent", "done"] as const) assert.equal(nextAllowed(DIGEST, run, kind, now), now, `${kind}: nothing sent yet`);
     const anHourAgo = hoursAgo(1);
@@ -39,7 +39,7 @@ describe("how often the planner writes (team.json contact)", () => {
   });
 
   test("the planner's context and refusals say when the next message can go", () => {
-    const run = tmp("e9g-run-");
+    const run = tmp("a6g-run-");
     assert.match(contactStatus(DIGEST, run) ?? "", /the next can go now/);
     assert.equal(contactStatus(PRIORITY, run), null);
     recordSent(run, "normal", hoursAgo(1));
@@ -76,11 +76,11 @@ describe("how often the planner writes (team.json contact)", () => {
 
 describe("the planner's own email, held to the window", () => {
   const send = "mcp__claude_ai_Gmail__send_message";
-  const subject = (text: string) => ({ to: ["op@example.com"], subject: `[E9G-Planner] [Fixture team] ${text}` });
+  const subject = (text: string) => ({ to: ["op@example.com"], subject: `[A6G-Planner] [Fixture team] ${text}` });
 
   test("the guard refuses what the window doesn't allow yet", () => {
     const home = makeRepo();
-    const run = tmp("e9g-run-");
+    const run = tmp("a6g-run-");
     const outcome = (text: string, at = home) => guard(at, "planner", send, subject(text), { run }).outcome;
     assert.equal(outcome("3 questions"), "allow", "nothing sent yet");
     recordSent(run, "normal", hoursAgo(1));
@@ -96,13 +96,13 @@ describe("the planner's own email, held to the window", () => {
 
   const hook = (run: string, input: Record<string, unknown>, role = "planner") =>
     spawnSync(process.execPath, [join(ROOT, "plugin", "hooks", "sent.ts")], {
-      input: JSON.stringify({ session_id: "test", agent_type: `e9g:${role}`, ...input }),
-      env: { ...process.env, NODE_COMPILE_CACHE: join(ROOT, ".cache"), E9G_NODE_CACHE: "1", E9G_TEAM: "fixture", E9G_RUN: run, E9G_ROLE: role },
+      input: JSON.stringify({ session_id: "test", agent_type: `a6g:${role}`, ...input }),
+      env: { ...process.env, NODE_COMPILE_CACHE: join(ROOT, ".cache"), A6G_NODE_CACHE: "1", A6G_TEAM: "fixture", A6G_RUN: run, A6G_ROLE: role },
       encoding: "utf8",
     });
 
   test("the sent hook records only the planner's sends that went", () => {
-    const run = tmp("e9g-run-");
+    const run = tmp("a6g-run-");
     hook(run, { tool_name: send, tool_input: subject("3 questions"), tool_response: { isError: true, content: "quota" } });
     hook(run, { tool_name: send, tool_input: subject("3 questions"), tool_response: "Error: unauthorized" });
     hook(run, { tool_name: send, tool_input: subject("3 questions"), tool_response: { id: "m1" } }, "builder");

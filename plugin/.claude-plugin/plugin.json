@@ -1,9 +1,9 @@
 {
-  "name": "e9g",
-  "version": "0.4.0",
-  "description": "E9G Factory's roles and hooks for agents on an E9G team. Loaded by each team's T3 Code instances with --plugin-dir; inert anywhere else.",
+  "name": "a6g",
+  "version": "0.5.0",
+  "description": "Anything Factory's roles and hooks for agents on an Anything Factory team. Loaded by each team's T3 Code instances with --plugin-dir; inert anywhere else.",
   "author": {
-    "name": "E9G Factory"
+    "name": "Anything Factory"
   },
-  "homepage": "https://github.com/Erik-Koning/E9G-Factory"
+  "homepage": "https://github.com/Erik-Koning/Anything-Factory"
 }

@@ -25,7 +25,7 @@ export default async function ConfirmPage({ searchParams }: { searchParams: Sear
   return (
     <div className="narrow stack">
       <h1>Was this you?</h1>
-      <p>Someone signed in to your E9G account from a new IP address.</p>
+      <p>Someone signed in to your Anything Factory account from a new IP address.</p>
       <dl className="facts">
         <dt>Account</dt>
         <dd>{found.email}</dd>

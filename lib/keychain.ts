@@ -1,4 +1,4 @@
-// The operator's keys for the ways the factory reaches them (e9g connect), in the macOS Keychain, where the watchdog,
+// The operator's keys for the ways the factory reaches them (a6g connect), in the macOS Keychain, where the watchdog,
 // a launchd job, reads them without a prompt. The guard refuses agents the commands that read or change them, but
 // it's a seatbelt: any code running as the operator can reach an item the security tool made, so each key should
 // carry no more access than the factory uses.

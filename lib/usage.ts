@@ -1,6 +1,6 @@
 // What a team used and what it cost, day by day: read from the Claude transcripts of its checkout and the worktrees made
-// from it (as e9g metrics reads them), only what each transcript added since the last read. Each request counts once,
-// for its role (the transcript's agent), its model, and its task (from the branch it ran on: e9g/b142-… is #142; the
+// from it (as a6g metrics reads them), only what each transcript added since the last read. Each request counts once,
+// for its role (the transcript's agent), its model, and its task (from the branch it ran on: a6g/b142-… is #142; the
 // planner's, on the integration branch, is no task's), priced at the API-equivalent rate (prices.ts).
 //
 // Each machine keeps its own totals and where it stopped in each transcript in one file of the run folder

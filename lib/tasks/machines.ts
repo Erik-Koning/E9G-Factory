@@ -98,7 +98,7 @@ export function prepareBranch(
     if (!base)
       return {
         ok: false,
-        said: `the earlier round's ${branch} isn't on ${remote}, so this machine can't continue it; release the task (e9g task release <id> --blocked "its branch isn't on the remote") so the machine that has it can`,
+        said: `the earlier round's ${branch} isn't on ${remote}, so this machine can't continue it; release the task (a6g task release <id> --blocked "its branch isn't on the remote") so the machine that has it can`,
       };
   } else {
     base = integration;

@@ -12,7 +12,7 @@ import { teamFor } from "../../team.ts";
 
 export const metadata: Metadata = { title: "Task" };
 
-// One task, as e9g task show prints it: what it is, where it stands, who holds it, and its history.
+// One task, as a6g task show prints it: what it is, where it stands, who holds it, and its history.
 export default async function TaskPage({ params, searchParams }: { params: Promise<{ team: string; id: string }>; searchParams: SearchParams }) {
   const { team: name, id } = await params;
   const { viewer, team } = await teamFor(name);

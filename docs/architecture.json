@@ -1,7 +1,7 @@
 {
   "version": 1,
   "meta": {
-    "title": "E9G Factory: a software engineering team in any repository, on T3 Code",
+    "title": "Anything Factory: a software engineering team in any repository, on T3 Code",
     "routing": "orthogonal",
     "versionTag": "0.2"
   },
@@ -136,7 +136,7 @@
       "w": 176,
       "h": 80,
       "parentId": "checkout",
-      "description": "e9g merge --queue"
+      "description": "a6g merge --queue"
     },
     {
       "id": "branch",
@@ -148,11 +148,11 @@
       "w": 176,
       "h": 80,
       "parentId": "checkout",
-      "description": "e9g/next, …"
+      "description": "a6g/next, …"
     },
     {
       "id": "sources",
-      "label": ".e9g/",
+      "label": ".a6g/",
       "kind": "io",
       "icon": "doc",
       "x": 824,
@@ -200,7 +200,7 @@
     },
     {
       "id": "factory",
-      "label": "E9G Factory · ~/.e9g",
+      "label": "Anything Factory · ~/.a6g",
       "kind": "group",
       "icon": "layers",
       "x": 40,
@@ -247,7 +247,7 @@
     },
     {
       "id": "cli",
-      "label": "e9g CLI",
+      "label": "a6g CLI",
       "kind": "service",
       "icon": "gear",
       "x": 624,

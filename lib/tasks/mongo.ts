@@ -1,5 +1,5 @@
 // The task graph in MongoDB, for a team that runs on several machines (team.json tasks.store "mongo"). Each machine
-// connects with `e9g connect mongo`, which keeps the connection string in the Keychain; agents never see it. One
+// connects with `a6g connect mongo`, which keeps the connection string in the Keychain; agents never see it. One
 // document per task, request, stakeholder, cycle and control, keyed "<team>:<id>", with a counter per collection. The driver
 // (the optional mongodb package) loads only here, and only the few calls below are used, so tests run on a fake.
 import type { Team } from "../config.ts";
@@ -161,14 +161,14 @@ export async function driver(): Promise<{
   try {
     return (await import(name)) as never;
   } catch {
-    throw new Error("the mongodb package isn't installed with this factory version; run npm install in the factory's checkout and e9g self-install again");
+    throw new Error("the mongodb package isn't installed with this factory version; run npm install in the factory's checkout and a6g self-install again");
   }
 }
 
 export async function mongoStore(team: Pick<Team, "name" | "tasks">, uri: string | null): Promise<Store> {
-  if (!uri) throw new Error("this team's tasks are in Mongo, and this machine isn't connected: run e9g connect mongo");
+  if (!uri) throw new Error("this team's tasks are in Mongo, and this machine isn't connected: run a6g connect mongo");
   const { MongoClient } = await driver();
-  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, appName: "e9g" });
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 8000, appName: "a6g" });
   await client.connect();
   return storeOver(client, team);
 }

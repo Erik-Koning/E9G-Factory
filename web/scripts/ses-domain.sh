@@ -6,7 +6,7 @@
 #   - a DMARC policy that asks receivers to quarantine mail that fails both.
 # Safe to run again: it makes what's missing and sets the records to what they should be.
 #
-#   AWS_PROFILE=e9g AWS_REGION=us-east-2 web/scripts/ses-domain.sh a6gfactory.dev
+#   AWS_PROFILE=a6g AWS_REGION=us-east-2 web/scripts/ses-domain.sh a6gfactory.dev
 #
 # SES verifies the domain once its DNS answers (minutes after the registrar points to the zone's name servers). Until
 # the account has SES production access, it sends only to verified addresses.

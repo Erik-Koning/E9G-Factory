@@ -31,8 +31,8 @@ describe("lock", { concurrency: true }, () => {
   test("a slot whose holder died is taken over", async () => {
     const home = tmp();
     const dead = spawnSync(process.execPath, ["-e", "console.log(process.pid)"], { encoding: "utf8" }).stdout.trim();
-    mkdirSync(join(home, ".e9g/run/locks/app/slot-0"), { recursive: true });
-    writeFileSync(join(home, ".e9g/run/locks/app/slot-0/pid"), dead);
+    mkdirSync(join(home, ".a6g/run/locks/app/slot-0"), { recursive: true });
+    writeFileSync(join(home, ".a6g/run/locks/app/slot-0/pid"), dead);
     const started = Date.now();
     const release = await acquire(home, "app", { slots: 1, waitMin: 0.01 });
     assert.ok(release);

@@ -1,7 +1,7 @@
-// e9g check [<checkout>] [--run]: prove a team's setup before anything runs.
+// a6g check [<checkout>] [--run]: prove a team's setup before anything runs.
 // - the rules load (problems and warnings);
 // - the adapters exist, are executable, and (shell scripts) parse;
-// - the checkout is on the integration branch, and .e9g/ is committed there, even where git ignores it: members'
+// - the checkout is on the integration branch, and .a6g/ is committed there, even where git ignores it: members'
 //   worktrees are made from it;
 // - the guard behaves as the rules say: a self-test generated from them (the factory's files, lanes, read-only
 //   roles, protected branches, owned commands, every policy's examples, the team's own never rules, email);
@@ -49,24 +49,24 @@ export function guardCases(team: Team): GuardCase[] {
   const planner = team.roles["planner"] as Lane;
 
   for (const role of roles) {
-    add(role, "Write", { file_path: join(home, ".e9g/team.json") }, "refuse", "the team's rules");
+    add(role, "Write", { file_path: join(home, ".a6g/team.json") }, "refuse", "the team's rules");
     add(role, "Write", { file_path: join(home, ".claude/settings.json") }, "refuse", "Claude Code's project settings");
-    add(role, "Write", { file_path: join(home, ".e9g/run/state/reviews/x.json") }, "refuse", "recorded state");
+    add(role, "Write", { file_path: join(home, ".a6g/run/state/reviews/x.json") }, "refuse", "recorded state");
     add(role, "Read", { file_path: join(home, ".env.local") }, "refuse", "a secret file");
   }
-  if (planner.write.some((rule) => new RegExp(rule).test(".e9g/lessons.md")))
-    add("planner", "Write", { file_path: join(home, ".e9g/lessons.md") }, "allow", "the planner's lessons");
-  if (planner.write.some((rule) => new RegExp(rule).test(".e9g/decisions.md")))
-    add("planner", "Write", { file_path: join(home, ".e9g/decisions.md") }, "allow", "the planner's decisions");
-  for (const role of roles) add(role, "Write", { file_path: join(home, ".e9g/direction.md") }, "refuse", "the operator's direction");
+  if (planner.write.some((rule) => new RegExp(rule).test(".a6g/lessons.md")))
+    add("planner", "Write", { file_path: join(home, ".a6g/lessons.md") }, "allow", "the planner's lessons");
+  if (planner.write.some((rule) => new RegExp(rule).test(".a6g/decisions.md")))
+    add("planner", "Write", { file_path: join(home, ".a6g/decisions.md") }, "allow", "the planner's decisions");
+  for (const role of roles) add(role, "Write", { file_path: join(home, ".a6g/direction.md") }, "refuse", "the operator's direction");
   for (const role of roles.filter((r) => team.roles[r]?.readOnly)) {
     add(role, "Write", { file_path: join(home, "README.md") }, "refuse", "a read-only role writing");
     bash(role, "git commit -am wip", "refuse", "a read-only role committing");
-    add(role, "Write", { file_path: join(home, ".e9g/run/board/f-20260101-0000-check.md") }, "allow", "filing a finding");
+    add(role, "Write", { file_path: join(home, ".a6g/run/board/f-20260101-0000-check.md") }, "allow", "filing a finding");
   }
   const builderLane = team.roles[builder];
-  if (builderLane?.write.includes("*") && !builderLane.deny.some((rule) => new RegExp(rule).test("src/e9g-check.ts")))
-    add(builder, "Write", { file_path: join(home, "src/e9g-check.ts") }, "allow", "a builder writing in its lane");
+  if (builderLane?.write.includes("*") && !builderLane.deny.some((rule) => new RegExp(rule).test("src/a6g-check.ts")))
+    add(builder, "Write", { file_path: join(home, "src/a6g-check.ts") }, "allow", "a builder writing in its lane");
   // The planner's own: anyone else is refused any push, and the planner any other push, before the branch counts.
   const guarded = team.protectedBranches[0];
   if (guarded) {
@@ -78,35 +78,35 @@ export function guardCases(team: Team): GuardCase[] {
   bash(builder, "git push --force origin topic", "refuse", "a force push");
   if (team.board.type === "tasks") {
     // The task graph's commands belong to their roles (the commands check the role too).
-    bash(builder, "e9g task list", "allow", "reading the task graph");
+    bash(builder, "a6g task list", "allow", "reading the task graph");
     if (builder !== "planner") {
-      bash(builder, "e9g task approve 1", "refuse", "approving a proposal, which the approver or the operator does");
-      bash(builder, "e9g task score 1 --pain 3", "refuse", "scoring, which the planner does");
-      bash(builder, "e9g request stakeholders", "refuse", "the stakeholders' names, which are the operator's");
+      bash(builder, "a6g task approve 1", "refuse", "approving a proposal, which the approver or the operator does");
+      bash(builder, "a6g task score 1 --pain 3", "refuse", "scoring, which the planner does");
+      bash(builder, "a6g request stakeholders", "refuse", "the stakeholders' names, which are the operator's");
     }
-    // The planner decides no proposal; it approves the findings other members file, which e9g task approve checks.
-    bash("planner", 'e9g task reject 1 --reason "e9g check"', "refuse", "the planner deciding on a proposal");
+    // The planner decides no proposal; it approves the findings other members file, which a6g task approve checks.
+    bash("planner", 'a6g task reject 1 --reason "a6g check"', "refuse", "the planner deciding on a proposal");
     if (team.approval.findings === "approver")
-      bash("planner", "e9g task approve 1", "refuse", "the planner approving a finding, which the approver does here");
-    bash("planner", "E9G_TEAM= e9g task status 1 done", "refuse", "a member clearing who it is, to pass as the operator");
-    if (team.roles["approver"]) bash("approver", 'e9g task approve 1 --note "e9g check"', "allow", "the approver's verdict");
-    if (team.roles["builder"]) bash("builder", "e9g task claim", "allow", "a builder claiming a task");
+      bash("planner", "a6g task approve 1", "refuse", "the planner approving a finding, which the approver does here");
+    bash("planner", "A6G_TEAM= a6g task status 1 done", "refuse", "a member clearing who it is, to pass as the operator");
+    if (team.roles["approver"]) bash("approver", 'a6g task approve 1 --note "a6g check"', "allow", "the approver's verdict");
+    if (team.roles["builder"]) bash("builder", "a6g task claim", "allow", "a builder claiming a task");
   }
   bash(builder, "cat .env", "refuse", "reading an env file");
-  bash(builder, "e9g register", "refuse", "an operator's command");
+  bash(builder, "a6g register", "refuse", "an operator's command");
   if (team.environment.script && builder !== "planner") {
     bash(builder, `${team.environment.script.split(/\s+/)[0] ?? ""} reset`, "refuse", "resetting the environment by its script");
-    bash(builder, "e9g env status", "allow", "reading the environment's status");
+    bash(builder, "a6g env status", "allow", "reading the environment's status");
   }
   if (builder !== "planner") {
-    bash(builder, "e9g merge some/branch", "refuse", "merging, which only the planner does");
-    bash(builder, "e9g verdict review some/branch approve", "refuse", "a reviewer's verdict");
-    bash(builder, "e9g pr --title x --body-file /tmp/e9g-check.md", "refuse", "the pull request, which only the planner opens");
+    bash(builder, "a6g merge some/branch", "refuse", "merging, which only the planner does");
+    bash(builder, "a6g verdict review some/branch approve", "refuse", "a reviewer's verdict");
+    bash(builder, "a6g pr --title x --body-file /tmp/a6g-check.md", "refuse", "the pull request, which only the planner opens");
   }
   if (team.push?.pullRequest) {
-    bash("planner", 'e9g pr --title "e9g check" --body-file /tmp/e9g-check.md', "allow", "the planner's pull request");
+    bash("planner", 'a6g pr --title "a6g check" --body-file /tmp/a6g-check.md', "allow", "the planner's pull request");
     if (policyStates(team).find((policy) => policy.id === "github")?.state === "deny")
-      bash("planner", "gh pr create --fill", "refuse", "a pull request opened with gh itself, which e9g pr does instead");
+      bash("planner", "gh pr create --fill", "refuse", "a pull request opened with gh itself, which a6g pr does instead");
   }
   for (const policy of policyStates(team))
     for (const example of policy.examples)
@@ -136,9 +136,9 @@ export function guardCases(team: Team): GuardCase[] {
       "refuse",
       `starting a ${building} without a worktree of its own (isolation: "worktree")`
     );
-  bash("planner", `git branch -m ${team.branch} e9g-check`, "refuse", "renaming the integration branch");
-  bash("planner", 'gh issue create --title "e9g check" --body x', "refuse", "an issue the planner opens without its label");
-  add(builder, "Monitor", { command: "cat .env", description: "e9g check" }, "refuse", "a command run through Monitor");
+  bash("planner", `git branch -m ${team.branch} a6g-check`, "refuse", "renaming the integration branch");
+  bash("planner", 'gh issue create --title "a6g check" --body x', "refuse", "an issue the planner opens without its label");
+  add(builder, "Monitor", { command: "cat .env", description: "a6g check" }, "refuse", "a command run through Monitor");
   if (builder !== "planner")
     add(builder, "mcp__t3-code__delegate_task", { target: { providerInstanceId: instanceId(team, builder) } }, "refuse", "a member starting members");
   // T3 Code's tools: everyone looks with its browser; nobody starts threads around the limits or asks for a secret.
@@ -152,14 +152,14 @@ export function guardCases(team: Team): GuardCase[] {
       add(
         "planner",
         "mcp__claude_ai_Gmail__send_message",
-        { to: [team.owner], subject: `[E9G-Planner] [${team.title}] e9g check` },
+        { to: [team.owner], subject: `[A6G-Planner] [${team.title}] a6g check` },
         "allow",
         "email to the operator"
       );
       add(
         "planner",
         "mcp__claude_ai_Gmail__send_message",
-        { to: [team.owner], subject: `[${team.title}] e9g check` },
+        { to: [team.owner], subject: `[${team.title}] a6g check` },
         "refuse",
         "email without the planner's label"
       );
@@ -175,20 +175,20 @@ export function runGuard(team: Team, { role, tool, input }: GuardCase, run: stri
       // As the plugin's hooks.json runs it, compile cache included.
       env: {
         ...process.env,
-        E9G_TEAM: team.name,
-        E9G_HOME_DIR: team.home,
-        E9G_RUN: run,
-        E9G_ROLE: role,
+        A6G_TEAM: team.name,
+        A6G_HOME_DIR: team.home,
+        A6G_RUN: run,
+        A6G_ROLE: role,
         CLAUDE_PROJECT_DIR: team.home,
-        E9G_SETUP: "",
+        A6G_SETUP: "",
         NODE_COMPILE_CACHE: join(FACTORY_ROOT, ".cache"),
-        E9G_NODE_CACHE: "1",
+        A6G_NODE_CACHE: "1",
       },
     });
     let said = "";
     child.stderr.on("data", (chunk: Buffer) => (said += chunk));
     child.on("close", (code) => done({ outcome: code === 2 ? "refuse" : code === 0 ? "allow" : `error ${code}`, said: said.trim() }));
-    child.stdin.end(JSON.stringify({ tool_name: tool, tool_input: input, agent_type: `e9g:${role}`, cwd: team.home, session_id: "e9g-check" }));
+    child.stdin.end(JSON.stringify({ tool_name: tool, tool_input: input, agent_type: `a6g:${role}`, cwd: team.home, session_id: "a6g-check" }));
   });
 }
 
@@ -241,7 +241,7 @@ const gitRun = (home: string, ...args: string[]) => spawnSync("git", args, { cwd
 export async function check(argv: string[]): Promise<number> {
   const { positional, options } = parseArgs(argv, { booleans: ["run"] });
   const home = positional[0] ? resolve(positional[0]) : findHome();
-  if (!home) die("run this in a team's checkout, or name it: e9g check <checkout>");
+  if (!home) die("run this in a team's checkout, or name it: a6g check <checkout>");
   const team = loadTeam(home, { strict: false });
   let failures = 0;
   const line = (level: Level, text: string) => {
@@ -266,18 +266,18 @@ export async function check(argv: string[]): Promise<number> {
     else line("ok", `${script} exists and is executable`);
   }
   // A script that doesn't parse fails on its first run, in the middle of a merge. The scripts team.json names, and the
-  // shell scripts in .e9g/adapters/; not what else is there: a .DS_Store, an editor's backup, a node script.
+  // shell scripts in .a6g/adapters/; not what else is there: a .DS_Store, an editor's backup, a node script.
   const isFile = (path: string) => existsSync(join(home, path)) && statSync(join(home, path)).isFile();
   const named = [...new Set(scripts.map((path) => path.replace(/^\.\//, "")))].filter(
     (path) => !path.startsWith("/") && !path.startsWith("../") && isFile(path)
   );
   const adapters: string[] = [];
-  for (const name of existsSync(join(home, ".e9g", "adapters")) ? readdirSync(join(home, ".e9g", "adapters")).sort() : []) {
-    const path = `.e9g/adapters/${name}`;
+  for (const name of existsSync(join(home, ".a6g", "adapters")) ? readdirSync(join(home, ".a6g", "adapters")).sort() : []) {
+    const path = `.a6g/adapters/${name}`;
     if (name.startsWith(".") || named.includes(path) || !isFile(path)) continue;
     if (BACKUP.test(name)) {
       if (gitRun(home, "check-ignore", "-q", "--", path).status !== 0)
-        line("warn", `${path} looks like an editor's backup: check skips it, and git add .e9g would commit it (delete it)`);
+        line("warn", `${path} looks like an editor's backup: check skips it, and git add .a6g would commit it (delete it)`);
     } else if (shellOf(join(home, path)) !== null) adapters.push(path);
   }
   const files = [...named, ...adapters];
@@ -294,23 +294,23 @@ export async function check(argv: string[]): Promise<number> {
     else if (parsed.status !== 0) line("FAIL", `${script} isn't valid ${shell}: ${parsed.stderr.trim().split("\n")[0] ?? ""}`);
     else line("ok", `${script} parses (${shell} -n)`);
   }
-  if (!existsSync(join(home, ".e9g", ".gitignore")) || !/^run\/?$/m.test(readFileSync(join(home, ".e9g", ".gitignore"), "utf8")))
-    line("FAIL", ".e9g/.gitignore must ignore run/");
+  if (!existsSync(join(home, ".a6g", ".gitignore")) || !/^run\/?$/m.test(readFileSync(join(home, ".a6g", ".gitignore"), "utf8")))
+    line("FAIL", ".a6g/.gitignore must ignore run/");
   for (const doc of team.docs) if (!existsSync(join(home, doc))) line("warn", `${doc} is listed in docs but doesn't exist`);
-  if (!team.factory) line("warn", `factory: no pin, so the team runs whichever E9G Factory version registers it (add "factory": "<version>")`);
+  if (!team.factory) line("warn", `factory: no pin, so the team runs whichever Anything Factory version registers it (add "factory": "<version>")`);
   else if (!existsSync(versionDir(team.factory)))
-    line("warn", `factory: the team pins ${team.factory}, which isn't installed here (e9g versions); register refuses until it is`);
-  committed(team, [".e9g/team.json", ".e9g/.gitignore", ...named], adapters, line);
+    line("warn", `factory: the team pins ${team.factory}, which isn't installed here (a6g versions); register refuses until it is`);
+  committed(team, [".a6g/team.json", ".a6g/.gitignore", ...named], adapters, line);
   if (team.push?.pullRequest) {
     const url = remoteUrl(home, team.push.remote);
-    if (!url) line("warn", `push.remote: the checkout has no remote ${team.push.remote}, so nothing can be pushed and e9g pr opens nothing`);
+    if (!url) line("warn", `push.remote: the checkout has no remote ${team.push.remote}, so nothing can be pushed and a6g pr opens nothing`);
     else if (!githubRepo(url))
-      line("warn", `push.pullRequest: ${team.push.remote} (${shownUrl(url)}) isn't on GitHub, so e9g pr can't open a pull request there`);
-    else if (!which("gh")) line("warn", "push.pullRequest: gh isn't installed, which e9g pr runs (brew install gh, then gh auth login)");
-    else line("ok", `e9g pr opens the planner's pull request on ${githubRepo(url)}, from ${team.push.branch} into ${team.push.pullRequest}`);
+      line("warn", `push.pullRequest: ${team.push.remote} (${shownUrl(url)}) isn't on GitHub, so a6g pr can't open a pull request there`);
+    else if (!which("gh")) line("warn", "push.pullRequest: gh isn't installed, which a6g pr runs (brew install gh, then gh auth login)");
+    else line("ok", `a6g pr opens the planner's pull request on ${githubRepo(url)}, from ${team.push.branch} into ${team.push.pullRequest}`);
   }
 
-  const run = mkdtempSync(join(tmpdir(), "e9g-check-"));
+  const run = mkdtempSync(join(tmpdir(), "a6g-check-"));
   const cases = guardCases(team);
   const wrong: string[] = [];
   // Eight at a time: each case is a fresh node process, as it is under Claude Code.
@@ -388,7 +388,7 @@ function committed(team: Team, required: string[], others: string[], line: (leve
   const hidden = must.filter((path) => ignored.has(path));
   for (const rule of new Set(hidden.map((path) => ignored.get(path)))) {
     const paths = hidden.filter((path) => ignored.get(path) === rule);
-    const include = [...new Set(paths.map((path) => (path.startsWith(".e9g/") ? ".e9g/" : path)))].map((path) => `"!${path}"`).join(" and ");
+    const include = [...new Set(paths.map((path) => (path.startsWith(".a6g/") ? ".a6g/" : path)))].map((path) => `"!${path}"`).join(" and ");
     line(
       "FAIL",
       `ignored by git (${rule}), so not committed on ${team.branch} and missing from members' worktrees: ${paths.join(", ")}. Add ${include} to .gitignore after that rule, or git add -f ${paths.join(" ")}`
@@ -402,11 +402,11 @@ function committed(team: Team, required: string[], others: string[], line: (leve
     if (match?.[1] && match[2]) modes.set(match[2], match[1]);
   }
   const missing = inside.filter((path) => !modes.has(path));
-  const add = [...new Set(missing.map((path) => (path.startsWith(".e9g/") ? ".e9g" : path)))].join(" ");
+  const add = [...new Set(missing.map((path) => (path.startsWith(".a6g/") ? ".a6g" : path)))].join(" ");
   if (missing.length)
     line(
       "FAIL",
-      `not committed on ${team.branch}: ${missing.join(", ")}. Members' worktrees are made from it: git add ${add} && git commit -m "E9G team: ${team.name}"`
+      `not committed on ${team.branch}: ${missing.join(", ")}. Members' worktrees are made from it: git add ${add} && git commit -m "Anything Factory team: ${team.name}"`
     );
   for (const path of inside.filter((path) => modes.has(path))) {
     // A link (120000) has no executable bit of its own; its target is checked in its place.
@@ -438,7 +438,7 @@ async function live(team: LoadedTeam, line: (level: Level, text: string) => void
     line(down.status === 0 ? "ok" : "warn", "environment down");
   }
   if (team.gate.full) {
-    const dir = mkdtempSync(join(tmpdir(), `e9g-gate-${team.name}-`));
+    const dir = mkdtempSync(join(tmpdir(), `a6g-gate-${team.name}-`));
     rmSync(dir, { recursive: true, force: true });
     if (spawnSync("git", ["worktree", "add", "--detach", dir, team.branch], { cwd: home, stdio: "ignore" }).status !== 0)
       line("FAIL", `couldn't make a worktree of ${team.branch}`);
@@ -466,7 +466,7 @@ function summary(team: Team, failures: number): number {
     );
   }
   console.info(
-    `  - pushes: ${team.push ? `only the planner, ${team.push.branch} to ${team.push.remote}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}${team.push.pullRequest ? `, with a pull request into ${team.push.pullRequest} (e9g pr) for you to merge` : ""}` : "none"}`
+    `  - pushes: ${team.push ? `only the planner, ${team.push.branch} to ${team.push.remote}${team.push.everyMin ? `, at most every ${team.push.everyMin / 60} h` : ""}${team.push.pullRequest ? `, with a pull request into ${team.push.pullRequest} (a6g pr) for you to merge` : ""}` : "none"}`
   );
   console.info(`  - messages to the operator, ${contactRule(team.contact)}`);
   if (team.board.type === "tasks") {
@@ -483,6 +483,6 @@ function summary(team: Team, failures: number): number {
   for (const policy of states.filter((p) => p.state === "deny")) console.info(`  - ${policy.summary}`);
   for (const rule of team.never) console.info(`  - ${rule.reason}`);
   console.info("  - touch secrets, the machine's services, rewritten history, protected branches, or the factory's own files");
-  console.info(failures ? `\n${failures} problem(s) to fix.` : "\nReady: e9g register, then e9g start.");
+  console.info(failures ? `\n${failures} problem(s) to fix.` : "\nReady: a6g register, then a6g start.");
   return failures ? 1 : 0;
 }

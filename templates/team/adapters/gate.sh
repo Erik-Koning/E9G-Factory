@@ -2,8 +2,8 @@
 # The checks CI runs, in the same order, on the checkout it's run in (a member's worktree, or the merge queue's
 # scratch copy). Exit 0 only when every check passes. Prints one line per check and the tail of the first failure.
 #
-#   .e9g/adapters/gate.sh            every check (the merge queue runs this on the merged result)
-#   .e9g/adapters/gate.sh --quick    the fast subset a builder runs before finishing
+#   .a6g/adapters/gate.sh            every check (the merge queue runs this on the merged result)
+#   .a6g/adapters/gate.sh --quick    the fast subset a builder runs before finishing
 set -uo pipefail
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT" || exit 2

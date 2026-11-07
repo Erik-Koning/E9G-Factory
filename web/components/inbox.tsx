@@ -134,7 +134,7 @@ function WaitingItem({ team, base, w, back, titles }: { team: string; base: stri
               <span className="missing">Nothing: you raised it yourself.</span>
             ) : (
               <span className="missing">
-                No recommendation was recorded. The team gives one now whenever it raises something to you; the planner adds one to this (e9g task ask).
+                No recommendation was recorded. The team gives one now whenever it raises something to you; the planner adds one to this (a6g task ask).
               </span>
             )}
             {w.recommendationFrom === "inferred" ? <span className="hint"> (from the task&apos;s own words)</span> : null}

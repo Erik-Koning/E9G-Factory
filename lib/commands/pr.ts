@@ -1,9 +1,9 @@
-// e9g pr --title "<what it holds>" --body-file <file>: the planner's pull request, from the branch it pushes into the
+// a6g pr --title "<what it holds>" --body-file <file>: the planner's pull request, from the branch it pushes into the
 // one the operator promotes into (team.json push.pullRequest). It opens one, or updates the one that's open, so the
 // operator has one to read at a time, and merging it is their promotion (Article 3). It says which commit it holds,
 // asking the remote itself: run it after git push. The factory runs gh here, so the team needs no github policy,
 // which would also let it merge pull requests, run workflows and change settings. An open pull request whose title
-// doesn't carry [E9G-Planner] is the operator's: its title and description stay theirs, and the report goes in a comment.
+// doesn't carry [A6G-Planner] is the operator's: its title and description stay theirs, and the report goes in a comment.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +12,7 @@ import { inTeam, teamSession } from "../session.ts";
 import { multiMachine } from "../tasks/machines.ts";
 import { parseArgs, text } from "../util.ts";
 
-const USAGE = 'usage: e9g pr --title "<what it holds>" --body-file <file> (or --body "<text>")';
+const USAGE = 'usage: a6g pr --title "<what it holds>" --body-file <file> (or --body "<text>")';
 
 // The repository gh names (owner/name, or host/owner/name on GitHub Enterprise) from a remote's URL: https, ssh:// or
 // scp-like. A host without a dot is an SSH alias (Host github-bot in ~/.ssh/config), taken to be github.com. null
@@ -44,7 +44,7 @@ const fail = (message: string, code = 2): number => {
 
 export function pr(argv: string[]): number {
   // Belt and braces with the guard: on a team, only the planner opens the pull request.
-  if (inTeam() && process.env.E9G_ROLE !== "planner") return fail("only the planner does this");
+  if (inTeam() && process.env.A6G_ROLE !== "planner") return fail("only the planner does this");
   const { options } = parseArgs(argv);
   const title = text(options["title"])?.trim();
   const bodyFile = text(options["body-file"]);

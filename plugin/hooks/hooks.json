@@ -1,5 +1,5 @@
 {
-  "description": "E9G Factory: the guard, the builder and tester stop gate, live context, heartbeats and the record of the planner's email. Inert outside an E9G team.",
+  "description": "Anything Factory: the guard, the builder and tester stop gate, live context, heartbeats and the record of the planner's email. Inert outside an Anything Factory team.",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.ts\"",
+            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" A6G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.ts\"",
             "onFailure": "block"
           }
         ]
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/sent.ts\""
+            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" A6G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/sent.ts\""
           }
         ]
       },
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.ts\""
+            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" A6G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.ts\""
           }
         ]
       }
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.ts\"",
+            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" A6G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/stop.ts\"",
             "timeout": 1800
           }
         ]
@@ -50,7 +50,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.ts\""
+            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" A6G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.ts\""
           }
         ]
       }
@@ -60,7 +60,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" E9G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.ts\""
+            "command": "NODE_COMPILE_CACHE=\"${CLAUDE_PLUGIN_ROOT}/.cache\" A6G_NODE_CACHE=1 node \"${CLAUDE_PLUGIN_ROOT}/hooks/context.ts\""
           }
         ]
       }

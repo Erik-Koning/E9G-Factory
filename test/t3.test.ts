@@ -19,24 +19,24 @@ describe("t3 adapter", () => {
 
   test("an unreadable database reads as unknown, never as zero", () => {
     assert.equal(query("select 1"), null);
-    assert.equal(runningByInstance(["e9g-x-builder"]), null);
+    assert.equal(runningByInstance(["a6g-x-builder"]), null);
     assert.deepEqual(runningByInstance([]), {});
   });
 
   test("a provider instance carries its flags and environment", () => {
     const made = instance({
       displayName: "Team · builder",
-      launchArgs: "--agent e9g:builder",
-      environment: { E9G_TEAM: "x", PORT: 9100 },
+      launchArgs: "--agent a6g:builder",
+      environment: { A6G_TEAM: "x", PORT: 9100 },
       compactAt: null,
     });
     assert.equal(made.driver, "claudeAgent");
-    assert.deepEqual(made.config, { launchArgs: "--agent e9g:builder" });
+    assert.deepEqual(made.config, { launchArgs: "--agent a6g:builder" });
     assert.deepEqual(made.environment, [
-      { name: "E9G_TEAM", value: "x", sensitive: false },
+      { name: "A6G_TEAM", value: "x", sensitive: false },
       { name: "PORT", value: "9100", sensitive: false },
     ]);
     assert.equal(instance({ displayName: "p", launchArgs: "", environment: {}, compactAt: 160000 }).config?.autoCompactWindow, "160000");
-    assert.match(worktreesDir("/Users/x/Work/shop-e9g"), /\/worktrees\/shop-e9g$/);
+    assert.match(worktreesDir("/Users/x/Work/shop-a6g"), /\/worktrees\/shop-a6g$/);
   });
 });

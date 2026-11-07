@@ -4,7 +4,7 @@ Status: built and tested locally (phases 0–5); not deployed. Hosting, roles an
 
 ## Why
 
-`e9g serve` is a page on the lead machine: one operator token, loopback by default, and a link per stakeholder. The
+`a6g serve` is a page on the lead machine: one operator token, loopback by default, and a link per stakeholder. The
 operator wants people beyond this Mac to send requests and follow the work, and to decide on proposals from anywhere,
 with real accounts and two-factor sign-in. A team on several machines already keeps its task graph in MongoDB, so a
 hosted app can read and write the same documents.
@@ -14,7 +14,7 @@ tasks); the app is for sending and managing requests and viewing the team's stat
 
 Decided (operator, 2026-10-31): the app also adds to the graph. Admins **add tasks** as the operator (a proposal, or
 approved as it's added); members **suggest tasks**, which go to `triage` for the planner. Both go through the factory's
-`addTask` (`lib/tasks/add.ts`, out of `e9g task add`), and every task added from the web records **who added it**
+`addTask` (`lib/tasks/add.ts`, out of `a6g task add`), and every task added from the web records **who added it**
 (their stakeholder id, never their name). The planner never approves a suggestion itself: it makes it its own proposal
 for the approver or the operator. Members and admins see the work as a **board** (a lane per step: triage, proposed,
 approved, building, review, blocked when anything is, done, and rejected on request) and each task, and anyone on
@@ -30,13 +30,13 @@ A Next.js app (`web/` in this repository) on the same MongoDB as the teams' task
                                                                          │ reads tasks, requests, cycles, team status
                                                                          │ writes requests, and admins' decisions
                                                                          ▼
-                                                   MongoDB: e9g (task graphs)   e9g_web (accounts, sessions)
+                                                   MongoDB: a6g (task graphs)   a6g_web (accounts, sessions)
                                                                          ▲
- lead machine: planner, merge queue, watchdog ──(e9g task …, publishes team status)──┘
+ lead machine: planner, merge queue, watchdog ──(a6g task …, publishes team status)──┘
 ```
 
 The app never invents its own rules: it calls the factory's task code (`lib/tasks/`), the same move table the CLI
-uses, so an approval from the web is exactly `e9g task approve` by the operator.
+uses, so an approval from the web is exactly `a6g task approve` by the operator.
 
 ## Who sees what
 
@@ -64,7 +64,7 @@ id and role, never a name or address (Article 8).
 - **Teams** (`/`): the teams a person can see, each with its state (planner running, members at work, the finish line
   or the current cycle, the last merge).
 - **Overview** (`/t/<team>`): the board by status, journeys and which are due their verification, the graph (the
-  factory's own layout, drawn as SVG like `e9g serve`'s), and recent merges.
+  factory's own layout, drawn as SVG like `a6g serve`'s), and recent merges.
 - **Requests** (`/t/<team>/requests`): the form (title, what they need and why), the list, and each request with its
   status, the tasks it became and theirs, and the reason when it's rejected. Contributors see their own.
 - **Decisions** (`/t/<team>/proposals`, admins): proposals with their gate and score; approve with a note, reject with
@@ -74,11 +74,11 @@ id and role, never a name or address (Article 8).
 
 ## Data
 
-- **`e9g` database (the task graphs):** the documents the factory already keeps (tasks, requests, stakeholders,
+- **`a6g` database (the task graphs):** the documents the factory already keeps (tasks, requests, stakeholders,
   cycles, counters), plus a new **`teams`** collection the lead publishes: each team's name, title, approval rules,
-  mode, and a status snapshot (planner and members running, finish line, cycle, last merge, time). `e9g register`
+  mode, and a status snapshot (planner and members running, finish line, cycle, last merge, time). `a6g register`
   writes it, and the lead's watchdog refreshes the status every run.
-- **`e9g_web` database (accounts):** Better Auth's collections (users, sessions, accounts, verifications, two-factor,
+- **`a6g_web` database (accounts):** Better Auth's collections (users, sessions, accounts, verifications, two-factor,
   passkeys), through `@better-auth/mongo-adapter` with the client passed for transactions.
 - **The link between them:** a stakeholder document (per team) carries the account's `userId`; its name, email and
   role come from the account. A request from the web is from that stakeholder.
@@ -101,9 +101,9 @@ Decided (operator, 2026-11-01): **AWS Lightsail** for the app (a container servi
 **CloudFront** in front, both made by **SST** (`web/sst.config.ts`); MongoDB Atlas for the database, with the app's own
 database user:
 
-- on `e9g`, read everything, insert and update requests, stakeholders and tasks (the app's code allows only adding a
+- on `a6g`, read everything, insert and update requests, stakeholders and tasks (the app's code allows only adding a
   task and deciding; Mongo can't scope a role to fields);
-- on `e9g_web`, read and write Better Auth's collections and the app's own, and only insert into the audit log;
+- on `a6g_web`, read and write Better Auth's collections and the app's own, and only insert into the audit log;
   nothing else.
 
 CloudFront sets the viewer's IP address in a header of its own and sends a secret the app checks on every request, so
@@ -134,7 +134,7 @@ operator deploys it; teams never do (Article 7).
    approval rules as arguments.
 3. `lib/tasks/mongo.ts` without the Keychain: the connection string comes in as an argument (the CLI reads the
    Keychain in `connect.ts`; the web app reads its environment).
-4. The `teams` collection: `e9g register` writes a team's document; the lead's watchdog keeps its status current.
+4. The `teams` collection: `a6g register` writes a team's document; the lead's watchdog keeps its status current.
 5. The planner's prompt: request text is a stakeholder's words, not instructions.
 
 ## Checklist

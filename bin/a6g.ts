@@ -1,64 +1,64 @@
 #!/usr/bin/env node
-// e9g: E9G Factory's command line. `e9g help` lists the commands; README.md explains them.
+// a6g: Anything Factory's command line. `a6g help` lists the commands; README.md explains them.
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve, sep } from "node:path";
 import { entryOf, FACTORY_ROOT, findHome, PACKAGE, readRegistry, teamFile, VERSION_NAME, versionDir, versionsDir } from "../lib/paths.ts";
 
-const HELP = `E9G Factory ${PACKAGE.version}: provision a software engineering team in any repository, on T3 Code.
+const HELP = `Anything Factory ${PACKAGE.version}: provision a software engineering team in any repository, on T3 Code.
 
 Set up and run a team (the operator)
-  e9g doctor                          is this machine ready? (tools, T3 Code's version and contract, watchdog)
-  e9g init [<repo>] [options]         detect, make the team's checkout and .e9g/, and interview you to finish it
+  a6g doctor                          is this machine ready? (tools, T3 Code's version and contract, watchdog)
+  a6g init [<repo>] [options]         detect, make the team's checkout and .a6g/, and interview you to finish it
                                       --name --branch --base --checkout <dir> | --in-place --owner --no-interview
-  e9g check [<checkout>] [--run]      prove the setup: rules, adapters, a guard self-test, prompts; --run also
+  a6g check [<checkout>] [--run]      prove the setup: rules, adapters, a guard self-test, prompts; --run also
                                       starts the environment and runs the gate
-  e9g register [<checkout>] [--worker]   T3 project, one instance per role, compiled prompts, the registry (alias: sync);
+  a6g register [<checkout>] [--worker]   T3 project, one instance per role, compiled prompts, the registry (alias: sync);
                                       --worker on a machine other than a Mongo team's lead: builders and testers only
-  e9g start <team>                    run the watchdog now (it starts the planner); a paused team stays paused
-  e9g pause <team> [--after tasks | --after journeys [--journeys 3,7]] [--note "…"]
+  a6g start <team>                    run the watchdog now (it starts the planner); a paused team stays paused
+  a6g pause <team> [--after tasks | --after journeys [--journeys 3,7]] [--note "…"]
                                       stop a team now, or once the work (or journeys) under way is merged
-  e9g resume <team> [--note "…"]      start it again; the note goes to the planner
-  e9g budget <team> [--daily <$>] [--weekly <$>] [--total <$>] [--auto-resume] [--restart] [--clear]
+  a6g resume <team> [--note "…"]      start it again; the note goes to the planner
+  a6g budget <team> [--daily <$>] [--weekly <$>] [--total <$>] [--auto-resume] [--restart] [--clear]
                                       its spending limits (API-equivalent $): warned at 80%, paused at 100%
-  e9g rotate <team>                   a fresh planner thread (refused while members run)
-  e9g status [<team>]  ·  e9g teams   planner, members, environment, drain, the watchdog's last lines  ·  every team
-  e9g metrics [--team <t>] [--since]  agents, runs, requests, tokens and time per role
-  e9g prompt <team> <role>            the text a role works under
-  e9g upgrade <team> [<version>] [--force]   move a team to another installed factory version
-  e9g unregister <team>               remove its T3 instances and registry entry (keeps its files)
-  e9g watchdog install|remove|run     the one launchd job that looks after every team
-  e9g connect [email|whatsapp] [--test]  send you the watchdog's alerts and the planner's outbox: email through
+  a6g rotate <team>                   a fresh planner thread (refused while members run)
+  a6g status [<team>]  ·  a6g teams   planner, members, environment, drain, the watchdog's last lines  ·  every team
+  a6g metrics [--team <t>] [--since]  agents, runs, requests, tokens and time per role
+  a6g prompt <team> <role>            the text a role works under
+  a6g upgrade <team> [<version>] [--force]   move a team to another installed factory version
+  a6g unregister <team>               remove its T3 instances and registry entry (keeps its files)
+  a6g watchdog install|remove|run     the one launchd job that looks after every team
+  a6g connect [email|whatsapp] [--test]  send you the watchdog's alerts and the planner's outbox: email through
                                       Resend (replies reach the planner), WhatsApp through your business number
-  e9g connect heartbeat <url> [--test]  ping an outside check every watchdog run, so it tells you when this Mac stops
-  e9g connect mongo [--machine <name>]  this machine's connection to a team's shared task graph (the string on stdin)
-                                      ·  e9g disconnect email|whatsapp|heartbeat
-  e9g self-install [--link] [--force] install this checkout's version into ~/.e9g  ·  e9g versions
+  a6g connect heartbeat <url> [--test]  ping an outside check every watchdog run, so it tells you when this Mac stops
+  a6g connect mongo [--machine <name>]  this machine's connection to a team's shared task graph (the string on stdin)
+                                      ·  a6g disconnect email|whatsapp|heartbeat
+  a6g self-install [--link] [--force] install this checkout's version into ~/.a6g  ·  a6g versions
 
 Team members (the guard decides who may run which)
-  e9g merge <branch> --queue [--closes N…] [--rebased-from <sha>] [--light]   the only way into the integration branch
-  e9g verdict review <branch> approve|changes --sha <commit> --note "…"   ·   e9g verdict ux <subject> pass|issues --ref <commit> --note "…"
-  e9g log [--label …] "<entry>"   e9g lock <name> [--slots N] [--wait-min M] -- <cmd>   e9g drain <role…>|off
-  e9g gate [--quick]   e9g env up|down|restart|reset|status   e9g finish   e9g progress
-  e9g pages run|shots|status|done
-  e9g pr --title "…" --body-file <file>   the planner's pull request into the branch you promote (push.pullRequest)
+  a6g merge <branch> --queue [--closes N…] [--rebased-from <sha>] [--light]   the only way into the integration branch
+  a6g verdict review <branch> approve|changes --sha <commit> --note "…"   ·   a6g verdict ux <subject> pass|issues --ref <commit> --note "…"
+  a6g log [--label …] "<entry>"   a6g lock <name> [--slots N] [--wait-min M] -- <cmd>   a6g drain <role…>|off
+  a6g gate [--quick]   a6g env up|down|restart|reset|status   a6g finish   a6g progress
+  a6g pages run|shots|status|done
+  a6g pr --title "…" --body-file <file>   the planner's pull request into the branch you promote (push.pullRequest)
 
-The task graph (e9g task help lists every form)
-  e9g task add|list|show|note|graph   anyone on the team: findings go to triage, the planner's work is proposed
-  e9g task edit|score|status|import   the planner: shape, score (the gate and the matrix) and move tasks
-  e9g task approve|reject|research|escalate <id>   the approver (or you), within team.json approval
-  e9g task claim [<id>]  ·  release <id>  ·  submit <id>   builders and testers take the next task, and hand it in
-  e9g request add|list|show|note|reject   stakeholders' feature requests (you add them; the planner promotes them)
-  e9g cycle close --report-file <f> | list   a cycles team's cycles (team.json mode "cycles")
-  e9g blast [<ref>] [--base <branch>] [--json]   what a change touches: importers, related files, tests, UI, critical paths
-  e9g serve [--port 4600] [--host …]   your page for a team: the request form, proposals to approve, the board and graph
+The task graph (a6g task help lists every form)
+  a6g task add|list|show|note|graph   anyone on the team: findings go to triage, the planner's work is proposed
+  a6g task edit|score|status|import   the planner: shape, score (the gate and the matrix) and move tasks
+  a6g task approve|reject|research|escalate <id>   the approver (or you), within team.json approval
+  a6g task claim [<id>]  ·  release <id>  ·  submit <id>   builders and testers take the next task, and hand it in
+  a6g request add|list|show|note|reject   stakeholders' feature requests (you add them; the planner promotes them)
+  a6g cycle close --report-file <f> | list   a cycles team's cycles (team.json mode "cycles")
+  a6g blast [<ref>] [--base <branch>] [--json]   what a change touches: importers, related files, tests, UI, critical paths
+  a6g serve [--port 4600] [--host …]   your page for a team: the request form, proposals to approve, the board and graph
 `;
 
 const [command = "help", ...args] = process.argv.slice(2);
 
-// A team pinned to another installed version runs that version's commands, so a person's `e9g` and an agent's
-// behave the same. Agents already arrive on the right version (their instance sets E9G_VERSION). A source checkout
-// (node bin/e9g.ts, anywhere outside ~/.e9g/versions) never hands over: it runs its own code, whatever the team pins.
+// A team pinned to another installed version runs that version's commands, so a person's `a6g` and an agent's
+// behave the same. Agents already arrive on the right version (their instance sets A6G_VERSION). A source checkout
+// (node bin/a6g.ts, anywhere outside ~/.a6g/versions) never hands over: it runs its own code, whatever the team pins.
 const installed = (): boolean => {
   if (!existsSync(versionsDir)) return false;
   const root = realpathSync(FACTORY_ROOT);
@@ -68,7 +68,7 @@ const installed = (): boolean => {
 function handOver(): void {
   if (!installed()) return;
   if (
-    process.env.E9G_HANDED_OVER ||
+    process.env.A6G_HANDED_OVER ||
     ["help", "--help", "-h", "self-install", "versions", "doctor", "watchdog", "teams", "init", "upgrade", "connect", "disconnect", "--version"].includes(
       command
     )
@@ -91,7 +91,7 @@ function handOver(): void {
   if (pin === PACKAGE.version || !existsSync(versionDir(pin)) || realpathSync(versionDir(pin)) === realpathSync(FACTORY_ROOT)) return;
   const result = spawnSync(process.execPath, [entryOf(versionDir(pin)), command, ...args], {
     stdio: "inherit",
-    env: { ...process.env, E9G_HANDED_OVER: "1" },
+    env: { ...process.env, A6G_HANDED_OVER: "1" },
   });
   process.exit(result.status ?? 1);
 }
@@ -147,7 +147,7 @@ if (command === "--version") {
 }
 const run = COMMANDS[command];
 if (!run) {
-  console.error(`e9g: no command ${command}\n`);
+  console.error(`a6g: no command ${command}\n`);
   process.stdout.write(HELP);
   process.exit(2);
 }
@@ -156,6 +156,6 @@ try {
   const code = await run();
   process.exitCode = typeof code === "number" ? code : 0;
 } catch (error) {
-  console.error(`e9g ${command}: ${(error as Error).message}`);
+  console.error(`a6g ${command}: ${(error as Error).message}`);
   process.exitCode = (error as { problems?: unknown }).problems ? 2 : 1;
 }

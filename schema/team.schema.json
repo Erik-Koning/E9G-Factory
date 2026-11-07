@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/Erik-Koning/E9G-Factory/main/schema/team.schema.json",
-  "title": "E9G Factory team",
-  "description": "A team's rules: .e9g/team.json. docs/team.md explains every key; lib/config.ts is what enforces them, and a test keeps the two in step. An unknown key is flagged here, but the loader only warns about it and ignores it.",
+  "$id": "https://raw.githubusercontent.com/Erik-Koning/Anything-Factory/main/schema/team.schema.json",
+  "title": "Anything Factory team",
+  "description": "A team's rules: .a6g/team.json. docs/team.md explains every key; lib/config.ts is what enforces them, and a test keeps the two in step. An unknown key is flagged here, but the loader only warns about it and ignores it.",
   "type": "object",
   "required": ["name", "branch"],
   "additionalProperties": false,
@@ -158,7 +158,7 @@
     "factory": {
       "type": "string",
       "pattern": "^(dev|\\d+\\.\\d+\\.\\d+([-+][0-9A-Za-z.-]+)?)$",
-      "description": "The E9G Factory version the team runs, or \"dev\"."
+      "description": "The Anything Factory version the team runs, or \"dev\"."
     },
     "branch": {
       "$ref": "#/$defs/text",
@@ -196,7 +196,7 @@
               "$ref": "#/$defs/duration"
             },
             "pullRequest": {
-              "description": "e9g pr: the planner's pull request from branch into this one (true: into base). Merging it is the operator's promotion.",
+              "description": "a6g pr: the planner's pull request from branch into this one (true: into base). Merging it is the operator's promotion.",
               "oneOf": [
                 {
                   "type": "boolean"
@@ -214,7 +214,7 @@
       "oneOf": [
         {
           "enum": ["tasks", "files"],
-          "description": "The factory's task graph (e9g task); \"files\" means the same."
+          "description": "The factory's task graph (a6g task); \"files\" means the same."
         },
         {
           "type": "object",
@@ -244,7 +244,7 @@
       "properties": {
         "store": {
           "enum": ["files", "mongo"],
-          "description": "files (default): in the run folder. mongo: shared by machines (e9g connect mongo)."
+          "description": "files (default): in the run folder. mongo: shared by machines (a6g connect mongo)."
         },
         "database": {
           "type": "string",
@@ -260,7 +260,7 @@
               "type": "null"
             }
           ],
-          "description": "The always-on machine (its name from e9g connect mongo --machine) that runs the planner and merges, when the team runs on several."
+          "description": "The always-on machine (its name from a6g connect mongo --machine) that runs the planner and merges, when the team runs on several."
         }
       }
     },
@@ -446,7 +446,7 @@
     "vars": {
       "type": "object",
       "propertyNames": {
-        "pattern": "^(?!E9G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)[A-Za-z_][A-Za-z0-9_]*$"
+        "pattern": "^(?!A6G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)[A-Za-z_][A-Za-z0-9_]*$"
       },
       "additionalProperties": {
         "type": ["string", "number", "boolean"],
@@ -719,7 +719,7 @@
     "properties": {
       "finish": {
         "type": "string",
-        "pattern": "\\be9g\\s+pages\\s+done\\b"
+        "pattern": "\\ba6g\\s+pages\\s+done\\b"
       }
     }
   },

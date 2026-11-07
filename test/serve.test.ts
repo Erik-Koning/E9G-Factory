@@ -1,4 +1,4 @@
-// e9g serve: the operator's page. Each test starts the server on a free port against a team checkout and a run folder
+// a6g serve: the operator's page. Each test starts the server on a free port against a team checkout and a run folder
 // of its own, and talks to it with fetch, as the page's browser would.
 import { baseTeam, makeRepo, tmp } from "./helpers.ts";
 import assert from "node:assert/strict";
@@ -27,7 +27,7 @@ const SCORE: Score = {
 // A team checkout, its run folder, a server on it, and the store the server reads.
 async function served({ host = "127.0.0.1", token = null }: { host?: string; token?: string | null } = {}) {
   const home = makeRepo(baseTeam());
-  const run = tmp("e9g-run-");
+  const run = tmp("a6g-run-");
   const server = await startServer({ home, run, team: loadTeam(home), host, port: 0, token });
   const store = fileStore(run, "fixture");
   const add = (fields: Partial<Task> & Pick<Task, "title">) =>
@@ -48,7 +48,7 @@ const statusFor = (url: string, headers: Record<string, string>): Promise<number
     sent.end();
   });
 
-describe("e9g serve", () => {
+describe("a6g serve", () => {
   test("the form makes a request and a stakeholder, and the page shows it escaped", async () => {
     const s = await served();
     try {
@@ -102,7 +102,7 @@ describe("e9g serve", () => {
     }
   });
 
-  test("approving a scored proposal runs e9g task as the operator", async () => {
+  test("approving a scored proposal runs a6g task as the operator", async () => {
     const s = await served();
     try {
       const unscored = await s.add({ title: "Unscored idea" });
@@ -113,7 +113,7 @@ describe("e9g serve", () => {
       assert.equal(refused.status, 422);
       const why = (await refused.json()) as { ok: boolean; output: string };
       assert.equal(why.ok, false);
-      assert.match(why.output, /isn't scored yet/, "e9g task's own rules decide");
+      assert.match(why.output, /isn't scored yet/, "a6g task's own rules decide");
 
       const approved = await post(`${s.url}/api/tasks/${scored.id}/approve`, { note: "--fits the direction" });
       const result = (await approved.json()) as { ok: boolean; output: string };
@@ -166,7 +166,7 @@ describe("e9g serve", () => {
       assert.match(setCookie, /SameSite=Strict/);
       const cookie = setCookie.split(";")[0] ?? "";
       assert.equal((await fetch(s.url, { headers: { cookie } })).status, 200);
-      assert.equal((await fetch(`${s.url}/api/tasks`, { headers: { "x-e9g-token": "s3cret-token" } })).status, 200);
+      assert.equal((await fetch(`${s.url}/api/tasks`, { headers: { "x-a6g-token": "s3cret-token" } })).status, 200);
       assert.equal((await fetch(s.url, { headers: { cookie: `${cookie.split("=")[0]}=guess` } })).status, 401);
     } finally {
       await s.close();
@@ -198,7 +198,7 @@ describe("e9g serve", () => {
         history: [],
       });
       await s.add({ title: "A proposal", score: SCORE });
-      const headers = { "x-e9g-token": "dana-link" };
+      const headers = { "x-a6g-token": "dana-link" };
       const own = await (await fetch(s.url, { headers })).text();
       assert.match(own, /Signed in as Dana \(customer\)/);
       assert.doesNotMatch(own, /Ada|A proposal|name="email"/, "nobody else's requests, no proposals, no name or email to type");
@@ -213,7 +213,7 @@ describe("e9g serve", () => {
       assert.equal(sent.status, 303);
       const theirs = (await s.store.requests.all()).find((r) => r.title === "Export to CSV");
       assert.equal(theirs?.from, dana.id, "the link says who it's from, whatever the form says");
-      assert.equal((await fetch(s.url, { headers: { "x-e9g-token": "revoked-or-wrong" } })).status, 401);
+      assert.equal((await fetch(s.url, { headers: { "x-a6g-token": "revoked-or-wrong" } })).status, 401);
     } finally {
       await s.close();
     }
@@ -243,7 +243,7 @@ describe("e9g serve", () => {
 
   test("off loopback, it won't start without a token", async () => {
     const home = makeRepo(baseTeam());
-    const options = { home, run: tmp("e9g-run-"), team: loadTeam(home), port: 0, token: null };
+    const options = { home, run: tmp("a6g-run-"), team: loadTeam(home), port: 0, token: null };
     await assert.rejects(startServer({ ...options, host: "0.0.0.0" }), /isn't a loopback address.*--token/);
     await assert.rejects(startServer({ ...options, host: "192.168.1.20" }), /--token/);
     const local = await startServer({ ...options, host: "localhost" });

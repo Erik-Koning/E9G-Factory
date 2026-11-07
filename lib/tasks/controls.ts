@@ -1,4 +1,4 @@
-// What the operator asks of a team, from the CLI (e9g pause, resume, budget) or the web app: an append-only log in the
+// What the operator asks of a team, from the CLI (a6g pause, resume, budget) or the web app: an append-only log in the
 // team's store, beside its task graph (k1, k2, …). The watchdog applies each new one in the run folder (lib/holds.ts);
 // claims read the latest pause from the store itself, so a hold stops new work the moment it's asked for.
 //
@@ -230,6 +230,6 @@ export function holdReport(hold: Hold, all: Task[], stuck: string[], extra: stri
   if (stuck.length) lines.push("", "Stopped in the hold, and why:", ...stuck.map((s) => `  ${s}`));
   lines.push("", `Not started: ${open("approved")} approved, ${open("proposed") + open("triage") + open("researching")} still being decided.`);
   if (extra.length) lines.push("", ...extra);
-  lines.push("", "Work stays stopped until you resume the team (the web app's Resume, or e9g resume <team>), with any feedback for the planner.");
+  lines.push("", "Work stays stopped until you resume the team (the web app's Resume, or a6g resume <team>), with any feedback for the planner.");
   return lines.join("\n");
 }

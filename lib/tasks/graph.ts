@@ -1,6 +1,6 @@
 // The task graph as a BetterDiagrams document, generated from the tasks and never edited: a band per journey with its
 // tasks inside, a band for the tasks in no journey, columns by how many tasks must come first, and an edge for each
-// dependency. Open it with `npx @mosphere/better-diagrams <file>`; e9g serve draws the same layout itself.
+// dependency. Open it with `npx @mosphere/better-diagrams <file>`; a6g serve draws the same layout itself.
 import { claimOrder, journeyDue, type Kind, type Task } from "./model.ts";
 
 const W = 220;

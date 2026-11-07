@@ -1,14 +1,14 @@
-// Everything E9G Factory knows about T3 Code lives here: where its data is, the tables and columns it reads, the CLI
+// Everything Anything Factory knows about T3 Code lives here: where its data is, the tables and columns it reads, the CLI
 // commands it runs, the settings it writes and the tools the planner calls. T3 Code is a dependency, not a fork;
-// when it updates, this is the one file to adjust. `e9g doctor` runs contract() against the installed T3 and
-// refuses a version outside package.json's "e9g.t3code" range.
+// when it updates, this is the one file to adjust. `a6g doctor` runs contract() against the installed T3 and
+// refuses a version outside package.json's "a6g.t3code" range.
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { releaseSlot, takeSlot } from "./lock.ts";
-import { E9G_HOME, PACKAGE } from "./paths.ts";
+import { A6G_HOME, PACKAGE } from "./paths.ts";
 import { writeFileAtomic } from "./util.ts";
 
 export const T3_HOME = process.env.T3CODE_HOME ?? join(homedir(), ".t3");
@@ -22,7 +22,7 @@ export function serverUrl(): string {
   } catch {}
   return "http://127.0.0.1:3773/";
 }
-export const SUPPORTED = PACKAGE.e9g.t3code;
+export const SUPPORTED = PACKAGE.a6g.t3code;
 export const TOOLS = { prefix: "mcp__t3-code__", delegate: "mcp__t3-code__delegate_task" };
 export const worktreesDir = (checkout: string): string => join(T3_HOME, "worktrees", checkout.split("/").pop() ?? "");
 
@@ -186,7 +186,7 @@ export const finishedWorktrees = (
 ): string[] =>
   (
     query<{ path: string }>(
-      `select json_extract(t.payload_json, '$.worktreePath') as path from orchestration_v2_projection_threads t left join orchestration_v2_projection_subagents s on s.child_thread_id = t.thread_id left join orchestration_v2_projection_runs r on r.thread_id = t.thread_id and r.ordinal = (select max(x.ordinal) from orchestration_v2_projection_runs x where x.thread_id = t.thread_id) where t.project_id = '${q(project)}' and json_extract(t.payload_json, '$.worktreePath') is not null and (s.child_thread_id is not null or t.provider_instance_id like 'e9g-${q(team)}-%') group by 1 having sum(case when coalesce(s.status, r.status) = 'completed' and t.updated_at < ${ago(completedAfterMin)} then 0 when coalesce(s.status, r.status) in ${STOPPED} and t.updated_at < ${ago(stoppedAfterMin)} then 0 else 1 end) = 0`
+      `select json_extract(t.payload_json, '$.worktreePath') as path from orchestration_v2_projection_threads t left join orchestration_v2_projection_subagents s on s.child_thread_id = t.thread_id left join orchestration_v2_projection_runs r on r.thread_id = t.thread_id and r.ordinal = (select max(x.ordinal) from orchestration_v2_projection_runs x where x.thread_id = t.thread_id) where t.project_id = '${q(project)}' and json_extract(t.payload_json, '$.worktreePath') is not null and (s.child_thread_id is not null or t.provider_instance_id like 'a6g-${q(team)}-%') group by 1 having sum(case when coalesce(s.status, r.status) = 'completed' and t.updated_at < ${ago(completedAfterMin)} then 0 when coalesce(s.status, r.status) in ${STOPPED} and t.updated_at < ${ago(stoppedAfterMin)} then 0 else 1 end) = 0`
     ) ?? []
   ).map((row) => row.path);
 
@@ -274,10 +274,10 @@ export function projectAdd(title: string, dir: string): string | null {
 export const readSettings = (): T3Settings => JSON.parse(readFileSync(SETTINGS, "utf8")) as T3Settings;
 
 const ofTeam = (entry: ProviderInstance | undefined, team: string): boolean =>
-  (entry?.environment ?? []).some((variable) => variable.name === "E9G_TEAM" && variable.value === team);
-export const SETUP_SCRIPT = "e9g-setup";
+  (entry?.environment ?? []).some((variable) => variable.name === "A6G_TEAM" && variable.value === team);
+export const SETUP_SCRIPT = "a6g-setup";
 
-// The settings with the team's provider instances (those whose E9G_TEAM is the team) replaced, and the factory's
+// The settings with the team's provider instances (those whose A6G_TEAM is the team) replaced, and the factory's
 // own settings for the project. Everything of the person's own stays: their other instances, the project's other
 // scripts, its default model and the global settings.
 export function withTeam(
@@ -306,7 +306,7 @@ export function withTeam(
     branchNamePrefix: branchPrefix,
     sidebarAutoSettleOnMerge: false,
     continueThreadsAfterServerUpdate: true,
-    // The factory removes members' worktrees itself, keeping any that hold work no branch has (e9g status lists them).
+    // The factory removes members' worktrees itself, keeping any that hold work no branch has (a6g status lists them).
     worktreeCleanup: { mode: "off" },
   });
   // The project's scripts as T3 resolves them (its own list, else the older per-project list, else the defaults),
@@ -328,24 +328,24 @@ export function withTeam(
   return next;
 }
 
-// A read-modify-write of T3's settings: one e9g command at a time (a lock in ~/.e9g), and written only if T3 itself
+// A read-modify-write of T3's settings: one a6g command at a time (a lock in ~/.a6g), and written only if T3 itself
 // hasn't changed the file since it was read; otherwise the change is made again on what T3 wrote. A backup of the
 // previous file stays beside it.
 function updateSettings(change: (settings: T3Settings) => T3Settings): T3Settings {
-  const slot = join(E9G_HOME, "locks", "t3-settings");
+  const slot = join(A6G_HOME, "locks", "t3-settings");
   const until = Date.now() + 30_000;
-  let token = takeSlot(slot, "e9g: T3 Code's settings");
+  let token = takeSlot(slot, "a6g: T3 Code's settings");
   while (!token && Date.now() < until) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
-    token = takeSlot(slot, "e9g: T3 Code's settings");
+    token = takeSlot(slot, "a6g: T3 Code's settings");
   }
-  if (!token) throw new Error(`another e9g command held T3 Code's settings for 30 s (${slot}); try again`);
+  if (!token) throw new Error(`another a6g command held T3 Code's settings for 30 s (${slot}); try again`);
   try {
     for (let attempt = 0; attempt < 5; attempt++) {
       const before = readFileSync(SETTINGS, "utf8");
       const next = change(JSON.parse(before) as T3Settings);
       if (readFileSync(SETTINGS, "utf8") !== before) continue;
-      writeFileAtomic(`${SETTINGS}.bak-e9g`, before);
+      writeFileAtomic(`${SETTINGS}.bak-a6g`, before);
       writeFileAtomic(SETTINGS, `${JSON.stringify(next, null, 2)}\n`);
       // T3 Code reloads the file and may write its own copy at any moment: once it has had a moment, the change must
       // still be there (change is idempotent: applying it again changes nothing), or it's made again.
@@ -353,7 +353,7 @@ function updateSettings(change: (settings: T3Settings) => T3Settings): T3Setting
       const after = JSON.parse(readFileSync(SETTINGS, "utf8")) as T3Settings;
       if (isDeepStrictEqual(change(structuredClone(after)), after)) return next;
     }
-    throw new Error(`T3 Code kept changing ${SETTINGS} while e9g wrote it; try again`);
+    throw new Error(`T3 Code kept changing ${SETTINGS} while a6g wrote it; try again`);
   } finally {
     releaseSlot(slot, token);
   }
@@ -411,7 +411,9 @@ export function contract(): string[] {
   const version = installedVersion();
   if (!version) return ["T3 Code's CLI (t3) isn't on PATH: install T3 Code (https://github.com/pingdotgg/t3code)"];
   if (!satisfies(version, SUPPORTED))
-    problems.push(`T3 Code ${version} is outside the range this factory supports (${SUPPORTED}); upgrade E9G Factory, or adjust lib/t3.ts and the range`);
+    problems.push(
+      `T3 Code ${version} is outside the range this factory supports (${SUPPORTED}); upgrade Anything Factory, or adjust lib/t3.ts and the range`
+    );
   if (!existsSync(DB)) problems.push(`T3 Code's database isn't at ${DB}`);
   else {
     for (const [table, columns] of Object.entries(COLUMNS)) {

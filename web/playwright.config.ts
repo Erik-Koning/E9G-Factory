@@ -18,7 +18,7 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: `http://localhost:${PORT}`,
-    extraHTTPHeaders: { "x-e9g-viewer-ip": DEFAULT_IP, "x-e9g-origin": ORIGIN_SECRET },
+    extraHTTPHeaders: { "x-a6g-viewer-ip": DEFAULT_IP, "x-a6g-origin": ORIGIN_SECRET },
     actionTimeout: 10_000,
     navigationTimeout: 20_000,
     trace: "retain-on-failure",

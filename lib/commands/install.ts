@@ -1,11 +1,11 @@
-// e9g self-install [--link] [--force]: install this checkout's version of the factory into ~/.e9g/versions/<version>,
-// make it the current one, and put the e9g launcher on PATH (~/.local/bin, which T3 Code's service also has).
-// --link also points ~/.e9g/versions/dev at this checkout, for teams that pin "dev" while the factory is being
+// a6g self-install [--link] [--force]: install this checkout's version of the factory into ~/.a6g/versions/<version>,
+// make it the current one, and put the a6g launcher on PATH (~/.local/bin, which T3 Code's service also has).
+// --link also points ~/.a6g/versions/dev at this checkout, for teams that pin "dev" while the factory is being
 // worked on (the watchdog never runs from it: launchd can't read ~/Documents). --force replaces an installed
 // version whose files differ; the new copy is made beside it and renamed into place, so a hook never finds it half
 // copied. An older version than the current one is only added, for teams to pin, unless --force makes it current.
 //
-// e9g versions: what's installed, which is current, and which teams pin each.
+// a6g versions: what's installed, which is current, and which teams pin each.
 import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
@@ -24,7 +24,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
-import { binDir, E9G_HOME, entryOf, FACTORY_ROOT, type FactoryPackage, PACKAGE, readRegistry, VERSION_NAME, versionDir, versionsDir } from "../paths.ts";
+import { binDir, A6G_HOME, entryOf, FACTORY_ROOT, type FactoryPackage, PACKAGE, readRegistry, VERSION_NAME, versionDir, versionsDir } from "../paths.ts";
 import { operatorOnly } from "../session.ts";
 import { die, hash, parseArgs, readJson, which } from "../util.ts";
 import { teamNames } from "./team.ts";
@@ -40,17 +40,16 @@ interface Build {
 }
 
 const LAUNCHER = `#!/usr/bin/env bash
-# E9G Factory's launcher, written by e9g self-install. An agent's T3 instance sets E9G_VERSION, so each team runs the
+# Anything Factory's launcher, written by a6g self-install. An agent's T3 instance sets A6G_VERSION, so each team runs the
 # factory version it pins; a person gets the current version, which hands a team's commands to its pinned one.
-export E9G_HOME="\${E9G_HOME:-__E9G_HOME__}"
-root="$E9G_HOME/current"
-if [ -n "\${E9G_VERSION:-}" ] && [ -d "$E9G_HOME/versions/$E9G_VERSION" ]; then root="$E9G_HOME/versions/$E9G_VERSION"; fi
-# Versions before 0.3.0 were JavaScript (bin/e9g.mjs). Node's compile cache keeps it from stripping the TypeScript
-# again on every run; the factory drops it for anything it starts (lib/paths.ts).
-entry="$root/bin/e9g.ts"
-[ -f "$entry" ] || entry="$root/bin/e9g.mjs"
-if [ -z "\${NODE_COMPILE_CACHE:-}" ]; then export NODE_COMPILE_CACHE="$root/.cache" E9G_NODE_CACHE=1; fi
-exec "\${E9G_NODE:-$(command -v node || echo '__NODE__')}" "$entry" "$@"
+export A6G_HOME="\${A6G_HOME:-__A6G_HOME__}"
+root="$A6G_HOME/current"
+if [ -n "\${A6G_VERSION:-}" ] && [ -d "$A6G_HOME/versions/$A6G_VERSION" ]; then root="$A6G_HOME/versions/$A6G_VERSION"; fi
+# Node's compile cache keeps it from stripping the TypeScript again on every run; the factory drops it for anything it
+# starts (lib/paths.ts).
+entry="$root/bin/a6g.ts"
+if [ -z "\${NODE_COMPILE_CACHE:-}" ]; then export NODE_COMPILE_CACHE="$root/.cache" A6G_NODE_CACHE=1; fi
+exec "\${A6G_NODE:-$(command -v node || echo '__NODE__')}" "$entry" "$@"
 `;
 
 // The files a release is made of: tracked and untracked-but-not-ignored, so an install matches the working tree.
@@ -109,7 +108,7 @@ function sweepInstalls(): void {
     if (kind === "replaced" && VERSION_NAME.test(version) && !existsSync(versionDir(version))) {
       rmSync(versionDir(version), { force: true });
       renameSync(folder, versionDir(version));
-      console.warn(`e9g: put ${version} back, which an interrupted install had moved aside`);
+      console.warn(`a6g: put ${version} back, which an interrupted install had moved aside`);
     } else rmSync(folder, { recursive: true, force: true });
   }
 }
@@ -167,7 +166,7 @@ export function selfInstall(argv: string[]): number {
   // An installed copy (run through the launcher) is never the source: replacing it would delete the files being
   // copied, and a home folder that's a git work tree would make it look like a checkout.
   if (within(real(FACTORY_ROOT), real(versionsDir)) || existsSync(join(FACTORY_ROOT, ".build.json")))
-    die(`${FACTORY_ROOT} is an installed copy of E9G Factory; run self-install from a clone of the factory (node bin/e9g.ts self-install)`);
+    die(`${FACTORY_ROOT} is an installed copy of Anything Factory; run self-install from a clone of the factory (node bin/a6g.ts self-install)`);
   const files = sourceFiles().filter((file) => existsSync(join(FACTORY_ROOT, file)));
   sweepInstalls();
   // The production modules count too (by name and version), so installing the mongodb driver makes a new release.
@@ -182,7 +181,7 @@ export function selfInstall(argv: string[]): number {
   const built = readJson<Build>(join(dest, ".build.json"));
   // The same files: nothing to copy, unless --force asks for the release to be made again (to record its commit).
   if (built && built.hash === contentHash && !options["force"]) {
-    console.info(`e9g: ${version} is already installed (${dest})`);
+    console.info(`a6g: ${version} is already installed (${dest})`);
   } else {
     if (built && !options["force"])
       die(
@@ -192,16 +191,16 @@ export function selfInstall(argv: string[]): number {
     const staging = join(versionsDir, `.${version}.installing-${process.pid}`);
     rmSync(staging, { recursive: true, force: true });
     for (const file of files) cpSync(join(FACTORY_ROOT, file), join(staging, file), { recursive: true });
-    for (const script of ["bin/e9g.ts", "bin/e9g.mjs", ...files.filter((f) => f.endsWith(".sh"))])
+    for (const script of ["bin/a6g.ts", ...files.filter((f) => f.endsWith(".sh"))])
       if (existsSync(join(staging, script))) chmodSync(join(staging, script), 0o755);
-    // The production dependencies, as this checkout has them installed: axe-core for e9g pages, and the optional
+    // The production dependencies, as this checkout has them installed: axe-core for a6g pages, and the optional
     // mongodb driver for teams whose tasks are in Mongo. Without them, npm installs them into the release.
     for (const path of productionModules(FACTORY_ROOT)) cpSync(join(FACTORY_ROOT, path), join(staging, path), { recursive: true });
     if (
       !existsSync(join(staging, "node_modules", "axe-core")) &&
       spawnSync("npm", ["install", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: staging, stdio: "inherit" }).status !== 0
     )
-      console.warn("e9g: couldn't install the production dependencies; e9g pages will report axe-core missing, and Mongo teams the driver");
+      console.warn("a6g: couldn't install the production dependencies; a6g pages will report axe-core missing, and Mongo teams the driver");
     const commit = spawnSync("git", ["rev-parse", "--short", "HEAD"], { cwd: FACTORY_ROOT, encoding: "utf8" }).stdout.trim();
     const dirty = spawnSync("git", ["status", "--porcelain"], { cwd: FACTORY_ROOT, encoding: "utf8" }).stdout.trim() !== "";
     writeFileSync(
@@ -219,54 +218,54 @@ export function selfInstall(argv: string[]): number {
     } catch {}
     renameSync(staging, dest);
     if (old) rmSync(old, { recursive: true, force: true });
-    console.info(`e9g: installed ${version} (${commit}${dirty ? ", with uncommitted changes" : ""}) at ${dest}`);
+    console.info(`a6g: installed ${version} (${commit}${dirty ? ", with uncommitted changes" : ""}) at ${dest}`);
   }
   if (options["link"]) {
     link(FACTORY_ROOT, versionDir("dev"));
-    console.info(`e9g: versions/dev → ${FACTORY_ROOT}`);
+    console.info(`a6g: versions/dev → ${FACTORY_ROOT}`);
   }
-  // The launcher and current are shared by every version, and an older one doesn't know the newer releases (0.2.0's
-  // launcher runs bin/e9g.mjs only), so installing an older version leaves them as they are.
-  const current = readJson<Partial<FactoryPackage>>(join(E9G_HOME, "current", "package.json"))?.version;
+  // The launcher and current are shared by every version, and an older one doesn't know the newer releases, so
+  // installing an older version leaves them as they are.
+  const current = readJson<Partial<FactoryPackage>>(join(A6G_HOME, "current", "package.json"))?.version;
   if (current && older(version, current) && !options["force"]) {
-    console.info(`e9g: ${current} stays current, since ${version} is older; teams can pin ${version} (self-install --force makes it current)`);
+    console.info(`a6g: ${current} stays current, since ${version} is older; teams can pin ${version} (self-install --force makes it current)`);
     return 0;
   }
-  link(dest, join(E9G_HOME, "current"));
+  link(dest, join(A6G_HOME, "current"));
   // The node the launcher falls back to when PATH has none: the name PATH finds it by (Homebrew's
   // /opt/homebrew/bin/node), not the versioned folder process.execPath resolves to, which an upgrade removes.
   const onPath = which("node");
   const node = onPath && real(onPath) === real(process.execPath) ? onPath : process.execPath;
-  // A launcher for an E9G_HOME other than ~/.e9g remembers it.
-  const home = E9G_HOME === join(homedir(), ".e9g") ? "$HOME/.e9g" : doubleQuoted(E9G_HOME);
+  // A launcher for an A6G_HOME other than ~/.a6g remembers it.
+  const home = A6G_HOME === join(homedir(), ".a6g") ? "$HOME/.a6g" : doubleQuoted(A6G_HOME);
   mkdirSync(binDir, { recursive: true });
-  const launcher = join(binDir, "e9g");
+  const launcher = join(binDir, "a6g");
   const temporary = `${launcher}.${process.pid}.tmp`;
   writeFileSync(
     temporary,
-    LAUNCHER.replace("__E9G_HOME__", () => home).replace("__NODE__", () => singleQuoted(node))
+    LAUNCHER.replace("__A6G_HOME__", () => home).replace("__NODE__", () => singleQuoted(node))
   );
   chmodSync(temporary, 0o755);
   renameSync(temporary, launcher);
   const launcherDir = join(homedir(), ".local", "bin");
-  link(launcher, join(launcherDir, "e9g"));
-  console.info(`e9g: current is ${version}; the launcher is ${join(launcherDir, "e9g")}`);
+  link(launcher, join(launcherDir, "a6g"));
+  console.info(`a6g: current is ${version}; the launcher is ${join(launcherDir, "a6g")}`);
   if (!(process.env.PATH ?? "").split(":").includes(launcherDir))
-    console.warn(`e9g: ${launcherDir} isn't on your PATH: add it in your shell's profile (export PATH="$HOME/.local/bin:$PATH"), or run ${launcher}`);
+    console.warn(`a6g: ${launcherDir} isn't on your PATH: add it in your shell's profile (export PATH="$HOME/.local/bin:$PATH"), or run ${launcher}`);
   // Point an installed watchdog at the new current version.
-  const plist = join(homedir(), "Library", "LaunchAgents", "ca.e9g.watchdog.plist");
+  const plist = join(homedir(), "Library", "LaunchAgents", "ca.a6g.watchdog.plist");
   if (existsSync(plist)) spawnSync(process.execPath, [entryOf(dest), "watchdog", "install"], { stdio: "inherit" });
   return 0;
 }
 
 export function versions(): number {
-  const current = existsSync(join(E9G_HOME, "current")) ? realpathSync(join(E9G_HOME, "current")) : null;
+  const current = existsSync(join(A6G_HOME, "current")) ? realpathSync(join(A6G_HOME, "current")) : null;
   const pins: Record<string, string[]> = {};
   for (const name of teamNames()) {
     const version = readRegistry(name)?.version;
     if (version) (pins[version] ??= []).push(name);
   }
-  if (!existsSync(versionsDir)) return (console.info("nothing installed yet: e9g self-install"), 0);
+  if (!existsSync(versionsDir)) return (console.info("nothing installed yet: a6g self-install"), 0);
   // Dot folders are installs in progress.
   for (const version of readdirSync(versionsDir).filter((name) => !name.startsWith("."))) {
     const dir = versionDir(version);

@@ -1,4 +1,4 @@
-// A team's rules: .e9g/team.json in its checkout, read with defaults filled in and checked. Every part of the
+// A team's rules: .a6g/team.json in its checkout, read with defaults filled in and checked. Every part of the
 // factory reads the team through loadTeam, so a default or a check lives in one place. schema/team.schema.json
 // describes the same file for editors, and test/audit-setup.test.ts keeps the two in step.
 import { existsSync, readFileSync } from "node:fs";
@@ -49,7 +49,7 @@ export interface PagesSettings {
 export interface NeverRule {
   rule: string;
   reason: string;
-  // A command the rule must refuse; e9g check proves it does.
+  // A command the rule must refuse; a6g check proves it does.
   example?: string;
 }
 export interface CommandOwner {
@@ -62,7 +62,7 @@ export interface ContextCommand {
   command: string;
 }
 
-// .e9g/team.json as written. normalize checks it and fills in the defaults.
+// .a6g/team.json as written. normalize checks it and fills in the defaults.
 export interface RawTeam {
   $schema?: string;
   name?: string;
@@ -133,7 +133,7 @@ export interface Team {
   branch: string;
   base: string;
   protectedBranches: string[];
-  // pullRequest: the branch the planner's pull request goes into (e9g pr), or null for none.
+  // pullRequest: the branch the planner's pull request goes into (a6g pr), or null for none.
   push: { remote: string; branch: string; everyMin: number; pullRequest: string | null } | null;
   // "tasks": the factory's task graph (lib/tasks/); "files" in team.json means the same.
   board: { type: "github"; label: string } | { type: "tasks" };
@@ -193,7 +193,7 @@ export const ROLES: Record<string, RoleDefaults> = {
   planner: {
     summary: "runs the team: plans, briefs, checks, merges, reports",
     readOnly: false,
-    write: ["^\\.e9g/lessons\\.md$", "^\\.e9g/decisions\\.md$"],
+    write: ["^\\.a6g/lessons\\.md$", "^\\.a6g/decisions\\.md$"],
     mcp: GMAIL,
   },
   builder: { summary: "builds one ticket on its own branch", limit: 2, readOnly: false, write: ["*"], worktree: true },
@@ -257,7 +257,7 @@ export class TeamError extends Error {
 
 export function loadTeam(home: string, { strict = true }: { strict?: boolean } = {}): LoadedTeam {
   const file = teamFile(home);
-  if (!existsSync(file)) throw new TeamError(file, ["missing: run e9g init to set up a team here"]);
+  if (!existsSync(file)) throw new TeamError(file, ["missing: run a6g init to set up a team here"]);
   let raw: RawTeam;
   try {
     raw = JSON.parse(readFileSync(file, "utf8")) as RawTeam;
@@ -279,12 +279,12 @@ const DURATION = /^\s*\d+(\.\d+)?\s*(m|min|h|d)?\s*$/;
 const HEALTH = /^(any:)?https?:\/\/\S+$/;
 const URL_START = /^https?:\/\/\S+$/;
 const VAR_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-// What a team's vars can't set: the factory's own (E9G_*), and the ones that tell Claude Code where a member's project,
+// What a team's vars can't set: the factory's own (A6G_*), and the ones that tell Claude Code where a member's project,
 // settings and plugin are. Claude Code's tuning vars (CLAUDE_CODE_MAX_OUTPUT_TOKENS) are the team's to set.
-const RESERVED_VAR = /^(E9G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)/;
+const RESERVED_VAR = /^(A6G_|CLAUDE_(PROJECT_DIR|CONFIG_DIR|PLUGIN_ROOT|ENV_FILE)$)/;
 // Page and viewport ids name files (results, screenshots, verdicts).
 const ID = /^[\w-]+$/;
-const PAGES_DONE = /\be9g\s+pages\s+done\b/;
+const PAGES_DONE = /\ba6g\s+pages\s+done\b/;
 const SCHEMES = ["light", "dark", "no-preference"];
 // Matches nothing: what an invalid pattern becomes, so a team with problems never matches more than it said.
 const NOTHING = "(?!)";
@@ -384,13 +384,13 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   let factory: string | null = null;
   if (input.factory !== undefined) {
     if (typeof input.factory === "string" && VERSION_NAME.test(input.factory)) factory = input.factory;
-    else problems.push('factory: an installed version, such as "0.3.0", or "dev" (e9g versions lists them)');
+    else problems.push('factory: an installed version, such as "0.3.0", or "dev" (a6g versions lists them)');
   }
   const protectedBranches = list(input.protectedBranches, "protectedBranches", text) ?? ["main", "master", "production", "prod"];
   if (branch && protectedBranches.includes(branch))
-    problems.push(`branch: ${branch} is protected (protectedBranches), so the team could never merge into it; give it its own branch, such as e9g/next`);
+    problems.push(`branch: ${branch} is protected (protectedBranches), so the team could never merge into it; give it its own branch, such as a6g/next`);
 
-  const prefix = text(input.branchPrefix, "branchPrefix") ?? "e9g";
+  const prefix = text(input.branchPrefix, "branchPrefix") ?? "a6g";
   const roles: Record<string, Lane> = {};
   const given = input.roles === undefined ? { planner: {}, builder: {}, reviewer: {} } : (object(input.roles, "roles", null) ?? {});
   for (const [id, value] of Object.entries(given)) {
@@ -422,7 +422,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     roles[id] = lane;
   }
   if (!roles["planner"]) problems.push("roles.planner: every team has a planner");
-  // Task branches are named for their task (e9g/b12-…, e9g/t-12-…), so the merge closes the task; a team's own pattern
+  // Task branches are named for their task (a6g/b12-…, a6g/t-12-…), so the merge closes the task; a team's own pattern
   // has to accept those names when it keeps a task graph.
   const tasksBoard = input.board === undefined || input.board === "files" || input.board === "tasks";
   for (const [id, sample] of [
@@ -498,8 +498,8 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   if (input.board !== undefined && input.board !== "files" && input.board !== "tasks") {
     const value = isObject(input.board) ? object(input.board, "board", ["github"]) : undefined;
     const github = value && isObject(value.github) ? object(value.github, "board.github", ["label"]) : undefined;
-    if (!github) problems.push('board: "tasks" (the factory\'s task graph; "files" is the same), or {"github": {"label": "e9g"}}');
-    else board = { type: "github", label: text(github.label, "board.github.label") ?? "e9g" };
+    if (!github) problems.push('board: "tasks" (the factory\'s task graph; "files" is the same), or {"github": {"label": "a6g"}}');
+    else board = { type: "github", label: text(github.label, "board.github.label") ?? "a6g" };
   }
   const mode = input.mode ?? "finish";
   if (mode !== "finish" && mode !== "cycles")
@@ -507,17 +507,17 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   if (mode === "cycles" && board.type === "github") problems.push('mode: "cycles" needs the task graph (board "tasks"); a GitHub board keeps no cycles');
   const tasksIn = object(input.tasks, "tasks", ["store", "database", "lead"]) ?? {};
   const store = tasksIn.store ?? "files";
-  if (store !== "files" && store !== "mongo") problems.push('tasks.store: "files" (in the run folder) or "mongo" (e9g connect mongo)');
+  if (store !== "files" && store !== "mongo") problems.push('tasks.store: "files" (in the run folder) or "mongo" (a6g connect mongo)');
   if (store === "mongo" && board.type === "github")
     problems.push("tasks.store: a GitHub board keeps its tickets on GitHub; leave tasks out, or use the task graph");
   const lead = tasksIn.lead === null ? null : (text(tasksIn.lead, "tasks.lead") ?? null);
   if (lead && !MACHINE_NAME.test(lead))
-    problems.push(`tasks.lead: a machine's name as e9g connect mongo --machine sets it: lowercase letters, digits and dashes (not "${lead}")`);
+    problems.push(`tasks.lead: a machine's name as a6g connect mongo --machine sets it: lowercase letters, digits and dashes (not "${lead}")`);
   if (store === "mongo" && !lead)
     warnings.push("tasks.lead: none, so every machine that registers this team merges on its own; name the always-on machine if it runs on several");
   if (lead && store !== "mongo")
     problems.push('tasks.lead: a team on several machines keeps its tasks in Mongo (tasks.store "mongo"); on one machine, leave lead out');
-  const database = text(tasksIn.database, "tasks.database") ?? "e9g";
+  const database = text(tasksIn.database, "tasks.database") ?? "a6g";
   if (!/^[\w-]{1,60}$/.test(database)) problems.push("tasks.database: letters, digits, _ and - (a Mongo database name)");
   const weights: Record<Dimension, number> = { ...DEFAULT_WEIGHTS };
   const prioritiesIn = object(input.priorities, "priorities", ["weights"]) ?? {};
@@ -552,7 +552,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     if (!VAR_NAME.test(key)) problems.push(`vars.${key}: a variable name (letters, digits and _)`);
     else if (RESERVED_VAR.test(key))
       problems.push(
-        `vars.${key}: a variable name of the team's own; the factory sets E9G_…, and CLAUDE_PROJECT_DIR, CLAUDE_CONFIG_DIR, CLAUDE_PLUGIN_ROOT and CLAUDE_ENV_FILE say where a member runs`
+        `vars.${key}: a variable name of the team's own; the factory sets A6G_…, and CLAUDE_PROJECT_DIR, CLAUDE_CONFIG_DIR, CLAUDE_PLUGIN_ROOT and CLAUDE_ENV_FILE say where a member runs`
       );
     else if (typeof value === "string") vars[key] = value;
     // An environment variable is text either way, as 0.2.0 passed it.
@@ -657,7 +657,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     if (settleMs !== undefined) pages.settleMs = settleMs;
   }
   if (finish && PAGES_DONE.test(finish) && input.pages === undefined)
-    problems.push('pages: the finish line is e9g pages done, so "pages" must list the pages it checks');
+    problems.push('pages: the finish line is a6g pages done, so "pages" must list the pages it checks');
 
   const team: Team = {
     raw,
@@ -709,7 +709,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
     never,
     commandOwners,
     context,
-    docs: list(input.docs, "docs", text) ?? [".e9g/brief.md", ".e9g/notes.md"],
+    docs: list(input.docs, "docs", text) ?? [".a6g/brief.md", ".a6g/notes.md"],
     polishRounds: whole(input.polishRounds, "polishRounds", 0) ?? 1,
     worktreeSetup: textOrNull(input.worktreeSetup, "worktreeSetup") ?? null,
     watchdog: {
@@ -740,7 +740,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
   // A team without an approver: its proposals wait for the operator, whatever the mode (said only when it was asked for).
   if (team.approval.mode !== "operator" && !roles["approver"]) team.approval.mode = "operator";
   if (approvalIn.mode !== undefined && approvalIn.mode !== "operator" && !roles["approver"])
-    warnings.push(`approval.mode: ${String(approvalIn.mode)} needs an approver in roles; until there is one, proposals wait for you (e9g task approve)`);
+    warnings.push(`approval.mode: ${String(approvalIn.mode)} needs an approver in roles; until there is one, proposals wait for you (a6g task approve)`);
   if (!team.finish && team.mode === "finish") warnings.push("finish: no finish command, so the team can't tell when it's done");
   if (!team.gate.full) warnings.push("gate.full: no gate, so merges aren't checked");
   if (!team.owner) warnings.push("owner: nobody to email when the team is done or needs a decision");
@@ -748,7 +748,7 @@ export function normalize(raw: RawTeam, home: string): { team: Team; problems: s
 }
 
 // One T3 provider instance per role; its id carries the team and the role.
-export const instanceId = (team: Pick<Team, "name">, role: string): string => `e9g-${team.name}-${role}`;
+export const instanceId = (team: Pick<Team, "name">, role: string): string => `a6g-${team.name}-${role}`;
 // Own properties only: an instance named "constructor" is no role.
 export function roleForInstance(team: Team, id: string): string | null {
   for (const role of Object.keys(team.roles)) if (instanceId(team, role) === id) return role;
@@ -756,8 +756,8 @@ export function roleForInstance(team: Team, id: string): string | null {
   return typeof legacy === "string" && Object.hasOwn(team.roles, legacy) ? legacy : null;
 }
 
-// Claude Code reports a plugin agent as "e9g:<role>".
-export const roleOfAgent = (agentType: string | undefined): string => (agentType ?? "").replace(/^e9g:/, "");
+// Claude Code reports a plugin agent as "a6g:<role>".
+export const roleOfAgent = (agentType: string | undefined): string => (agentType ?? "").replace(/^a6g:/, "");
 
 export function laneAllows(team: Team, role: string, rel: string): boolean {
   const lane = team.roles[role];
@@ -771,13 +771,13 @@ export function roleForBranch(team: Team, branch: string): string | null {
   return null;
 }
 
-// The factory's own files: the team's sources (.e9g/), and Claude Code's project configuration (.claude/ and
+// The factory's own files: the team's sources (.a6g/), and Claude Code's project configuration (.claude/ and
 // .mcp.json: settings, hooks, agents, skills, commands), which would change how the agents themselves run.
-export const FACTORY_PATH = /^\.e9g\/|^\.claude(\/|$)|^\.mcp\.json$/;
+export const FACTORY_PATH = /^\.a6g\/|^\.claude(\/|$)|^\.mcp\.json$/;
 
-// Only a lane rule that names a factory path itself opens it (the planner's "^\.e9g/lessons\.md$"); a broad rule
+// Only a lane rule that names a factory path itself opens it (the planner's "^\.a6g/lessons\.md$"); a broad rule
 // that happens to match one ("\.json$") doesn't.
-const NAMES_FACTORY_PATH = /^\^\\?\.(?:e9g\/|claude\/|mcp\\?\.json)/;
+const NAMES_FACTORY_PATH = /^\^\\?\.(?:a6g\/|claude\/|mcp\\?\.json)/;
 export function factoryWrite(team: Team, role: string, rel: string): boolean {
   if (!FACTORY_PATH.test(rel)) return false;
   return !(team.roles[role]?.write ?? []).some((rule) => NAMES_FACTORY_PATH.test(rule) && new RegExp(rule).test(rel));

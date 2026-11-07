@@ -19,7 +19,7 @@ export const registeredContact = (contact: Contact | undefined): Contact => cont
 
 export type MessageKind = "done" | "urgent" | "normal";
 
-// From a subject, with or without the labels in front ("[E9G-Planner] [My app] Urgent: …").
+// From a subject, with or without the labels in front ("[A6G-Planner] [My app] Urgent: …").
 export function messageKind(subject: string): MessageKind {
   const bare = subject.replace(/^(\s*\[[^\]]*\])*\s*/, "");
   if (/^done\b/i.test(bare)) return "done";
@@ -53,7 +53,7 @@ export function nextAllowed(contact: Contact, run: string | null, kind: MessageK
 const hours = (minutes: number): string => `${Number((minutes / 60).toFixed(1))} h`;
 const clock = (ms: number): string => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-// The rule in one line, for the planner's prompt and e9g check.
+// The rule in one line, for the planner's prompt and a6g check.
 export function contactRule(contact: Contact): string {
   if (contact.mode === "priority" || !contact.everyMin)
     return "priority: each message goes as soon as you send it. Still put every question open at the time in one message.";

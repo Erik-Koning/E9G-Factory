@@ -1,4 +1,4 @@
-// e9g merge <branch> [--closes 12,13] [--rebased-from <approved sha>] [--light] [--no-after] [--queue]
+// a6g merge <branch> [--closes 12,13] [--rebased-from <approved sha>] [--light] [--no-after] [--queue]
 //
 // The only way into a team's integration branch. The planner runs it.
 // --queue returns at once: the merge runs in the background, one at a time, and the planner is woken with the
@@ -6,14 +6,14 @@
 //
 // 1. Lane: the branch's diff stays in the lane of the role its name belongs to (team.json roles.<role>.branch),
 //    changes no protected path (team.json protect), and adds no symlink.
-// 2. Approval: a branch whose role is in review.required needs a reviewer's approval of its exact tip (e9g verdict
+// 2. Approval: a branch whose role is in review.required needs a reviewer's approval of its exact tip (a6g verdict
 //    review), or --rebased-from <the approved commit> when the tip is that same change rebased (git range-diff
 //    finds every commit unchanged). A branch that removes lines matching review.removedPattern (an assertion) needs
 //    one too.
-// 3. Merges in a scratch worktree (.e9g/run/merge) and runs the full gate there, under the gate semaphore.
+// 3. Merges in a scratch worktree (.a6g/run/merge) and runs the full gate there, under the gate semaphore.
 // 4. Fast-forwards the integration branch and closes the tickets (--closes and the number in the branch name).
 // 5. Outside the merge lock, under the app lock: the team's afterMerge command (rebuild, restart, recheck), with
-//    BEFORE and AFTER (the commits the branch moved between) and E9G_LIGHT=1 / JOURNEYS=0 with --light.
+//    BEFORE and AFTER (the commits the branch moved between) and A6G_LIGHT=1 / JOURNEYS=0 with --light.
 // Any git command that fails refuses the merge. Nothing merges while the operator has paused the team.
 // Exit codes: 0 merged, 2 refused (lane, approval or state), 3 conflict, 4 gate failed, 75 timed out waiting for the
 // merge lock or a gate slot (nothing ran; queue it again).
@@ -33,7 +33,7 @@ import { threadSend } from "../t3.ts";
 import { list, localTime, parseArgs, readJson, text as optionText, writeJson } from "../util.ts";
 import { pruneWorktrees } from "./watchdog.ts";
 
-// What a merge left in .e9g/run/state/merges/<branch>.json, and a reviewer's verdict in state/reviews/.
+// What a merge left in .a6g/run/state/merges/<branch>.json, and a reviewer's verdict in state/reviews/.
 export interface MergeRecord {
   branch: string;
   result: string;
@@ -54,11 +54,11 @@ export interface Verdict {
 }
 type Recorder = (result: string, message: string, sha?: string) => void;
 
-export const usage = "e9g merge <branch> [--closes 12,13] [--rebased-from <approved sha>] [--light] [--no-after] [--queue]";
+export const usage = "a6g merge <branch> [--closes 12,13] [--rebased-from <approved sha>] [--light] [--no-after] [--queue]";
 
-// How long a merge waits for a lock: the merge lock and the app lock two hours, a gate slot one. E9G_MERGE_WAIT_MIN
+// How long a merge waits for a lock: the merge lock and the app lock two hours, a gate slot one. A6G_MERGE_WAIT_MIN
 // sets all three (the tests use it).
-const waitMin = (minutes: number): number => Number(process.env.E9G_MERGE_WAIT_MIN) || minutes;
+const waitMin = (minutes: number): number => Number(process.env.A6G_MERGE_WAIT_MIN) || minutes;
 
 // Diffs and listings can be large; past this, git's output is cut off, and the merge is refused rather than checked
 // on part of it.
@@ -112,10 +112,10 @@ export function symlinkProblem(team: Team, role: string, path: string, target: s
 
 class GitFailed extends Error {}
 
-// e9g merge --push: the lead, once the remote takes pushes again after a merge whose push failed. It pushes the
+// a6g merge --push: the lead, once the remote takes pushes again after a merge whose push failed. It pushes the
 // integration branch and closes the tasks those merges were holding open.
 async function pushWaiting(): Promise<number> {
-  if (inTeam() && process.env.E9G_ROLE !== "planner") {
+  if (inTeam() && process.env.A6G_ROLE !== "planner") {
     console.error("merge: only the planner merges");
     return 2;
   }
@@ -155,7 +155,7 @@ export async function run(argv: string[]): Promise<number> {
   }
   // --closes 12,13, --closes 12 --closes 13, or --closes 12 13 (the numbers after it).
   const closes = [...list(options["closes"]), ...positional.slice(1)].flatMap((value) => String(value).split(/[,\s#]+/)).filter((n) => /^\d+$/.test(n));
-  if (inTeam() && process.env.E9G_ROLE !== "planner") {
+  if (inTeam() && process.env.A6G_ROLE !== "planner") {
     console.error("merge: only the planner merges");
     return 2;
   }
@@ -176,14 +176,14 @@ export async function run(argv: string[]): Promise<number> {
   // A queued merge wakes the planner once, with the whole result.
   const wake = () => {
     const last = kept.last;
-    if (!process.env.E9G_MERGE_QUEUED || !runDir || !last) return;
+    if (!process.env.A6G_MERGE_QUEUED || !runDir || !last) return;
     const planner = existsSync(join(runDir, "planner-thread")) ? readFileSync(join(runDir, "planner-thread"), "utf8").trim() : "";
     if (planner) threadSend(planner, `merge-queue: ${branch} ${last.result}${last.sha ? ` at ${last.sha}` : ""}. ${last.message}`.trim());
   };
 
   // Belt and braces with the guard: while the operator has paused the team, nothing merges.
   if (inTeam() && runDir && existsSync(join(runDir, "paused"))) {
-    record("refused", "the operator paused the team; nothing merges until they resume it (e9g resume)");
+    record("refused", "the operator paused the team; nothing merges until they resume it (a6g resume)");
     console.error("merge: the operator paused the team; nothing merges until they resume it");
     return 2;
   }
@@ -195,19 +195,19 @@ export async function run(argv: string[]): Promise<number> {
     return 2;
   }
 
-  // The queued run itself (E9G_MERGE_QUEUED) merges in the foreground, whatever form of --queue it was given.
+  // The queued run itself (A6G_MERGE_QUEUED) merges in the foreground, whatever form of --queue it was given.
   const queue = options["queue"];
-  if (queue !== undefined && !["false", "0", "no"].includes(String(queue)) && !process.env.E9G_MERGE_QUEUED) {
+  if (queue !== undefined && !["false", "0", "no"].includes(String(queue)) && !process.env.A6G_MERGE_QUEUED) {
     const rest = argv.filter((arg) => !/^--queue(=.*)?$/.test(arg));
     const log = openSync(join(state, "merges", `${safe}.log`), "w");
     spawn(process.execPath, [entryOf(FACTORY_ROOT), "merge", ...rest], {
       cwd: home,
       detached: true,
       stdio: ["ignore", log, log],
-      env: { ...process.env, E9G_MERGE_QUEUED: "1" },
+      env: { ...process.env, A6G_MERGE_QUEUED: "1" },
     }).unref();
     closeSync(log);
-    console.info(`merge: ${branch} queued. The result comes as a message and in your next wake's context; the log is .e9g/run/state/merges/${safe}.log.`);
+    console.info(`merge: ${branch} queued. The result comes as a message and in your next wake's context; the log is .a6g/run/state/merges/${safe}.log.`);
     return 0;
   }
 
@@ -255,7 +255,7 @@ export async function run(argv: string[]): Promise<number> {
       slots: 1,
       waitMin: waitMin(120),
       cwd: home,
-      env: { BEFORE: before ?? "", AFTER: after, E9G_LIGHT: light ? "1" : "0", JOURNEYS: light ? "0" : "1" },
+      env: { BEFORE: before ?? "", AFTER: after, A6G_LIGHT: light ? "1" : "0", JOURNEYS: light ? "0" : "1" },
       stdio: ["ignore", "pipe", "pipe"],
       onOutput: (chunk) => {
         process.stdout.write(chunk);
@@ -278,7 +278,7 @@ export async function run(argv: string[]): Promise<number> {
   }
   wake();
   // The queue runs where the planner does, which can read a checkout the launchd watchdog can't (~/Documents).
-  if (process.env.E9G_MERGE_QUEUED) {
+  if (process.env.A6G_MERGE_QUEUED) {
     const entry = readRegistry(team.name);
     try {
       if (entry && entry.home === home) pruneWorktrees(entry);
@@ -388,7 +388,7 @@ async function mergeLocked({
   }
   if (required) {
     const review = readJson<Verdict>(join(state, "reviews", `${safe}.json`));
-    if (!review) return fail(2, "refused", `${branch} has no review; start a reviewer (it records one with e9g verdict review)`);
+    if (!review) return fail(2, "refused", `${branch} has no review; start a reviewer (it records one with a6g verdict review)`);
     if (review.verdict !== "approve") return fail(2, "refused", `the review of ${branch} asks for changes: ${review.note}`);
     if (review.sha !== tip) {
       const approved = review.sha.slice(0, 9);
@@ -489,7 +489,7 @@ async function mergeLocked({
         return fail(
           4,
           "gate-failed",
-          `the gate fails on ${branch} merged into ${integration}; nothing was merged. ${said ? `It says: ${said} ` : ""}(full output: .e9g/run/state/merges/${safe}.gate.log)`
+          `the gate fails on ${branch} merged into ${integration}; nothing was merged. ${said ? `It says: ${said} ` : ""}(full output: .a6g/run/state/merges/${safe}.gate.log)`
         );
       }
     }
@@ -540,7 +540,7 @@ async function mergeLocked({
   // A team on several machines: the integration branch goes to the remote before its tasks are done, so a worker that
   // claims what they unblock builds on it.
   const pushed = pushIntegration(home, team);
-  // Close what the branch did: --closes, plus the number in the branch's name (e9g/b89-… closes 89). Merges whose push
+  // Close what the branch did: --closes, plus the number in the branch's name (a6g/b89-… closes 89). Merges whose push
   // failed close theirs with the next one that pushes, since only then can a worker build on them.
   const fromName = ticketOf(branch, team.branchPrefix);
   const unpushed = join(run, "unpushed.json");
@@ -551,7 +551,7 @@ async function mergeLocked({
   if (!pushed.ok) {
     writeJson(unpushed, [...waiting, { ids, branch, sha, tip, ...(rebasedFrom ? { rebasedFrom: commit(rebasedFrom) ?? rebasedFrom } : {}) }]);
     console.error(
-      `merge: merged here, but ${pushed.said}. Its tasks (${ids.join(" ") || "none"}) stay open until a merge pushes, or e9g merge --push once the remote takes pushes again; the operator sorts out the remote.`
+      `merge: merged here, but ${pushed.said}. Its tasks (${ids.join(" ") || "none"}) stay open until a merge pushes, or a6g merge --push once the remote takes pushes again; the operator sorts out the remote.`
     );
   } else if (team.board.type === "tasks") {
     // The merge happened; a task graph that can't be reached doesn't undo it, and the planner hears why.
@@ -579,7 +579,7 @@ async function mergeLocked({
     const label = team.board.label;
     for (const n of ids) {
       spawnSync("gh", ["issue", "edit", n, "--remove-label", `${label}:building`, "--remove-label", `${label}:review`], { cwd: home, stdio: "ignore" });
-      const close = spawnSync("gh", ["issue", "close", n, "--comment", `Merged into ${integration} at ${sha} (e9g merge, ${branch}).`], {
+      const close = spawnSync("gh", ["issue", "close", n, "--comment", `Merged into ${integration} at ${sha} (a6g merge, ${branch}).`], {
         cwd: home,
         stdio: "ignore",
       });

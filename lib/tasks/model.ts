@@ -58,7 +58,7 @@ export interface Event {
 }
 
 // A task raised to the operator (a question, or blocked work only they can unblock): why it's theirs, and what the
-// team recommends. The operator's inbox shows both; e9g task status/escalate/ask require them.
+// team recommends. The operator's inbox shows both; a6g task status/escalate/ask require them.
 export interface Ask {
   reason: string;
   recommendation: string;
@@ -113,7 +113,7 @@ export interface Task extends Doc {
   wait?: Wait | null;
   by: string;
   // The person who added or suggested it from the web app, by stakeholder id (Article 8); none for the team's own work
-  // and what the operator adds with e9g task add.
+  // and what the operator adds with a6g task add.
   from?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -141,7 +141,7 @@ export interface Stakeholder extends Doc {
   name: string;
   email: string;
   role: string;
-  // A hash of the stakeholder's own link to e9g serve's form (e9g request stakeholders add), or none.
+  // A hash of the stakeholder's own link to a6g serve's form (a6g request stakeholders add), or none.
   key?: string | null;
   // The web app's account this stakeholder signs in as (its id in the app's accounts), or none.
   userId?: string | null;
@@ -251,7 +251,7 @@ const first =
 // tasks that are each approved, never is.
 const scored: Check = (t) =>
   t.kind !== "journey" && !t.score && (t.kind === "feature" || !t.severity)
-    ? `task ${t.id} isn't scored yet; the planner scores it first (e9g task score)`
+    ? `task ${t.id} isn't scored yet; the planner scores it first (a6g task score)`
     : null;
 // A journey only groups tasks, each approved on its own: the approver has nothing to decide about it.
 const notJourney: Check = (t) => (t.kind === "journey" ? `#${t.id} is a journey: it only groups tasks, and each of them is decided on its own` : null);
@@ -262,7 +262,7 @@ const approverActs: Check = (_t, _to, _actor, { approval }) =>
 const withinThresholds: Check = (t, _to, _actor, { approval }) => {
   if (approval?.mode !== "thresholds") return null;
   if (t.score === null || SIZES[t.score.size] <= SIZES[approval.maxSize]) return null;
-  return `size ${t.score.size}, over this team's ${approval.maxSize}, is the operator's to approve (team.json approval): e9g task escalate ${t.id} --reason "…"`;
+  return `size ${t.score.size}, over this team's ${approval.maxSize}, is the operator's to approve (team.json approval): a6g task escalate ${t.id} --reason "…"`;
 };
 // A finding the planner rewrote (its title, body or kind) is the planner's proposal now, not the member's finding.
 const rewrittenByPlanner = (t: Task): boolean => t.history.some((e) => e.by === "planner" && /\bedited\b[^;]*\b(title|body|kind)\b/.test(e.what));
@@ -271,18 +271,18 @@ const rewrittenByPlanner = (t: Task): boolean => t.history.some((e) => e.by === 
 // own proposal, approved by the approver or the operator (Article 8).
 const othersFinding: Check = (t, _to, _actor, { approval }) => {
   if (t.by === "stakeholder")
-    return `task ${t.id} was suggested from the web app: make it your own proposal (e9g task edit, score, then e9g task status ${t.id} proposed) for the approver or the operator`;
+    return `task ${t.id} was suggested from the web app: make it your own proposal (a6g task edit, score, then a6g task status ${t.id} proposed) for the approver or the operator`;
   if (!FINDINGS.includes(t.kind) || t.by === "planner" || rewrittenByPlanner(t))
-    return `the planner doesn't approve its own proposals: the approver or the operator does (e9g task approve ${t.id})`;
+    return `the planner doesn't approve its own proposals: the approver or the operator does (a6g task approve ${t.id})`;
   if (approval?.findings === "approver") return "this team's approver decides findings too (team.json approval.findings)";
-  if (!t.severity) return `give task ${t.id} its severity first (e9g task edit ${t.id} --sev …)`;
+  if (!t.severity) return `give task ${t.id} its severity first (a6g task edit ${t.id} --sev …)`;
   if (approval && t.score && SIZES[t.score.size] > SIZES[approval.maxSize])
     return `size ${t.score.size} is over this team's ${approval.maxSize}: the approver or the operator decides it`;
   return null;
 };
 const wasApproved: Check = (t, to) =>
-  to === "approved" && !t.approval ? `task ${t.id} was never approved; the approver or the operator approves it (e9g task approve ${t.id})` : null;
-const codeDone = (t: Task): string => `code is done when the merge queue merges it (e9g merge … --closes ${t.id}); reject it instead if it won't be built`;
+  to === "approved" && !t.approval ? `task ${t.id} was never approved; the approver or the operator approves it (a6g task approve ${t.id})` : null;
+const codeDone = (t: Task): string => `code is done when the merge queue merges it (a6g merge … --closes ${t.id}); reject it instead if it won't be built`;
 // Code isn't done by anyone's say-so. Research is, when the planner says so; a journey, once its tasks are and the planner
 // has verified it.
 const plannerDone: Check = (t, _to, _actor, { all }) => {
@@ -314,7 +314,7 @@ const merged: Check = (t, _to, _actor, { branch, tip, rebasedFrom }) =>
 const leaseOut: Check = (t, _to, _actor, { now = Date.now() }) =>
   t.claim && Date.parse(t.claim.until) <= now ? null : `task ${t.id}'s claim hasn't run out`;
 
-// The planner's own moves (e9g task status): it never claims, approves its own proposals or marks code done.
+// The planner's own moves (a6g task status): it never claims, approves its own proposals or marks code done.
 const PLANNER_TO: [Status[], Status[]][] = [
   [["triage"], ["proposed", "rejected", "question", "blocked"]],
   [["proposed"], ["triage", "rejected", "question", "blocked"]],
@@ -394,7 +394,7 @@ function notFrom(t: Task, to: Status, via: Via): string {
   if (via === "submit") return `task ${t.id} isn't claimed from this worktree (${t.status})`;
   if (via === "changes" || via === "conflict") return `task ${t.id} is ${t.status}, not in review`;
   if (via === "merge" && t.kind === "journey") return `#${t.id} is a journey, done once the planner has verified it`;
-  if (to === "done" && t.kind === "journey") return `journey ${t.id} is ${t.status}; reopen it first (e9g task status ${t.id} proposed)`;
+  if (to === "done" && t.kind === "journey") return `journey ${t.id} is ${t.status}; reopen it first (a6g task status ${t.id} proposed)`;
   if (via === "merge")
     return t.status === "building"
       ? `#${t.id} is being built by the ${t.claim?.role ?? "a member"}${t.claim ? ` on ${t.claim.machine}` : ""}`
@@ -403,16 +403,16 @@ function notFrom(t: Task, to: Status, via: Via): string {
         : `#${t.id} is ${t.status}, never approved`;
   if (via === "expire") return `task ${t.id} isn't building`;
   if (via === "settle") return `task ${t.id} is ${t.status}, not waiting on other tasks`;
-  if (to === "approved") return `the planner doesn't approve its own proposals: the approver or the operator does (e9g task approve ${t.id})`;
+  if (to === "approved") return `the planner doesn't approve its own proposals: the approver or the operator does (a6g task approve ${t.id})`;
   if (to === "done") return codeDone(t);
-  if (to === "review") return "a task goes to review when its claimant submits it (e9g task submit)";
+  if (to === "review") return "a task goes to review when its claimant submits it (a6g task submit)";
   return `a ${t.status} task doesn't go to ${to}`;
 }
 
 // Why `actor` can't move `task` to `to` through `via`, or null when it can.
 export function moveRefusal(task: Task, to: Status, via: Via, actor: Actor, ctx: MoveContext): string | null {
   if (task.status === to) return `task ${task.id} is already ${to}`;
-  if (to === "building" && via !== "claim") return "a task is building only when a builder or tester claims it (e9g task claim)";
+  if (to === "building" && via !== "claim") return "a task is building only when a builder or tester claims it (a6g task claim)";
   const theirs = RULES.filter((rule) => rule.via === via && rule.by.includes(actor));
   if (!theirs.length)
     return via === "status"
@@ -429,7 +429,7 @@ export function moveRefusal(task: Task, to: Status, via: Via, actor: Actor, ctx:
   return why;
 }
 
-// The planner's and the operator's e9g task status.
+// The planner's and the operator's a6g task status.
 export const statusRefusal = (task: Task, to: Status, actor: Actor, all: Task[] = []): string | null => moveRefusal(task, to, "status", actor, { all });
 
 // `task` moved to `to`, or a Refused saying why it can't be. A move takes the approval with it back among the
@@ -541,7 +541,7 @@ export function nextClaim(all: Task[], role: string, kind?: Kind, hold: Hold | n
   return all.filter((t) => (kind === undefined || t.kind === kind) && claimRefusal(t, role, all, hold) === null).sort(claimOrder)[0] ?? null;
 }
 
-// The branch name a claimant uses, matching its role's pattern (e9g/b142-resume-a-recording, e9g/t-142-…).
+// The branch name a claimant uses, matching its role's pattern (a6g/b142-resume-a-recording, a6g/t-142-…).
 export function branchFor(task: Task, role: string, prefix: string): string {
   const slug =
     task.title
@@ -553,8 +553,8 @@ export function branchFor(task: Task, role: string, prefix: string): string {
   return role === "tester" ? `${prefix}/t-${task.id}-${slug}` : `${prefix}/b${task.id}-${slug}`;
 }
 
-// The ticket a branch's name gives: the number in the first part after the prefix (e9g/b12-x/v2-y closes 12, and a
-// tester's e9g/t-12-x closes 12).
+// The ticket a branch's name gives: the number in the first part after the prefix (a6g/b12-x/v2-y closes 12, and a
+// tester's a6g/t-12-x closes 12).
 export function ticketOf(branch: string, prefix: string): string | undefined {
   const rest = branch.startsWith(`${prefix}/`) ? branch.slice(prefix.length + 1) : branch.includes("/") ? branch.slice(branch.indexOf("/") + 1) : branch;
   return /^(?:[a-z]*|t-)(\d+)-/.exec(rest.split("/")[0] ?? "")?.[1];

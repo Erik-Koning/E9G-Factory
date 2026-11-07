@@ -1,4 +1,4 @@
-// e9g metrics [--since <ISO time>] [--until …] [--team <name>] [--json]
+// a6g metrics [--since <ISO time>] [--until …] [--team <name>] [--json]
 //
 // What a team has cost, per role: agents (T3 threads), runs (T3 turns: one wake of the planner, one task of a
 // member), model requests and tool calls (from the Claude transcripts), tokens and wall time. Two sources that
@@ -53,7 +53,7 @@ export function run(args: string[]): number {
   const until = option("--until") ?? "9999-12-31T00:00:00Z";
   const roleOf = (instance: string) => roleForInstance(team, instance) ?? instance;
   if (!project) {
-    console.error("metrics: the team isn't registered with T3 Code yet (e9g register), and no --project was given");
+    console.error("metrics: the team isn't registered with T3 Code yet (a6g register), and no --project was given");
     return 2;
   }
 

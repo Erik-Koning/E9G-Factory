@@ -151,7 +151,7 @@ export interface StillWaiting {
 export function digestMail(events: TeamEvent[], waiting: StillWaiting[], titles: Titles, base: string, day: string): Mail {
   const open = waiting.reduce((n, w) => n + w.items.length, 0);
   const subject = [open ? `${open} waiting on you` : "", events.length ? plural(events.length, "update") : ""].filter(Boolean).join(", ");
-  const parts: string[] = [`Your E9G digest for ${day}.`];
+  const parts: string[] = [`Your Anything Factory digest for ${day}.`];
   if (open) {
     parts.push(
       [
@@ -166,13 +166,13 @@ export function digestMail(events: TeamEvent[], waiting: StillWaiting[], titles:
   }
   if (events.length) parts.push(["Since your last digest:", ...grouped(events, titles, base)].join("\n").trim());
   parts.push(footer(base));
-  return { subject: `[E9G] ${subject || "Your digest"}`, text: parts.join("\n\n"), link: open ? `${base}/inbox` : `${base}/` };
+  return { subject: `[Anything Factory] ${subject || "Your digest"}`, text: parts.join("\n\n"), link: open ? `${base}/inbox` : `${base}/` };
 }
 
 // The test email from the settings page: what they'll get, to the address they'll get it at.
 export function testMail(name: string, summary: string[], base: string): Mail {
   return {
-    subject: "[E9G] Test email: your notifications reach you",
+    subject: "[Anything Factory] Test email: your notifications reach you",
     text: [
       `Hello ${name}, this is the test email you asked for. Notifications will come to this address.`,
       ["What you get:", ...summary].join("\n"),

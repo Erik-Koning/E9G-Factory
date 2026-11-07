@@ -12,7 +12,7 @@ import "./globals.css";
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: { default: "E9G", template: "%s · E9G" },
+  title: { default: "Anything Factory", template: "%s · Anything Factory" },
   description: "Requests, decisions and each team's state",
   robots: { index: false, follow: false },
 };
@@ -49,7 +49,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <header className="top">
           <div className="top-inner">
             <Link className="brand" href="/">
-              E9G
+              Anything Factory
             </Link>
             {signedIn ? (
               <nav aria-label="Main">

@@ -1,7 +1,7 @@
 // A counting semaphore shared by every worktree of a team: at most `slots` holders of a name at once, the rest wait
 // (up to waitMin minutes). A slot whose holder died is taken over. Used for gates (parallel builds starve each
 // other into flaky failures), merges (one at a time) and anything that drives the team's shared environment.
-// Slots live in <checkout>/.e9g/run/locks/<name>/slot-<i>/: `pid` (the holder's pid, which earlier versions read)
+// Slots live in <checkout>/.a6g/run/locks/<name>/slot-<i>/: `pid` (the holder's pid, which earlier versions read)
 // and `owner` (a token for this one holding, and the holder's start time, so a reused pid doesn't count).
 //
 // A slot directory appears whole: it's filled under another name and renamed into place, which fails while

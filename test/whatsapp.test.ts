@@ -1,4 +1,4 @@
-import { e9g, fakeKeychain } from "./helpers.ts";
+import { a6g, fakeKeychain } from "./helpers.ts";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -38,7 +38,7 @@ const server = createServer((request, response) => {
     if (request.method === "POST")
       meta.posted.push({ path, authorization: request.headers.authorization, body: JSON.parse(body) as Record<string, unknown> });
     if (request.method === "POST" && path === "/222/message_templates") {
-      meta.templates.push({ name: "e9g_update", language: "en", status: meta.created });
+      meta.templates.push({ name: "a6g_update", language: "en", status: meta.created });
       return answer(200, { id: "t-1", status: meta.created, category: "UTILITY" });
     }
     if (request.method === "POST" && path === "/111/messages") return answer(meta.messages.status, meta.messages.body);
@@ -47,19 +47,19 @@ const server = createServer((request, response) => {
 });
 before(() =>
   new Promise<void>((done) => server.listen(0, "127.0.0.1", () => done())).then(() => {
-    process.env.E9G_GRAPH_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    process.env.A6G_GRAPH_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   })
 );
 after(() => server.close());
 
 const TOKEN = "EAAtoken1234567890abcdef\n";
 const connect = (...extra: string[]) =>
-  e9g(["connect", "whatsapp", "--phone-number-id", "111", "--account-id", "222", "--to", "+1 (604) 555-0123", ...extra], { input: TOKEN });
+  a6g(["connect", "whatsapp", "--phone-number-id", "111", "--account-id", "222", "--to", "+1 (604) 555-0123", ...extra], { input: TOKEN });
 const sentTemplate = (posted: Posted | undefined) => posted?.body["template"] as { name: string; components: { parameters: { text: string }[] }[] };
 
-describe("e9g connect whatsapp", () => {
+describe("a6g connect whatsapp", () => {
   test("adds the template, and while Meta reviews it, connects without sending", async () => {
-    const wrong = await e9g(["connect", "whatsapp", "--phone-number-id", "111", "--account-id", "222", "--to", "16045550123"], {
+    const wrong = await a6g(["connect", "whatsapp", "--phone-number-id", "111", "--account-id", "222", "--to", "16045550123"], {
       input: "EAAwrongtoken1234567890\n",
     });
     assert.equal(wrong.code, 1);
@@ -74,9 +74,9 @@ describe("e9g connect whatsapp", () => {
     assert.equal((created?.body["components"] as { text: string }[])[0]?.text, TEMPLATE_BODY);
     assert.ok(!meta.posted.some((p) => p.path === "/111/messages"), "nothing is sent before approval");
     assert.equal((JSON.parse(readFileSync(WHATSAPP_FILE, "utf8")) as { to: string }).to, "16045550123");
-    assert.equal(readFileSync(join(keychain, "ca.e9g.whatsapp"), "utf8"), "EAAtoken1234567890abcdef");
+    assert.equal(readFileSync(join(keychain, "ca.a6g.whatsapp"), "utf8"), "EAAtoken1234567890abcdef");
     assert.doesNotMatch(readFileSync(join(keychain, "calls"), "utf8"), /EAAtoken/);
-    assert.match((await e9g(["connect", "whatsapp", "--test"])).out, /template is pending/);
+    assert.match((await a6g(["connect", "whatsapp", "--test"])).out, /template is pending/);
   });
 
   test("once approved, sends a test through the template, and connect shows it", async () => {
@@ -88,25 +88,25 @@ describe("e9g connect whatsapp", () => {
     const message = meta.posted.at(-1);
     assert.equal(message?.path, "/111/messages");
     assert.equal(message?.body["to"], "16045550123");
-    assert.equal(sentTemplate(message).name, "e9g_update");
+    assert.equal(sentTemplate(message).name, "a6g_update");
     assert.equal(sentTemplate(message).components[0]?.parameters[0]?.text, "your teams");
-    assert.match((await e9g(["connect"])).out, /whatsapp {2}to \+16045550123, from number 111, one way/);
+    assert.match((await a6g(["connect"])).out, /whatsapp {2}to \+16045550123, from number 111, one way/);
 
     meta.messages = { status: 400, body: { error: { message: "(#132001) Template name does not exist in the translation", code: 132001 } } };
-    const refused = await e9g(["connect", "whatsapp", "--test"]);
+    const refused = await a6g(["connect", "whatsapp", "--test"]);
     assert.equal(refused.code, 1);
     assert.match(refused.out, /code 132001/);
     meta.messages = { status: 200, body: { messages: [{ id: "wamid.2" }] } };
   });
 
   test("a rejected template connects nothing", async () => {
-    assert.equal((await e9g(["disconnect", "whatsapp"])).code, 0);
-    assert.ok(!existsSync(WHATSAPP_FILE) && !existsSync(join(keychain, "ca.e9g.whatsapp")));
+    assert.equal((await a6g(["disconnect", "whatsapp"])).code, 0);
+    assert.ok(!existsSync(WHATSAPP_FILE) && !existsSync(join(keychain, "ca.a6g.whatsapp")));
     meta.templates[0]!.status = "REJECTED";
     meta.templates[0]!.rejected_reason = "INCORRECT_CATEGORY";
     const rejected = await connect();
     assert.equal(rejected.code, 1);
-    assert.match(rejected.out, /rejected the e9g_update template \(INCORRECT_CATEGORY\)/);
+    assert.match(rejected.out, /rejected the a6g_update template \(INCORRECT_CATEGORY\)/);
     assert.ok(!existsSync(WHATSAPP_FILE));
     meta.templates[0]!.status = "APPROVED";
   });
@@ -117,18 +117,18 @@ describe("WhatsApp messages", () => {
     assert.deepEqual(
       whatsappMessage(
         "[My app] The planner is waiting for an answer in T3 Code.",
-        "The planner is waiting for an answer in T3 Code.\n\ne9g status my-app shows the team.\n\nSent by the E9G Factory watchdog on mac.\n"
+        "The planner is waiting for an answer in T3 Code.\n\na6g status my-app shows the team.\n\nSent by the Anything Factory watchdog on mac.\n"
       ),
-      ["My app", "The planner is waiting for an answer in T3 Code. e9g status my-app shows the team."]
+      ["My app", "The planner is waiting for an answer in T3 Code. a6g status my-app shows the team."]
     );
     assert.deepEqual(whatsappMessage("[My app] Which database", "Postgres\tor   SQLite?\n- Postgres: shared\n- SQLite: simpler\n"), [
       "My app",
       "Which database. Postgres or SQLite? - Postgres: shared - SQLite: simpler",
     ]);
-    assert.equal(whatsappMessage("[E9G Factory] T3 Code won't start", "")[0], "your teams");
+    assert.equal(whatsappMessage("[Anything Factory] T3 Code won't start", "")[0], "your teams");
     // The planner's own messages are labelled as its, in the first parameter, so the approved template stays as it is.
     const { subject, text } = outboxMessage("My app", "2026-10-25-db.md", "Subject: Which database?\n\nPostgres or SQLite?\n");
-    assert.deepEqual(whatsappMessage(subject, text), ["E9G-Planner · My app", "Which database? Postgres or SQLite?"]);
+    assert.deepEqual(whatsappMessage(subject, text), ["A6G-Planner · My app", "Which database? Postgres or SQLite?"]);
     const long = whatsappMessage("[My app] Long", "x".repeat(2000))[1];
     assert.equal(long.length, 700);
     assert.ok(long.endsWith("…"));
@@ -155,7 +155,7 @@ describe("WhatsApp messages", () => {
   });
 
   test("agents can't message through the Graph API themselves", () => {
-    const { team } = normalize({ name: "fixture", branch: "e9g/next" }, "/tmp/fixture");
+    const { team } = normalize({ name: "fixture", branch: "a6g/next" }, "/tmp/fixture");
     assert.ok(refusal(team, "curl -X POST https://graph.facebook.com/v25.0/111/messages -H 'Authorization: Bearer x' -d @m.json"));
     assert.equal(refusal(team, "curl https://graph.facebook.com/v25.0/me?fields=id"), null);
   });

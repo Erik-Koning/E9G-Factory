@@ -124,7 +124,7 @@ export function TaskForm({ team, admin, journeys }: { team: string; admin: boole
       </div>
       <p id="task-hint" className="hint">
         {admin
-          ? "You add it as the operator, like e9g task add: a proposal for the planner to score and the approver (or you) to decide, unless you approve it now."
+          ? "You add it as the operator, like a6g task add: a proposal for the planner to score and the approver (or you) to decide, unless you approve it now."
           : `It goes to triage: the planner reads it, then proposes it, folds it into other work or turns it down. The team's agents see your role, never your name or email. At most ${LIMITS.requestsPerDay} requests and suggestions a day.`}
       </p>
     </form>

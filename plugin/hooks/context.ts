@@ -2,7 +2,7 @@
 // Live context, so no agent works from memory. Claude Code shows a hook's context in full only under about 10,000
 // characters, so this stays short and the static rules live in the compiled prompt instead.
 // - SessionStart, every role: who and when; recompiles the team's prompt if its sources changed (for the next
-//   session) and says so. The planner also gets how the operator is connected (e9g connect), the members running
+//   session) and says so. The planner also gets how the operator is connected (a6g connect), the members running
 //   against the limits, the team's context commands (team.json "context") and its latest log entries.
 // - UserPromptSubmit, planner only (every wake): the real time, members running, merge results it hasn't seen,
 //   whether the environment is draining, when it may next write to the operator (team.json contact), and whether the
@@ -28,7 +28,7 @@ if (event === "UserPromptSubmit" && role !== "planner") process.exit(0);
 const state = stateDir(home);
 const LIMIT = 9000;
 // While the operator has the team paused, the guard refuses new members and merges.
-const paused = existsSync(join(run, "paused")) ? "The operator paused the team: start no members and merge nothing until they run e9g resume." : null;
+const paused = existsSync(join(run, "paused")) ? "The operator paused the team: start no members and merge nothing until they run a6g resume." : null;
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max)}\n(… cut at ${max} characters)` : text);
 const runCommand = (command: string): string => {
@@ -80,10 +80,10 @@ if (event === "UserPromptSubmit") {
   const finished = merges();
   const drain = join(state, "drain");
   context = [
-    `Now: ${localTime()} (local). e9g log stamps this time.`,
+    `Now: ${localTime()} (local). a6g log stamps this time.`,
     slots(),
     finished.length ? `Merge queue results:\n${finished.join("\n")}` : null,
-    existsSync(drain) ? `Draining for an environment reset: no new ${readFileSync(drain, "utf8").trim()} until e9g drain off.` : null,
+    existsSync(drain) ? `Draining for an environment reset: no new ${readFileSync(drain, "utf8").trim()} until a6g drain off.` : null,
     contactStatus(team.contact, run),
     await graph(),
     paused,
@@ -119,7 +119,7 @@ if (event === "UserPromptSubmit") {
     const log = existsSync(logFile)
       ? readFileSync(logFile, "utf8").split("\n\n").slice(1, 5).join("\n\n")
       : "(no log yet: this is the team's first session)";
-    parts.push(`Your latest log entries (e9g log; newest first):\n${clip(log, 3000)}`);
+    parts.push(`Your latest log entries (a6g log; newest first):\n${clip(log, 3000)}`);
   }
   context = parts.join("\n\n");
 }

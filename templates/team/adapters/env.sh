@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # The team's own environment: the product running on the team's own port with its own data, apart from the
-# operator's dev server and databases. The planner runs up, reset, restart and down (e9g env …); anyone runs
-# status. State lives in .e9g/run/env/ in the team's checkout.
+# operator's dev server and databases. The planner runs up, reset, restart and down (a6g env …); anyone runs
+# status. State lives in .a6g/run/env/ in the team's checkout.
 #
-#   .e9g/adapters/env.sh up|down|restart|reset|status
+#   .a6g/adapters/env.sh up|down|restart|reset|status
 set -uo pipefail
 ROOT="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
 cd "$ROOT" || exit 2
-RUN="$ROOT/.e9g/run/env"
-PORT="${E9G_APP_PORT:-{{PORT}}}"
+RUN="$ROOT/.a6g/run/env"
+PORT="${A6G_APP_PORT:-{{PORT}}}"
 URL="http://localhost:$PORT/"
 mkdir -p "$RUN"
 

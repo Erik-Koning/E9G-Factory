@@ -4,7 +4,7 @@ import { describe, test } from "node:test";
 import { normalize, type RawTeam, type Team } from "../lib/config.ts";
 import { ALLOWED_EXAMPLES, commandRules, isSecretFile, POLICIES, policyStates, refusal } from "../lib/policies.ts";
 
-const team = (raw: RawTeam = {}): Team => normalize({ name: "fixture", branch: "e9g/next", ...raw }, "").team;
+const team = (raw: RawTeam = {}): Team => normalize({ name: "fixture", branch: "a6g/next", ...raw }, "").team;
 const refused = (t: Team, command: string) => refusal(t, command);
 
 describe("policies", () => {
@@ -56,10 +56,10 @@ describe("policies", () => {
       "t3 thread list",
       "cat .env.local",
       "sudo rm x",
-      "e9g register",
-      "e9g connect email --to me@example.com",
-      "e9g disconnect email",
-      "security find-generic-password -s ca.e9g.email -a resend -w",
+      "a6g register",
+      "a6g connect email --to me@example.com",
+      "a6g disconnect email",
+      "security find-generic-password -s ca.a6g.email -a resend -w",
       "rm -rf ~",
       "npm i -g pnpm",
     ])

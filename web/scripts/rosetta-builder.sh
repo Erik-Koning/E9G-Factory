@@ -7,11 +7,11 @@
 # builder's image leaves that QEMU out: BuildKit then executes amd64 steps directly, and the VM's kernel hands them
 # to Rosetta, as it does for `docker run --platform linux/amd64`.
 #
-#   scripts/rosetta-builder.sh          then deploy with BUILDX_BUILDER=e9g-rosetta (sst.config.ts reads it)
+#   scripts/rosetta-builder.sh          then deploy with BUILDX_BUILDER=a6g-rosetta (sst.config.ts reads it)
 set -euo pipefail
 BUILDKIT=v0.33.1
-NAME=e9g-rosetta
-IMAGE="e9g-buildkit-rosetta:$BUILDKIT"
+NAME=a6g-rosetta
+IMAGE="a6g-buildkit-rosetta:$BUILDKIT"
 
 printf 'FROM moby/buildkit:%s\nRUN rm /usr/bin/buildkit-qemu-x86_64\n' "$BUILDKIT" | docker build -q -t "$IMAGE" -
 docker buildx rm "$NAME" >/dev/null 2>&1 || true

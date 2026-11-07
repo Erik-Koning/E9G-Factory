@@ -106,6 +106,6 @@ export const text = (value: Options[string]): string | undefined => (typeof valu
 export const list = (value: Options[string]): string[] => (Array.isArray(value) ? value : typeof value === "string" ? [value] : []);
 
 export function die(message: string, code = 2): never {
-  console.error(`e9g: ${message}`);
+  console.error(`a6g: ${message}`);
   process.exit(code);
 }

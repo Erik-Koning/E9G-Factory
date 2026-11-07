@@ -35,7 +35,7 @@ export interface Matcher {
 export type PolicyState = "allow" | "deny";
 export interface Policy {
   id: string;
-  // Commands the policy must stop: e9g check and the tests prove each one is refused.
+  // Commands the policy must stop: a6g check and the tests prove each one is refused.
   examples: string[];
   default: PolicyState;
   summary: string;
@@ -181,11 +181,11 @@ export const POLICIES: Policy[] = [
       "if true; then supabase db push; fi",
       "npx prisma db push",
       "pnpm drizzle-kit push",
-      "e9g lock app -- npx supabase db push",
+      "a6g lock app -- npx supabase db push",
       "pnpm -C packages/db exec drizzle-kit push",
       "supabase --workdir app db push",
-      'mongosh "mongodb://team:secret@cluster0.abc12.mongodb.net/e9g"',
-      "mongodump --host db.example.com --db e9g",
+      'mongosh "mongodb://team:secret@cluster0.abc12.mongodb.net/a6g"',
+      "mongodump --host db.example.com --db a6g",
     ],
     default: "deny",
     summary: "hosted databases and data services (linking, pushing, migrating, dumping, project keys)",
@@ -274,7 +274,7 @@ export const POLICIES: Policy[] = [
   },
   {
     id: "payments",
-    examples: ["stripe charges create --amount 100", "echo 'STRIPE_SECRET_KEY=sk_live_abc123' >> /tmp/e9g-check.txt"],
+    examples: ["stripe charges create --amount 100", "echo 'STRIPE_SECRET_KEY=sk_live_abc123' >> /tmp/a6g-check.txt"],
     default: "deny",
     summary: "payments: the Stripe CLI and live payment keys",
     reason: `nothing the team does moves money. ${ASK}`,
@@ -299,7 +299,7 @@ export const POLICIES: Policy[] = [
 
 // The factory's own commands, which only a person (or the setup agent, for check, register and start) runs.
 export const OPERATOR_COMMANDS = new RegExp(
-  `${START}e9g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|budget|rotate|stop|unregister|connect|disconnect|serve)${END}`
+  `${START}a6g\\s+(?:init|register|sync|upgrade|self-install|watchdog|start|pause|resume|budget|rotate|stop|unregister|connect|disconnect|serve)${END}`
 );
 
 // An env file named in a command it reads or writes. Not in what only lists names (ls -la .env*), and not in what
@@ -314,7 +314,7 @@ const namesEnvFile: Matcher = {
 };
 
 // The variables a member is known by, which its T3 instance sets.
-const IDENTITY = String.raw`E9G_(?:TEAM|ROLE|HOME_DIR|RUN|SETUP|HOME|VERSION)`;
+const IDENTITY = String.raw`A6G_(?:TEAM|ROLE|HOME_DIR|RUN|SETUP|HOME|VERSION)`;
 
 // Never unlocked.
 export const CORE: [Matcher, string][] = [
@@ -333,20 +333,20 @@ export const CORE: [Matcher, string][] = [
   [/\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+(-[a-zA-Z]+\s+)*(\/|~|\$HOME|\/Users\/[^/\s]+)\/?(\s|$)/, "that would delete far too much."],
   [namesEnvFile, "env files hold secrets; agents never read or write them. The team's environment has what it needs."],
   [
-    /\bsecurity\s+(find|dump|export|add|delete|set)-|\bca\.e9g\.(email|whatsapp)\b|\bgh\s+auth\s+token\b|\.ssh\/id_|\baws\s+configure\s+get\b/,
+    /\bsecurity\s+(find|dump|export|add|delete|set)-|\bca\.a6g\.(email|whatsapp)\b|\bgh\s+auth\s+token\b|\.ssh\/id_|\baws\s+configure\s+get\b/,
     "credentials are never read or changed by the team.",
   ],
   [
     OPERATOR_COMMANDS,
     "the operator runs the factory's own commands; the team uses merge, verdict, log, lock, gate, env, finish, pages, pr, task, request, cycle and blast.",
   ],
-  // Who a member is comes from its instance's E9G_ variables (the commands take a caller with none of them for the
+  // Who a member is comes from its instance's A6G_ variables (the commands take a caller with none of them for the
   // operator): nothing sets, unsets or clears them, by an assignment, env, exec -c or cross-env.
   [
     new RegExp(
       String.raw`(?:^|[\s;&|(\x60=]|\$\()(?:${IDENTITY}=|(?:export|unset|declare|typeset|readonly)\s+(?:\S+\s+)*${IDENTITY}\b)|(?:^|[;&|(\x60]|\$\()\s*(?:\w+=\S*\s+)*(?:\S*/)?(?:env\s+(?:(?:-u\s*|--unset[=\s])\S+\s+|-\S+\s+)*?(?:-i\b|--ignore-environment\b|-(?=\s)|-u\s*${IDENTITY}|--unset(?:=|\s+)${IDENTITY})|exec\s+(?:-\S*\s+)*-\w*c)`
     ),
-    "a member's identity is its instance's E9G_ variables; no command sets, unsets or clears them.",
+    "a member's identity is its instance's A6G_ variables; no command sets, unsets or clears them.",
   ],
 ];
 
@@ -356,7 +356,7 @@ export const SECRET_FILES = [
   /(^|\/)\.env[^/]*$/,
   /(^|\/)\.envrc$/,
   /(^|\/)\.dev\.vars$/,
-  // A team's stakeholders (beside its run folder, ~/.e9g/runs/<team>.private/): their names and addresses stay with the
+  // A team's stakeholders (beside its run folder, ~/.a6g/runs/<team>.private/): their names and addresses stay with the
   // operator (Article 8). Anything in that folder, by any path or glob that names it.
   /\.private\/stakeholders(\/|$)/,
   /(^|\/)stakeholders\/s\d+\.json$/,
@@ -387,7 +387,7 @@ export function policyStates(team: Pick<Team, "policies">): (Policy & { state: P
 export const ALLOWED_EXAMPLES = [
   "grep -rn vercel docs/",
   "cat sst.config.ts",
-  "gh issue list --label e9g --state open",
+  "gh issue list --label a6g --state open",
   "gh pr view 12",
   "pnpm install --frozen-lockfile",
   "git log --oneline -5",

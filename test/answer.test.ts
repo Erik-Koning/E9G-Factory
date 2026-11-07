@@ -13,7 +13,7 @@ import { newTask, OPERATOR, Refused, type Status, type Task, withEvent } from ".
 import { update } from "../lib/tasks/store.ts";
 
 async function graph() {
-  const run = tmp("e9g-run-");
+  const run = tmp("a6g-run-");
   const store = fileStore(run, "fixture");
   const add = (title: string, status: Status, fields: Partial<Task> = {}) =>
     store.tasks.create(newTask({ team: "fixture", title, kind: "feature", status, by: "planner", ...fields }));
@@ -72,7 +72,7 @@ describe("answering what waits on the operator", () => {
 
 describe("passing answers to the planner", () => {
   const entry = (run: string, fields: Partial<RegistryEntry> = {}): RegistryEntry =>
-    ({ name: "fixture", title: "Fixture", run, tasks: { store: "files", database: "e9g", lead: null }, ...fields }) as RegistryEntry;
+    ({ name: "fixture", title: "Fixture", run, tasks: { store: "files", database: "a6g", lead: null }, ...fields }) as RegistryEntry;
 
   test("answersSince lists answers on tasks still waiting, oldest first, each with its own key", async () => {
     const { store, add } = await graph();

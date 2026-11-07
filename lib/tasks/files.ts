@@ -1,4 +1,4 @@
-// The task graph as files in the team's run folder (~/.e9g/runs/<team>/tasks/142.json, requests/r12.json, …), one
+// The task graph as files in the team's run folder (~/.a6g/runs/<team>/tasks/142.json, requests/r12.json, …), one
 // document each, where the launchd watchdog can read them and only the factory's commands write them (the guard
 // refuses agents the run folder). Creating and replacing hold the collection's lock, so ids are never given twice and
 // a replace sees the version it checks.
@@ -81,7 +81,7 @@ function collection<T extends Doc>(dir: string, prefix: string): Collection<T> {
   };
 }
 
-// The folder beside a run folder for what agents never read: ~/.e9g/runs/<team>.private/.
+// The folder beside a run folder for what agents never read: ~/.a6g/runs/<team>.private/.
 export const privateDir = (run: string): string => join(dirname(run), `${basename(run)}.private`);
 
 export function fileStore(run: string, _team: string): Store {
@@ -89,7 +89,7 @@ export function fileStore(run: string, _team: string): Store {
     kind: "files",
     tasks: collection(join(run, "tasks"), PREFIX.tasks),
     requests: collection(join(run, "requests"), PREFIX.requests),
-    // Stakeholders' names and addresses live beside the run folder, not in it: members have $E9G_RUN and search it, and
+    // Stakeholders' names and addresses live beside the run folder, not in it: members have $A6G_RUN and search it, and
     // the guard refuses the private folder whatever path or glob names it (Article 8).
     stakeholders: collection(join(privateDir(run), "stakeholders"), PREFIX.stakeholders),
     cycles: collection(join(run, "cycles"), PREFIX.cycles),

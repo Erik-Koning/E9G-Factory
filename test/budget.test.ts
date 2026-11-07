@@ -136,24 +136,24 @@ function transcript(root: string, home: string, dollars: number) {
   const dir = join(root, "home", ".claude", "projects", encodePath(home));
   mkdirSync(dir, { recursive: true });
   const lines = [
-    JSON.stringify({ type: "agent-setting", agentSetting: "e9g:planner" }),
+    JSON.stringify({ type: "agent-setting", agentSetting: "a6g:planner" }),
     JSON.stringify({
       type: "assistant",
       timestamp: new Date().toISOString(),
-      gitBranch: "e9g/next",
+      gitBranch: "a6g/next",
       message: { id: `m${dollars}`, model: "claude-opus-5-5", usage: { input_tokens: (dollars / 4) * 1e6, output_tokens: 0 } },
     }),
   ];
   writeFileSync(join(dir, `t${dollars}.jsonl`), `${lines.join("\n")}\n`);
 }
 
-describe("e9g budget and the watchdog", () => {
+describe("a6g budget and the watchdog", () => {
   async function world() {
     const { fakeWorld } = await import("./fake-t3.ts");
     const w = await fakeWorld();
-    const file = join(w.e9gHome, "teams", "fixture.json");
-    write(join(w.e9gHome, "teams"), {
-      "fixture.json": { ...JSON.parse(readFileSync(file, "utf8")), tasks: { store: "files", database: "e9g", lead: null } },
+    const file = join(w.a6gHome, "teams", "fixture.json");
+    write(join(w.a6gHome, "teams"), {
+      "fixture.json": { ...JSON.parse(readFileSync(file, "utf8")), tasks: { store: "files", database: "a6g", lead: null } },
     });
     write(w.run, { "planner-thread": "mcp:planner\n" });
     const store = fileStore(w.run, "fixture");
@@ -164,20 +164,20 @@ describe("e9g budget and the watchdog", () => {
   test("set, shown, changed one limit at a time, removed; the operator's alone", async () => {
     const { w, store } = await world();
     try {
-      const set = await w.e9g("budget", "fixture", "--daily", "40", "--total", "$500");
+      const set = await w.a6g("budget", "fixture", "--daily", "40", "--total", "$500");
       assert.equal(set.code, 0, set.out);
       assert.match(set.out, /\$40 a day, none a week, \$500 in all/);
       assert.deepEqual({ ...readLimits(w.run), since: "" }, { daily: 40, weekly: null, total: 500, since: "", autoResume: false });
       const since = readLimits(w.run)?.since;
-      assert.equal((await w.e9g("budget", "fixture", "--daily", "0", "--auto-resume")).code, 0);
+      assert.equal((await w.a6g("budget", "fixture", "--daily", "0", "--auto-resume")).code, 0);
       assert.deepEqual(
         readLimits(w.run),
         { daily: null, weekly: null, total: 500, since, autoResume: true },
         "the rest kept, the total still counted from when it began"
       );
-      assert.match((await w.e9g("budget", "fixture")).out, /none a day, none a week, \$500 in all since .*; a new day or week resumes/);
-      assert.notEqual((await w.e9g("budget", "fixture", "--daily", "lots")).code, 0);
-      assert.equal((await w.e9g("budget", "fixture", "--clear")).code, 0);
+      assert.match((await w.a6g("budget", "fixture")).out, /none a day, none a week, \$500 in all since .*; a new day or week resumes/);
+      assert.notEqual((await w.a6g("budget", "fixture", "--daily", "lots")).code, 0);
+      assert.equal((await w.a6g("budget", "fixture", "--clear")).code, 0);
       assert.equal(readLimits(w.run), null);
       assert.deepEqual(
         (await store.controls.all()).map((c) => [c.kind, c.by]),
@@ -195,9 +195,9 @@ describe("e9g budget and the watchdog", () => {
   test("past the daily budget the watchdog pauses the team after the work under way; the report says what was spent", async () => {
     const { w, store } = await world();
     try {
-      assert.equal((await w.e9g("budget", "fixture", "--daily", "5")).code, 0);
+      assert.equal((await w.a6g("budget", "fixture", "--daily", "5")).code, 0);
       transcript(w.root, w.home, 5.25);
-      assert.equal((await w.e9g("watchdog", "run", "fixture")).code, 0);
+      assert.equal((await w.a6g("watchdog", "run", "fixture")).code, 0);
       const pause = (await store.controls.all()).at(-1);
       assert.deepEqual([pause?.kind, pause?.by, pause?.scope, pause?.tasks], ["pause", "budget", "tasks", ["7"]]);
       assert.equal(readHold(w.run)?.scope, "tasks");
@@ -206,12 +206,12 @@ describe("e9g budget and the watchdog", () => {
       assert.match(log, /the budget paused the team after the work under way \(#7\) \(\$5\.25 of the \$5\.00 a day budget is spent\)/);
       assert.ok(w.calls().some((c) => /The team's budget \(\$5\.25 of the \$5\.00 a day budget is spent\) is pausing the team/.test(c)));
       // A second run asks for nothing more.
-      assert.equal((await w.e9g("watchdog", "run", "fixture")).code, 0);
+      assert.equal((await w.a6g("watchdog", "run", "fixture")).code, 0);
       assert.equal((await store.controls.all()).length, 2);
       // #7 merges: the team pauses, and the report has the spend.
       const t = await store.tasks.get("7");
       if (t) await store.tasks.replace({ ...t, status: "done" });
-      assert.equal((await w.e9g("watchdog", "run", "fixture")).code, 0);
+      assert.equal((await w.a6g("watchdog", "run", "fixture")).code, 0);
       assert.ok(existsSync(join(w.run, "paused")));
       assert.match(readHold(w.run)?.report ?? "", /Spent \(API-equivalent\): \$5\.25 today of \$5\.00/);
     } finally {
@@ -222,9 +222,9 @@ describe("e9g budget and the watchdog", () => {
   test("a tenth past the budget, it pauses now", async () => {
     const { w, store } = await world();
     try {
-      assert.equal((await w.e9g("budget", "fixture", "--daily", "5")).code, 0);
+      assert.equal((await w.a6g("budget", "fixture", "--daily", "5")).code, 0);
       transcript(w.root, w.home, 8);
-      assert.equal((await w.e9g("watchdog", "run", "fixture")).code, 0);
+      assert.equal((await w.a6g("watchdog", "run", "fixture")).code, 0);
       assert.equal(holdOf(await store.controls.all())?.scope, "now");
       assert.ok(existsSync(join(w.run, "paused")));
     } finally {

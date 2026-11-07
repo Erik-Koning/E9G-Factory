@@ -9,7 +9,7 @@ const SECRET = "s".repeat(40);
 const base = {
   MONGODB_URI: "mongodb://localhost:27017/?replicaSet=rs0",
   BETTER_AUTH_SECRET: "x".repeat(32),
-  BETTER_AUTH_URL: "https://e9g.example.com",
+  BETTER_AUTH_URL: "https://a6g.example.com",
   NODE_ENV: "production" as const,
   RESEND_API_KEY: "re_test",
 };
@@ -25,9 +25,9 @@ test("a request reaches the app only with the CDN's secret, when one is set", ()
 });
 
 test("served for real, the app needs the CDN's secret, its IP header and email; on this machine, none of them", () => {
-  const behind = { ...base, CLIENT_IP_HEADER: "X-E9G-Viewer-IP", ORIGIN_SECRET: SECRET };
+  const behind = { ...base, CLIENT_IP_HEADER: "X-A6G-Viewer-IP", ORIGIN_SECRET: SECRET };
   const ok = readConfig({ ...behind, AUDIT_RETENTION_DAYS: "90" });
-  assert.deepEqual([ok.ipHeader, ok.originSecret, ok.auditDays, ok.mailLog], ["x-e9g-viewer-ip", SECRET, 90, false]);
+  assert.deepEqual([ok.ipHeader, ok.originSecret, ok.auditDays, ok.mailLog], ["x-a6g-viewer-ip", SECRET, 90, false]);
   assert.throws(() => readConfig({ ...behind, ORIGIN_SECRET: "" }), /ORIGIN_SECRET/);
   assert.throws(() => readConfig({ ...behind, ORIGIN_SECRET: "short" }), /ORIGIN_SECRET/);
   assert.throws(() => readConfig({ ...behind, CLIENT_IP_HEADER: "" }), /CLIENT_IP_HEADER/);

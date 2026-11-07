@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { instanceId, loadTeam, type RawTeam, type Team } from "../config.ts";
 import {
   defaultRunDir,
-  E9G_HOME,
+  A6G_HOME,
   entryOf,
   FACTORY_ROOT,
   findHome,
@@ -49,7 +49,7 @@ const quote = (text: string): string => (/[\s"']/.test(text) ? `"${text.replaceA
 
 function homeFrom(arg: string | undefined): string {
   const home = arg ? realpathSync(resolve(arg)) : findHome();
-  if (!home) die("run this in a team's checkout, or name it: e9g register <checkout>");
+  if (!home) die("run this in a team's checkout, or name it: a6g register <checkout>");
   return home;
 }
 
@@ -58,7 +58,7 @@ export function versionFor(team: Team): string {
   const version = team.factory ?? PACKAGE.version;
   if (!existsSync(versionDir(version)))
     die(
-      `the team pins E9G Factory ${version}, which isn't installed (${versionDir(version)}); run e9g self-install${version === "dev" ? " --link" : ""} from that version's checkout`
+      `the team pins Anything Factory ${version}, which isn't installed (${versionDir(version)}); run a6g self-install${version === "dev" ? " --link" : ""} from that version's checkout`
     );
   return version;
 }
@@ -73,8 +73,8 @@ export function memberEnvironment(
   const vars = Object.fromEntries(
     Object.entries(team.vars).map(([key, value]) => [key, String(value).replaceAll("${home}", home).replaceAll("${run}", run)])
   );
-  // E9G_HOME too: a member's hooks guard the factory's folder wherever the operator keeps it.
-  return { ...vars, E9G_TEAM: team.name, E9G_ROLE: role, E9G_HOME: E9G_HOME, E9G_HOME_DIR: home, E9G_RUN: run, E9G_VERSION: version };
+  // A6G_HOME too: a member's hooks guard the factory's folder wherever the operator keeps it.
+  return { ...vars, A6G_TEAM: team.name, A6G_ROLE: role, A6G_HOME: A6G_HOME, A6G_HOME_DIR: home, A6G_RUN: run, A6G_VERSION: version };
 }
 
 export async function register(argv: string[]): Promise<number> {
@@ -111,11 +111,11 @@ function registerTeam(home: string, { force, version: target, worker = false }: 
   for (const warning of team.warnings) console.warn(`  note: ${warning}`);
   // Register doesn't write team.json (a change there would hold up every merge until it's committed).
   if (!team.factory && !target)
-    console.warn(`  note: team.json pins no factory version, so the team runs whichever version registers it (e9g upgrade ${team.name} pins one)`);
+    console.warn(`  note: team.json pins no factory version, so the team runs whichever version registers it (a6g upgrade ${team.name} pins one)`);
   const problems = t3.contract();
-  if (problems.length && !force) die(`T3 Code isn't ready:\n  - ${problems.join("\n  - ")}\n(e9g doctor explains; --force registers anyway)`);
-  if (!existsSync(join(home, ".e9g", ".gitignore")))
-    console.warn("  note: .e9g/.gitignore is missing; add one with run/ so the team's runtime stays out of git");
+  if (problems.length && !force) die(`T3 Code isn't ready:\n  - ${problems.join("\n  - ")}\n(a6g doctor explains; --force registers anyway)`);
+  if (!existsSync(join(home, ".a6g", ".gitignore")))
+    console.warn("  note: .a6g/.gitignore is missing; add one with run/ so the team's runtime stays out of git");
 
   // A worker machine of a team on several machines runs builders only: the lead runs the rest, the team's environment
   // with it, which testers test against.
@@ -129,10 +129,10 @@ function registerTeam(home: string, { force, version: target, worker = false }: 
   const version = target ?? versionFor(team);
   const previous = readRegistry(team.name);
   if (previous && previous.home !== home)
-    die(`a team named ${team.name} is already registered at ${previous.home}; pick another name or e9g unregister ${team.name}`);
+    die(`a team named ${team.name} is already registered at ${previous.home}; pick another name or a6g unregister ${team.name}`);
   // One team per checkout: a renamed team would otherwise run beside the old one on the same files.
   const other = teamNames().find((name) => name !== team.name && readRegistry(name)?.home === home);
-  if (other) die(`${home} is already registered as the team ${other}; e9g unregister ${other} first, or keep the name ${other}`);
+  if (other) die(`${home} is already registered as the team ${other}; a6g unregister ${other} first, or keep the name ${other}`);
   const run = previous?.run ?? defaultRunDir(team.name);
   mkdirSync(run, { recursive: true });
   const project = previous?.project ?? team.raw.t3ProjectId ?? t3.projectAdd(team.title, home);
@@ -143,7 +143,7 @@ function registerTeam(home: string, { force, version: target, worker = false }: 
   for (const role of roles) {
     const prompt = writePrompt(team, role, run);
     const flags = [
-      `--agent e9g:${role}`,
+      `--agent a6g:${role}`,
       `--plugin-dir ${quote(pluginDir(version))}`,
       `--append-system-prompt-file ${quote(prompt)}`,
       `--setting-sources ${team.isolation === "strict" ? "project" : "user,project"}`,
@@ -183,23 +183,23 @@ function registerTeam(home: string, { force, version: target, worker = false }: 
     registeredAt: new Date().toISOString(),
   };
   writeJson(registryFile(team.name), entry);
-  console.info(`e9g: registered ${team.name} (E9G Factory ${version}; T3 project ${project}; run folder ${run})`);
+  console.info(`a6g: registered ${team.name} (Anything Factory ${version}; T3 project ${project}; run folder ${run})`);
   console.info(
     `  roles${worker ? " (a worker: builders only; testers test on the lead, where the environment runs)" : ""}: ${roles.map((role) => `${role} (${instanceId(team, role)})`).join(", ")}`
   );
   if (existsSync(join(run, "planner-thread")))
-    console.info(`  a planner is running; it keeps the flags it started with until e9g rotate ${team.name} (members started from now get the new ones)`);
-  else console.info(`  start it: e9g start ${team.name}`);
+    console.info(`  a planner is running; it keeps the flags it started with until a6g rotate ${team.name} (members started from now get the new ones)`);
+  else console.info(`  start it: a6g start ${team.name}`);
   return 0;
 }
 
 export function unregister(argv: string[]): number {
   operatorOnly("unregister");
-  const name = argv[0] ?? die("usage: e9g unregister <team>");
+  const name = argv[0] ?? die("usage: a6g unregister <team>");
   const entry = readRegistry(name) ?? die(`no team named ${name}`);
   const removed = t3.removeInstances(name);
   rmSync(registryFile(name), { force: true });
-  console.info(`e9g: unregistered ${name} (${removed} T3 instances removed; its run folder ${entry.run} and checkout are kept)`);
+  console.info(`a6g: unregistered ${name} (${removed} T3 instances removed; its run folder ${entry.run} and checkout are kept)`);
   return 0;
 }
 
@@ -213,8 +213,8 @@ export const teamNames = (): string[] =>
 
 export async function start(argv: string[]): Promise<number> {
   operatorOnly("start");
-  const entry = entryFor(argv[0] ?? die("usage: e9g start <team>"));
-  // A pause the operator or the budget recorded stays until e9g resume, which is the operator's alone: start only starts
+  const entry = entryFor(argv[0] ?? die("usage: a6g start <team>"));
+  // A pause the operator or the budget recorded stays until a6g resume, which is the operator's alone: start only starts
   // the watch (the setup agent runs it too). A paused file with no pause recorded (an earlier version's) it lifts.
   if (entry.tasks && !entry.worker) {
     let hold: ReturnType<typeof holdOf> = null;
@@ -226,11 +226,11 @@ export async function start(argv: string[]): Promise<number> {
         await store.close();
       }
     } catch (error) {
-      console.error(`e9g: couldn't read the team's controls (${(error as Error).message.split("\n")[0]}); a pause recorded there still holds`);
+      console.error(`a6g: couldn't read the team's controls (${(error as Error).message.split("\n")[0]}); a pause recorded there still holds`);
     }
     if (hold) {
       console.info(
-        `e9g: ${entry.name} is paused (${hold.by === "budget" ? "by its budget" : "by the operator"}, ${describeHold(hold)}): e9g resume ${entry.name} starts it again`
+        `a6g: ${entry.name} is paused (${hold.by === "budget" ? "by its budget" : "by the operator"}, ${describeHold(hold)}): a6g resume ${entry.name} starts it again`
       );
       return status([entry.name]);
     }
@@ -239,14 +239,14 @@ export async function start(argv: string[]): Promise<number> {
   ensureWatchdog();
   const why = await watchOnce(entry.name);
   if (why) {
-    console.error(`e9g: ${entry.name} wasn't started: ${why}. When T3 Code doesn't answer, \`t3 service restart\`, then e9g start ${entry.name} again.`);
+    console.error(`a6g: ${entry.name} wasn't started: ${why}. When T3 Code doesn't answer, \`t3 service restart\`, then a6g start ${entry.name} again.`);
     await status([entry.name]);
     return 1;
   }
   return status([entry.name]);
 }
 
-const PAUSE_USAGE = 'usage: e9g pause <team> [--after tasks | --after journeys [--journeys 3,7]] [--note "…"]';
+const PAUSE_USAGE = 'usage: a6g pause <team> [--after tasks | --after journeys [--journeys 3,7]] [--note "…"]';
 
 // The operator's control, recorded in the team's store and applied in its run folder at once (the web app's wait for
 // the watchdog's next minute). On a worker machine it's recorded only: the lead applies it.
@@ -265,16 +265,16 @@ async function recordControl(entry: RegistryEntry, make: (store: Store) => Promi
   mkdirSync(entry.run, { recursive: true });
   // Under the watchdog's lock, so a run applying the same control at the same moment doesn't tell the planner twice;
   // then the web app's view of the team, at once. Busy for a minute, it's left to the watchdog's next minute.
-  const release = await acquireSlot([join(entry.run, ".watch.lock")], { waitMin: 1, holder: "e9g" });
+  const release = await acquireSlot([join(entry.run, ".watch.lock")], { waitMin: 1, holder: "a6g" });
   if (!release) {
-    console.info("e9g: the watchdog is busy with the team; it applies this within a minute");
+    console.info("a6g: the watchdog is busy with the team; it applies this within a minute");
     return control;
   }
   try {
     await applyTeamControls(
       entry,
       (text) => appendFileSync(join(entry.run, "watchdog.log"), `${new Date().toISOString().replace(/\.\d+Z$/, "Z")} ${text}\n`),
-      (text) => console.error(`e9g: ${text}`)
+      (text) => console.error(`a6g: ${text}`)
     );
     await reportTeamState(entry);
   } finally {
@@ -290,10 +290,10 @@ function pauseHere(entry: RegistryEntry, paused: boolean): void {
   else rmSync(join(entry.run, "paused"), { force: true });
 }
 
-// e9g pause <team>: nothing starts or merges from now; running members finish their turn. --after tasks: the work under
+// a6g pause <team>: nothing starts or merges from now; running members finish their turn. --after tasks: the work under
 // way finishes, reviewed and merged, then the team pauses; --after journeys: the journeys under way (or --journeys)
 // finish, verification and polish included, then it pauses. Either way the operator gets a report when it does, and
-// work stays stopped until e9g resume. A team whose tickets are on a GitHub board can only pause now.
+// work stays stopped until a6g resume. A team whose tickets are on a GitHub board can only pause now.
 export async function pause(argv: string[]): Promise<number> {
   operatorOnly("pause");
   const { positional, options } = parseArgs(argv);
@@ -314,12 +314,12 @@ export async function pause(argv: string[]): Promise<number> {
     if (scope !== "now")
       die(
         entry.worker
-          ? `pause the team after its work from its lead; here, e9g pause ${entry.name} stops this machine's members`
-          : `${entry.name} keeps its tickets on a GitHub board, so it can only pause now (e9g pause ${entry.name})`
+          ? `pause the team after its work from its lead; here, a6g pause ${entry.name} stops this machine's members`
+          : `${entry.name} keeps its tickets on a GitHub board, so it can only pause now (a6g pause ${entry.name})`
       );
     pauseHere(entry, true);
     if (entry.worker) {
-      console.info(`e9g: this machine's members of ${entry.name} are paused; the rest of the team isn't (e9g pause on its lead pauses it all)`);
+      console.info(`a6g: this machine's members of ${entry.name} are paused; the rest of the team isn't (a6g pause on its lead pauses it all)`);
       return 0;
     }
   } else
@@ -330,21 +330,21 @@ export async function pause(argv: string[]): Promise<number> {
       if (scope !== "now") throw error;
       pauseHere(entry, true);
       console.error(
-        `e9g: couldn't record the pause in the task graph (${(error as Error).message.split("\n")[0]}): paused on this machine; run e9g pause ${entry.name} again once it's reachable, so the web app and other machines know`
+        `a6g: couldn't record the pause in the task graph (${(error as Error).message.split("\n")[0]}): paused on this machine; run a6g pause ${entry.name} again once it's reachable, so the web app and other machines know`
       );
     }
   const hold = readHold(entry.run);
   console.info(
     scope === "now"
-      ? `e9g: ${entry.name} paused: the watchdog sends no ticks and starts nothing, and the planner can't start members or merge. Running members finish what they're doing.`
-      : `e9g: ${entry.name} is pausing after ${hold ? describeHold(hold) : scope}: that work finishes and merges, nothing else is claimed, and once nothing in it can move the team pauses and you get a report. e9g status ${entry.name} shows what's left.`
+      ? `a6g: ${entry.name} paused: the watchdog sends no ticks and starts nothing, and the planner can't start members or merge. Running members finish what they're doing.`
+      : `a6g: ${entry.name} is pausing after ${hold ? describeHold(hold) : scope}: that work finishes and merges, nothing else is claimed, and once nothing in it can move the team pauses and you get a report. a6g status ${entry.name} shows what's left.`
   );
   return 0;
 }
 
-const BUDGET_USAGE = "usage: e9g budget <team> [--daily <$>] [--weekly <$>] [--total <$>] [--auto-resume | --no-auto-resume] [--restart] [--clear]";
+const BUDGET_USAGE = "usage: a6g budget <team> [--daily <$>] [--weekly <$>] [--total <$>] [--auto-resume | --no-auto-resume] [--restart] [--clear]";
 
-// e9g budget <team>: the team's spending limits, in API-equivalent dollars (lib/budget.ts enforces them: a warning at
+// a6g budget <team>: the team's spending limits, in API-equivalent dollars (lib/budget.ts enforces them: a warning at
 // four fifths, a pause after the work under way at the limit, a pause now a tenth past it). With no limit given, what
 // they are and what's spent. A limit left out keeps its value and 0 removes it; --restart counts the total from now;
 // --auto-resume starts a team the budget paused for a day or week again when the next one starts; --clear removes all.
@@ -364,7 +364,7 @@ export async function budget(argv: string[]): Promise<number> {
       await store.close();
     }
   } catch (error) {
-    console.error(`e9g: couldn't read the budget from the task graph (${(error as Error).message.split("\n")[0]}); showing this machine's copy`);
+    console.error(`a6g: couldn't read the budget from the task graph (${(error as Error).message.split("\n")[0]}); showing this machine's copy`);
   }
   const amount = (key: "daily" | "weekly" | "total"): number | null => {
     const given = options[key];
@@ -400,17 +400,17 @@ export async function budget(argv: string[]): Promise<number> {
   const money = (n: number | null) => (n ? `$${n}` : "none");
   console.info(
     limits
-      ? `e9g: ${entry.name}'s budget is ${money(limits.daily)} a day, ${money(limits.weekly)} a week, ${money(limits.total)} in all since ${limits.since.slice(0, 10)}; the watchdog holds the team to it from its next run`
-      : `e9g: ${entry.name} has no budget now`
+      ? `a6g: ${entry.name}'s budget is ${money(limits.daily)} a day, ${money(limits.weekly)} a week, ${money(limits.total)} in all since ${limits.since.slice(0, 10)}; the watchdog holds the team to it from its next run`
+      : `a6g: ${entry.name} has no budget now`
   );
   return 0;
 }
 
-// e9g resume <team> [--note "…"]: work starts again; the note goes to the planner, as the operator's feedback.
+// a6g resume <team> [--note "…"]: work starts again; the note goes to the planner, as the operator's feedback.
 export async function resume(argv: string[]): Promise<number> {
   operatorOnly("resume");
   const { positional, options } = parseArgs(argv);
-  const entry = entryFor(positional[0] ?? die('usage: e9g resume <team> [--note "…"]'));
+  const entry = entryFor(positional[0] ?? die('usage: a6g resume <team> [--note "…"]'));
   const note = typeof options["note"] === "string" ? options["note"] : "";
   if (!entry.tasks || entry.worker) pauseHere(entry, false);
   else
@@ -420,11 +420,11 @@ export async function resume(argv: string[]): Promise<number> {
       pauseHere(entry, false);
       rmSync(join(entry.run, "hold.json"), { force: true });
       console.error(
-        `e9g: couldn't record the resume in the task graph (${(error as Error).message.split("\n")[0]}): this machine carries on, but claims still see the pause there until e9g resume ${entry.name} reaches it`
+        `a6g: couldn't record the resume in the task graph (${(error as Error).message.split("\n")[0]}): this machine carries on, but claims still see the pause there until a6g resume ${entry.name} reaches it`
       );
       return 1;
     }
-  console.info(`e9g: ${entry.name} resumed${note && entry.tasks ? "; the planner has your note" : ""}`);
+  console.info(`a6g: ${entry.name} resumed${note && entry.tasks ? "; the planner has your note" : ""}`);
   return 0;
 }
 
@@ -434,7 +434,7 @@ export async function resume(argv: string[]): Promise<number> {
 // team, so a watchdog run can't start or adopt a planner halfway through.
 export async function rotate(argv: string[]): Promise<number> {
   operatorOnly("rotate");
-  const entry = entryFor(argv[0] ?? die("usage: e9g rotate <team>"));
+  const entry = entryFor(argv[0] ?? die("usage: a6g rotate <team>"));
   const file = join(entry.run, "planner-thread");
   let old = "";
   const refused = await watchOnce(entry.name, () => {
@@ -456,7 +456,7 @@ export async function rotate(argv: string[]): Promise<number> {
   });
   if (refused) die(`rotate: ${refused}`);
   const now = existsSync(file) ? readFileSync(file, "utf8").trim() : "not started (see the watchdog log)";
-  console.info(`e9g: ${entry.name}'s planner was ${old || "none"}, now ${now}`);
+  console.info(`a6g: ${entry.name}'s planner was ${old || "none"}, now ${now}`);
   return 0;
 }
 
@@ -464,7 +464,7 @@ export async function rotate(argv: string[]): Promise<number> {
 // (team.json's health URLs) and what's drained, the worktrees kept for their work, and the watchdog's last lines.
 export async function status(argv: string[]): Promise<number> {
   const names = argv.length ? argv : teamNames();
-  if (!names.length) console.info("no teams registered yet: e9g init sets one up");
+  if (!names.length) console.info("no teams registered yet: a6g init sets one up");
   for (const name of names) {
     const entry = entryFor(name);
     const planner = existsSync(join(entry.run, "planner-thread")) ? readFileSync(join(entry.run, "planner-thread"), "utf8").trim() : null;
@@ -479,7 +479,7 @@ export async function status(argv: string[]): Promise<number> {
     console.info(`   planner ${planner ?? "none"}${thread ? ` (${thread.status})` : ""}`);
     const counts = planner ? t3.childCounts(planner) : [];
     console.info(
-      `   members running: ${counts.length ? counts.map((row) => `${row.instance.replace(`e9g-${name}-`, "")} ${row.n}`).join(", ") : planner ? "none" : "-"}`
+      `   members running: ${counts.length ? counts.map((row) => `${row.instance.replace(`a6g-${name}-`, "")} ${row.n}`).join(", ") : planner ? "none" : "-"}`
     );
     const health = entry.health ?? [];
     if (health.length) {
@@ -494,11 +494,11 @@ export async function status(argv: string[]): Promise<number> {
         `   pausing after ${describeHold(hold)} (asked ${hold.since.slice(0, 16)}): left ${hold.left.join("; ") || "nothing, so it pauses at the watchdog's next run"}${hold.stuck.length ? `; stopped: ${hold.stuck.join("; ")}` : ""}`
       );
     else if (hold?.settledAt && hold.scope !== "now")
-      console.info(`   paused after ${describeHold(hold)} at ${hold.settledAt.slice(0, 16)}: e9g resume ${name} carries on`);
+      console.info(`   paused after ${describeHold(hold)} at ${hold.settledAt.slice(0, 16)}: a6g resume ${name} carries on`);
     const spend = readJson<Spend | null>(join(entry.run, "spend.json"), null);
     if (spend) console.info(`   ${describeSpend(spend, readLimits(entry.run))}`);
-    const drain = join(entry.home, ".e9g", "run", "state", "drain");
-    if (existsSync(drain)) console.info(`   draining: ${readFileSync(drain, "utf8").trim()} (e9g drain off, from the team's checkout)`);
+    const drain = join(entry.home, ".a6g", "run", "state", "drain");
+    if (existsSync(drain)) console.info(`   draining: ${readFileSync(drain, "utf8").trim()} (a6g drain off, from the team's checkout)`);
     const kept = keptWorktrees(entry.run);
     if (kept.length)
       console.info(
@@ -510,7 +510,7 @@ export async function status(argv: string[]): Promise<number> {
   return 0;
 }
 
-// Every registered team on a line: its version, whether it runs, and its checkout (e9g status says more).
+// Every registered team on a line: its version, whether it runs, and its checkout (a6g status says more).
 export function teams(): number {
   for (const name of teamNames()) {
     const entry = readRegistry(name);
@@ -528,12 +528,12 @@ export function teams(): number {
   return 0;
 }
 
-// e9g prompt <team|checkout> <role>: the text the role works under, compiled now.
+// a6g prompt <team|checkout> <role>: the text the role works under, compiled now.
 export function prompt(argv: string[]): number {
   const [target, role] = argv;
   const home = (target ? readRegistry(target)?.home : undefined) ?? homeFrom(target);
   const team = loadTeam(home);
-  if (!role || !team.roles[role]) die(`usage: e9g prompt <team> <role> (${Object.keys(team.roles).join(", ")})`);
+  if (!role || !team.roles[role]) die(`usage: a6g prompt <team> <role> (${Object.keys(team.roles).join(", ")})`);
   process.stdout.write(compile(team, role));
   const entry = readRegistry(team.name);
   if (entry) console.error(`\n(the registered copy is ${promptFile(entry.run, role)})`);
@@ -555,21 +555,22 @@ export function pinned(text: string, version: string): string {
   return `${JSON.stringify(wanted, null, 2)}\n`;
 }
 
-// e9g upgrade <team> [version] [--force]: register the team again on an installed version (this one by default),
+// a6g upgrade <team> [version] [--force]: register the team again on an installed version (this one by default),
 // then move its pin there. It runs in the version it moves to, whose code compiles the prompts and writes the
 // instances; the pin moves only once that worked.
 export async function upgrade(argv: string[]): Promise<number> {
   operatorOnly("upgrade");
   const { positional, options } = parseArgs(argv, { booleans: ["force"] });
-  const entry = entryFor(positional[0] ?? die("usage: e9g upgrade <team> [version] [--force]"));
+  const entry = entryFor(positional[0] ?? die("usage: a6g upgrade <team> [version] [--force]"));
   const version = positional[1] ?? PACKAGE.version;
-  if (!existsSync(versionDir(version))) die(`E9G Factory ${version} isn't installed (e9g versions lists them)`);
+  if (!existsSync(versionDir(version))) die(`Anything Factory ${version} isn't installed (a6g versions lists them)`);
   const force = Boolean(options["force"]);
   if (realpathSync(versionDir(version)) !== realpathSync(FACTORY_ROOT)) {
-    if (process.env.E9G_UPGRADING === version) die(`E9G Factory ${version} at ${versionDir(version)} handed the upgrade back; run it from that version`);
+    if (process.env.A6G_UPGRADING === version)
+      die(`Anything Factory ${version} at ${versionDir(version)} handed the upgrade back; run it from that version`);
     const result = spawnSync(process.execPath, [entryOf(versionDir(version)), "upgrade", entry.name, version, ...(force ? ["--force"] : [])], {
       stdio: "inherit",
-      env: { ...process.env, E9G_HANDED_OVER: "1", E9G_UPGRADING: version },
+      env: { ...process.env, A6G_HANDED_OVER: "1", A6G_UPGRADING: version },
     });
     return result.status ?? 1;
   }
@@ -580,6 +581,6 @@ export async function upgrade(argv: string[]): Promise<number> {
   // The prompts' sources include team.json, so compile them again with the pin in it.
   const team = loadTeam(entry.home);
   for (const role of Object.keys(team.roles)) writePrompt(team, role, entry.run);
-  console.info(`e9g: ${entry.name} now pins E9G Factory ${version}. Commit .e9g/team.json on the integration branch.`);
+  console.info(`a6g: ${entry.name} now pins Anything Factory ${version}. Commit .a6g/team.json on the integration branch.`);
   return 0;
 }

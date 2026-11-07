@@ -16,7 +16,7 @@ import {
   type RawTeam,
 } from "../lib/config.ts";
 
-const norm = (raw: RawTeam | Record<string, unknown>) => normalize({ name: "fixture", branch: "e9g/next", ...raw } as RawTeam, "");
+const norm = (raw: RawTeam | Record<string, unknown>) => normalize({ name: "fixture", branch: "a6g/next", ...raw } as RawTeam, "");
 
 describe("config", () => {
   test("defaults", () => {
@@ -25,7 +25,7 @@ describe("config", () => {
     assert.deepEqual(Object.keys(team.roles), ["planner", "builder", "reviewer"]);
     assert.equal(team.roles.builder?.limit, ROLES["builder"]?.limit);
     assert.deepEqual(team.roles.builder?.write, ["*"]);
-    assert.equal(team.roles.builder?.branch, "^e9g/b\\d+-");
+    assert.equal(team.roles.builder?.branch, "^a6g/b\\d+-");
     assert.equal(team.roles.reviewer?.readOnly, true);
     assert.deepEqual(team.protectedBranches, ["main", "master", "production", "prod"]);
     assert.equal(team.board.type, "tasks");
@@ -51,11 +51,11 @@ describe("config", () => {
       watchdog: { tickEvery: "5m", stuckAfter: "45m", pruneAfter: "2h", doneTickEvery: "1d" },
       gate: { full: "make check" },
     });
-    assert.deepEqual(team.push, { remote: "origin", branch: "e9g/next", everyMin: 360, pullRequest: null });
+    assert.deepEqual(team.push, { remote: "origin", branch: "a6g/next", everyMin: 360, pullRequest: null });
     assert.deepEqual(team.board, { type: "github", label: "loop" });
     assert.deepEqual(team.watchdog, { tickEveryMin: 5, stuckAfterMin: 45, pruneAfterMin: 120, doneTickEveryMin: 1440 });
     assert.equal(team.gate.quick, "make check", "quick falls back to full");
-    assert.equal(norm({ finish: "e9g pages done" }).team.progress, "e9g pages status");
+    assert.equal(norm({ finish: "a6g pages done" }).team.progress, "a6g pages status");
   });
 
   test("problems", () => {
@@ -95,25 +95,25 @@ describe("config", () => {
     assert.ok(!laneAllows(team, "tester", "src/app.ts"));
     assert.ok(!laneAllows(team, "reviewer", "README.md"));
     assert.ok(!laneAllows(team, "Explore", "README.md"), "a role the team doesn't have writes nothing");
-    assert.ok(laneAllows(team, "planner", ".e9g/lessons.md"));
-    assert.ok(laneAllows(team, "planner", ".e9g/decisions.md"));
-    assert.ok(!laneAllows(team, "planner", ".e9g/direction.md"), "the direction is the operator's");
-    assert.equal(roleForBranch(team, "e9g/b12-thing"), "builder");
-    assert.equal(roleForBranch(team, "e9g/t-specs"), "tester");
+    assert.ok(laneAllows(team, "planner", ".a6g/lessons.md"));
+    assert.ok(laneAllows(team, "planner", ".a6g/decisions.md"));
+    assert.ok(!laneAllows(team, "planner", ".a6g/direction.md"), "the direction is the operator's");
+    assert.equal(roleForBranch(team, "a6g/b12-thing"), "builder");
+    assert.equal(roleForBranch(team, "a6g/t-specs"), "tester");
     assert.equal(roleForBranch(team, "feature/x"), null);
-    assert.equal(instanceId(team, "builder"), "e9g-fixture-builder");
-    assert.equal(roleForInstance(team, "e9g-fixture-builder"), "builder");
+    assert.equal(instanceId(team, "builder"), "a6g-fixture-builder");
+    assert.equal(roleForInstance(team, "a6g-fixture-builder"), "builder");
     assert.equal(roleForInstance(team, "claudeBuilder"), null);
     assert.equal(roleForInstance(norm({ ...baseTeam(), legacyInstances: { claudeBuilder: "builder" } }).team, "claudeBuilder"), "builder");
-    assert.equal(roleOfAgent("e9g:ux-specialist"), "ux-specialist");
+    assert.equal(roleOfAgent("a6g:ux-specialist"), "ux-specialist");
     assert.equal(roleOfAgent("Explore"), "Explore");
     assert.equal(roleOfAgent(undefined), "");
   });
 
   test("the factory's own paths", () => {
     for (const path of [
-      ".e9g/team.json",
-      ".e9g/adapters/gate.sh",
+      ".a6g/team.json",
+      ".a6g/adapters/gate.sh",
       ".claude/settings.json",
       ".claude/settings.local.json",
       ".claude/hooks/x.mjs",
@@ -124,17 +124,17 @@ describe("config", () => {
       ".mcp.json",
     ])
       assert.ok(FACTORY_PATH.test(path), path);
-    for (const path of ["src/.e9g.ts", "docs/e9g.md", "CLAUDE.md", ".claudex/a"]) assert.ok(!FACTORY_PATH.test(path), path);
+    for (const path of ["src/.a6g.ts", "docs/a6g.md", "CLAUDE.md", ".claudex/a"]) assert.ok(!FACTORY_PATH.test(path), path);
   });
 
   test("only a lane rule that names a factory file opens it", () => {
     const { team } = norm({ roles: { planner: {}, builder: { limit: 1, write: ["^src/", "\\.json$", "\\.md$", "^\\.claude/agents/notes\\.md$"] } } });
-    assert.ok(!factoryWrite(team, "planner", ".e9g/lessons.md"), "the planner's default lane names its lessons");
-    assert.ok(!factoryWrite(team, "planner", ".e9g/decisions.md"), "and its decisions");
-    assert.ok(factoryWrite(team, "planner", ".e9g/direction.md"), "but not the operator's direction");
-    assert.ok(factoryWrite(team, "builder", ".e9g/decisions.md"), "nor does a broad rule open the planner's decisions");
-    assert.ok(factoryWrite(team, "planner", ".e9g/team.json"));
-    for (const path of [".e9g/team.json", ".e9g/brief.md", ".claude/settings.json", ".mcp.json"]) assert.ok(factoryWrite(team, "builder", path), path);
+    assert.ok(!factoryWrite(team, "planner", ".a6g/lessons.md"), "the planner's default lane names its lessons");
+    assert.ok(!factoryWrite(team, "planner", ".a6g/decisions.md"), "and its decisions");
+    assert.ok(factoryWrite(team, "planner", ".a6g/direction.md"), "but not the operator's direction");
+    assert.ok(factoryWrite(team, "builder", ".a6g/decisions.md"), "nor does a broad rule open the planner's decisions");
+    assert.ok(factoryWrite(team, "planner", ".a6g/team.json"));
+    for (const path of [".a6g/team.json", ".a6g/brief.md", ".claude/settings.json", ".mcp.json"]) assert.ok(factoryWrite(team, "builder", path), path);
     assert.ok(!factoryWrite(team, "builder", ".claude/agents/notes.md"), "named by the rule itself");
     assert.ok(!factoryWrite(team, "builder", "src/app.ts"), "not a factory path");
   });
@@ -142,9 +142,9 @@ describe("config", () => {
   test("loadTeam reads the checkout's file and refuses a broken one", () => {
     const home = makeRepo();
     assert.equal(loadTeam(home).name, "fixture");
-    write(home, { ".e9g/team.json": "{ not json" });
+    write(home, { ".a6g/team.json": "{ not json" });
     assert.throws(() => loadTeam(home), TeamError);
-    write(home, { ".e9g/team.json": { name: "Bad Name", branch: "x" } });
+    write(home, { ".a6g/team.json": { name: "Bad Name", branch: "x" } });
     assert.throws(() => loadTeam(home), /name:/);
     assert.equal(loadTeam(home, { strict: false }).problems.length, 1);
   });

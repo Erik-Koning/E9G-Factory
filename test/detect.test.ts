@@ -5,7 +5,7 @@ import { normalize } from "../lib/config.ts";
 import { detect, draftTeam } from "../lib/detect.ts";
 
 function fixture() {
-  const dir = tmp("e9g-detect-");
+  const dir = tmp("a6g-detect-");
   write(dir, {
     "package.json": {
       name: "shop",
@@ -69,7 +69,7 @@ describe("detect", () => {
   });
 
   test("the draft team is valid, with a tester for e2e/ and builders kept out of it", () => {
-    const draft = draftTeam(found, { name: "shop", branch: "e9g/next", owner: "op@example.com" });
+    const draft = draftTeam(found, { name: "shop", branch: "a6g/next", owner: "op@example.com" });
     const { team, problems } = normalize(JSON.parse(JSON.stringify(draft)), "/tmp/x");
     assert.deepEqual(problems, []);
     assert.deepEqual(team.roles.tester?.write, ["^e2e/"]);
@@ -78,23 +78,23 @@ describe("detect", () => {
     assert.deepEqual(team.board, { type: "tasks" }, "no GitHub remote, so the task graph");
     assert.equal(team.environment.needsDocker, true, "Supabase runs in Docker");
     assert.equal(team.worktreeSetup, "pnpm install --frozen-lockfile --prefer-offline");
-    assert.equal(team.environment.script, ".e9g/adapters/env.sh", "an app gets an environment");
+    assert.equal(team.environment.script, ".a6g/adapters/env.sh", "an app gets an environment");
   });
 
   test("a library or command-line tool gets no environment and nothing to restart after a merge; a page of HTML does", () => {
-    const cli = tmp("e9g-detect-");
+    const cli = tmp("a6g-detect-");
     write(cli, { "package.json": { name: "tally", bin: { tally: "bin/tally.js" }, scripts: { test: "node --test" } }, "bin/tally.js": "\n" });
     git(cli, "init", "-q", "-b", "main");
     git(cli, "add", "-A");
-    const draft = draftTeam(detect(cli), { name: "tally", branch: "e9g/next" });
+    const draft = draftTeam(detect(cli), { name: "tally", branch: "a6g/next" });
     assert.deepEqual([draft.environment?.script, draft.afterMerge], [null, null]);
     write(cli, { "public/index.html": "<h1>Tally</h1>\n" });
     git(cli, "add", "-A");
-    assert.equal(draftTeam(detect(cli), { name: "tally", branch: "e9g/next" }).environment?.script, ".e9g/adapters/env.sh");
+    assert.equal(draftTeam(detect(cli), { name: "tally", branch: "a6g/next" }).environment?.script, ".a6g/adapters/env.sh");
     // Without a package.json saying it's a tool, a server in another language gets the environment to fill in.
-    const flask = tmp("e9g-detect-");
+    const flask = tmp("a6g-detect-");
     write(flask, { "app.py": "from flask import Flask\n", "requirements.txt": "flask\n" });
     git(flask, "init", "-q", "-b", "main");
-    assert.equal(draftTeam(detect(flask), { name: "site", branch: "e9g/next" }).environment?.script, ".e9g/adapters/env.sh");
+    assert.equal(draftTeam(detect(flask), { name: "site", branch: "a6g/next" }).environment?.script, ".a6g/adapters/env.sh");
   });
 });

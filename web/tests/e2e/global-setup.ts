@@ -1,11 +1,11 @@
 // Before the end-to-end tests: a database, seeded by seed.ts, and the built app (next start) against it, with emails to
-// its console (MAIL_LOG), which it writes to a log the tests read sign-in links from. Nothing here touches ~/.e9g or
+// its console (MAIL_LOG), which it writes to a log the tests read sign-in links from. Nothing here touches ~/.a6g or
 // ~/.t3.
 //
 // The database is a MongoDB replica set of one on this machine (mongodb-memory-server, from the mongod binary already
 // cached, so nothing downloads), unless a real cluster is named: E2E_MONGODB_URI, or DB_USER, DB_PASSWORD and DB_HOST
-// as the repository's .env has them (npm run test:e2e:atlas). There the tests use databases of their own, e9g_e2e and
-// e9g_web_e2e (E2E_E9G_DATABASE, E2E_AUTH_DATABASE: names ending _e2e, nothing else), emptied before each run and
+// as the repository's .env has them (npm run test:e2e:atlas). There the tests use databases of their own, a6g_e2e and
+// a6g_web_e2e (E2E_A6G_DATABASE, E2E_AUTH_DATABASE: names ending _e2e, nothing else), emptied before each run and
 // left after it, with the run's admin in web/.env.e2e (gitignored) to sign in as.
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -20,33 +20,33 @@ const WEB = resolve(import.meta.dirname, "../..");
 export const PORT = Number(process.env.E2E_PORT ?? 3100);
 
 // A real cluster to test against, when one is named; its databases end in _e2e, since every run empties them.
-function cluster(): { uri: string; host: string; e9g: string; auth: string } | null {
+function cluster(): { uri: string; host: string; a6g: string; auth: string } | null {
   const { E2E_MONGODB_URI, DB_USER, DB_PASSWORD, DB_HOST } = process.env;
   const uri =
     E2E_MONGODB_URI ||
     (DB_USER && DB_PASSWORD && DB_HOST
-      ? `mongodb+srv://${encodeURIComponent(DB_USER)}:${encodeURIComponent(DB_PASSWORD)}@${DB_HOST}/?retryWrites=true&w=majority&appName=e9g-web-e2e`
+      ? `mongodb+srv://${encodeURIComponent(DB_USER)}:${encodeURIComponent(DB_PASSWORD)}@${DB_HOST}/?retryWrites=true&w=majority&appName=a6g-web-e2e`
       : "");
   if (!uri) return null;
-  const e9g = process.env.E2E_E9G_DATABASE || "e9g_e2e";
-  const auth = process.env.E2E_AUTH_DATABASE || "e9g_web_e2e";
-  for (const name of [e9g, auth])
+  const a6g = process.env.E2E_A6G_DATABASE || "a6g_e2e";
+  const auth = process.env.E2E_AUTH_DATABASE || "a6g_web_e2e";
+  for (const name of [a6g, auth])
     if (!/^[\w-]+_e2e$/.test(name)) throw new Error(`${name}: the tests empty their databases, so the names must end in _e2e`);
-  if (e9g === auth) throw new Error("the task graphs' and the accounts' databases must differ");
-  return { uri, host: uri.replace(/^[^@]*@/, "").replace(/[/?].*$/, ""), e9g, auth };
+  if (a6g === auth) throw new Error("the task graphs' and the accounts' databases must differ");
+  return { uri, host: uri.replace(/^[^@]*@/, "").replace(/[/?].*$/, ""), a6g, auth };
 }
 
 export default async function globalSetup(): Promise<() => Promise<void>> {
   if (!existsSync(join(WEB, ".next", "BUILD_ID"))) throw new Error("build the app first: npm run build (npm run test:e2e does)");
-  const dir = mkdtempSync(join(tmpdir(), "e9g-web-e2e-"));
+  const dir = mkdtempSync(join(tmpdir(), "a6g-web-e2e-"));
   const real = cluster();
   let mongo: MongoMemoryReplSet | null = null;
   if (real) {
     // Empty the tests' own databases first: each run starts from the same world.
     const client = await new MongoClient(real.uri, { serverSelectionTimeoutMS: 15_000 }).connect();
-    for (const name of [real.e9g, real.auth]) await client.db(name).dropDatabase();
+    for (const name of [real.a6g, real.auth]) await client.db(name).dropDatabase();
     await client.close();
-    console.info(`e2e: against ${real.host}, databases ${real.e9g} and ${real.auth} (emptied)`);
+    console.info(`e2e: against ${real.host}, databases ${real.a6g} and ${real.auth} (emptied)`);
   } else {
     const binary = process.env.MONGOMS_SYSTEM_BINARY ?? join(homedir(), ".cache/mongodb-binaries/mongod-arm64-darwin-8.2.6");
     if (!existsSync(binary)) throw new Error(`no mongod at ${binary}: set MONGOMS_SYSTEM_BINARY to a cached mongod binary`);
@@ -57,15 +57,15 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
   }
   const env = {
     MONGODB_URI: real ? real.uri : (mongo?.getUri() ?? ""),
-    E9G_DATABASE: real ? real.e9g : "e9g",
-    AUTH_DATABASE: real ? real.auth : "e9g_web",
+    A6G_DATABASE: real ? real.a6g : "a6g",
+    AUTH_DATABASE: real ? real.auth : "a6g_web",
     BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
     BETTER_AUTH_URL: `http://localhost:${PORT}`,
     MAIL_LOG: "1",
     // The notifier stays off in the server: the tests run it themselves, when they choose (app.spec.ts).
     NOTIFY_EVERY_SECONDS: "0",
     // As behind CloudFront: the viewer's address in one header, trusted with the CDN's secret.
-    CLIENT_IP_HEADER: "x-e9g-viewer-ip",
+    CLIENT_IP_HEADER: "x-a6g-viewer-ip",
     ORIGIN_SECRET,
   };
   Object.assign(process.env, env);
@@ -89,7 +89,7 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     JSON.stringify({
       ...world,
       mongoUri: env.MONGODB_URI,
-      e9gDatabase: env.E9G_DATABASE,
+      a6gDatabase: env.A6G_DATABASE,
       authDatabase: env.AUTH_DATABASE,
       log,
       baseURL: env.BETTER_AUTH_URL,
@@ -103,9 +103,9 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       join(WEB, ".env.e2e"),
       [
         `# The last end-to-end run's world on ${real.host}, made ${new Date().toISOString()}; made again by every run.`,
-        `# Its databases: ${real.e9g} (task graphs) and ${real.auth} (accounts). Sign-ins come from 198.51.100.7 in the tests;`,
+        `# Its databases: ${real.a6g} (task graphs) and ${real.auth} (accounts). Sign-ins come from 198.51.100.7 in the tests;`,
         "# from anywhere else the admin confirms the address by email (printed to the console, with MAIL_LOG=1).",
-        `E9G_DATABASE=${real.e9g}`,
+        `A6G_DATABASE=${real.a6g}`,
         `AUTH_DATABASE=${real.auth}`,
         `BETTER_AUTH_SECRET=${env.BETTER_AUTH_SECRET}`,
         `E2E_ADMIN_EMAIL=${world.admin.email}`,

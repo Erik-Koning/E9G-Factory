@@ -1,4 +1,4 @@
-// The task graph as SVG, from the factory's own layout (lib/tasks/graph.ts), drawn like e9g serve's: a band per
+// The task graph as SVG, from the factory's own layout (lib/tasks/graph.ts), drawn like a6g serve's: a band per
 // journey (and one for tasks in none), a box per task in columns by how many tasks come first, a line per dependency.
 import { layout } from "../../lib/tasks/graph.ts";
 import { journeyDue, type Task } from "../../lib/tasks/model.ts";

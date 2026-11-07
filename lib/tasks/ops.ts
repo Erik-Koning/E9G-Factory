@@ -217,7 +217,7 @@ const STATUS_OF: Record<string, Status> = {
 };
 const KIND_OF: Record<string, Kind> = { audit: "ux", env: "chore", question: "research", proposal: "feature" };
 
-// The tickets of a 0.3 files board (.e9g/run/board/<n>-<slug>.md, and members' f-<time>-<slug>.md findings) as tasks.
+// The tickets of a 0.3 files board (.a6g/run/board/<n>-<slug>.md, and members' f-<time>-<slug>.md findings) as tasks.
 // Numbered tickets keep their numbers, so their branches still close them; findings get new ones. Each file is
 // imported once (tasks/.imported.json lists them), under a lock, so two commands starting at once can't both import it.
 export async function importBoard(store: Store, board: string, run: string, team: string, by: Actor): Promise<string[]> {
@@ -242,7 +242,7 @@ export async function importBoard(store: Store, board: string, run: string, team
       const field = (key: string): string | undefined => new RegExp(`^${key}:\\s*(.+)$`, "mi").exec(text.split("\n").slice(0, 12).join("\n"))?.[1]?.trim();
       const raw = /^(\d+)-/.exec(name)?.[1];
       const number = raw === undefined ? undefined : String(Number(raw));
-      const source = `imported from .e9g/run/board/${name}`;
+      const source = `imported from .a6g/run/board/${name}`;
       // Already here from an earlier import that stopped before it noted the file: noted now, not imported twice.
       const already = all.find((t) => t.history.some((e) => e.what.startsWith(source)));
       if (already) {
@@ -340,7 +340,7 @@ export function summary(
       `New feature requests: ${fresh
         .slice(0, 8)
         .map((r) => `${r.id} ${r.title.slice(0, 50)}`)
-        .join("; ")}${fresh.length > 8 ? ` and ${fresh.length - 8} more` : ""} (e9g request list).`
+        .join("; ")}${fresh.length > 8 ? ` and ${fresh.length - 8} more` : ""} (a6g request list).`
     );
   // Journeys only group tasks: nobody approves one.
   const proposed = [...by("proposed"), ...by("researching")].filter((t) => t.kind !== "journey");

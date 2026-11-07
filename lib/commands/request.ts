@@ -1,5 +1,5 @@
-// e9g request …: the team's feature-request stack. Stakeholders' requests come in (from the operator, or e9g serve's
-// form), the planner researches each and promotes it into the task graph (e9g task add --request) or rejects it.
+// a6g request …: the team's feature-request stack. Stakeholders' requests come in (from the operator, or a6g serve's
+// form), the planner researches each and promotes it into the task graph (a6g task add --request) or rejects it.
 // Who sent a request is a stakeholder id and a role: names and email addresses stay with the stakeholders, which only
 // the operator's own commands show (Article 8).
 import { randomBytes } from "node:crypto";
@@ -12,13 +12,13 @@ import { openTeamStore } from "../tasks/ops.ts";
 import { Refused, update } from "../tasks/store.ts";
 import { list, type Options, parseArgs, text as optionText } from "../util.ts";
 
-export const USAGE = `usage: e9g request <command>
+export const USAGE = `usage: a6g request <command>
   add "<title>" [--body "…" | --body-file f] [--name "…" --email "…" --role "…" | --from sN]   (you; the planner without a person)
   list [--status s,t] [--all] [--json]   ·   show <id> [--json]
   note <id> "<text>"   ·   reject <id> --reason "…"   (the planner)
-  stakeholders [add --name "…" --email "…" --role "…" | revoke <sN>]   (you: a stakeholder's own link to e9g serve's form)`;
+  stakeholders [add --name "…" --email "…" --role "…" | revoke <sN>]   (you: a stakeholder's own link to a6g serve's form)`;
 
-const actor = (): string => (asOperator() ? OPERATOR : process.env.E9G_ROLE || "unknown");
+const actor = (): string => (asOperator() ? OPERATOR : process.env.A6G_ROLE || "unknown");
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const commaList = (value: Options[string]): string[] =>
@@ -55,9 +55,9 @@ export async function request(argv: string[]): Promise<number> {
     };
     if (sub === "add") {
       if (!operator && who !== "planner")
-        throw new Refused("stakeholders' requests come from the operator or e9g serve; members file tasks (e9g task add)");
+        throw new Refused("stakeholders' requests come from the operator or a6g serve; members file tasks (a6g task add)");
       const title = positional.join(" ").trim();
-      if (!title) throw new Refused('give it a title: e9g request add "<what they want>"');
+      if (!title) throw new Refused('give it a title: a6g request add "<what they want>"');
       const file = optionText(options["body-file"]);
       const body = file ? readFileSync(resolve(file), "utf8").trim() : (optionText(options["body"]) ?? "");
       const name = optionText(options["name"]);
@@ -69,7 +69,7 @@ export async function request(argv: string[]): Promise<number> {
         if (!operator) throw new Refused("an agent doesn't record people's names or addresses; leave out --name and --email");
         if (!name || !email || !EMAIL.test(email)) throw new Refused("a stakeholder needs --name, an --email and a --role");
         from = (await stakeholderFor(store, team.name, { name, email, role: role ?? "stakeholder" })).id;
-      } else if (from && !(await store.stakeholders.get(from))) throw new Refused(`no stakeholder ${from} (e9g request stakeholders)`);
+      } else if (from && !(await store.stakeholders.get(from))) throw new Refused(`no stakeholder ${from} (a6g request stakeholders)`);
       const added = await addRequest(store, team.name, { title, body, from, by: who });
       console.info(`request ${added.id} added: ${added.title}`);
       return 0;
@@ -89,17 +89,17 @@ export async function request(argv: string[]): Promise<number> {
         const key = randomBytes(18).toString("base64url");
         await update(store.stakeholders, found.id, (s) => ({ ...s, key: keyHash(key) }));
         console.info(
-          `${found.id} ${found.name} has a link of their own: e9g serve's address followed by /?token=${key}\nIt opens only the request form and their own requests. A new link replaces this one; e9g request stakeholders revoke ${found.id} ends it.`
+          `${found.id} ${found.name} has a link of their own: a6g serve's address followed by /?token=${key}\nIt opens only the request form and their own requests. A new link replaces this one; a6g request stakeholders revoke ${found.id} ends it.`
         );
         return 0;
       }
       if (action === "revoke") {
-        if (!id || !(await store.stakeholders.get(id))) throw new Refused("which stakeholder? e9g request stakeholders revoke <sN>");
+        if (!id || !(await store.stakeholders.get(id))) throw new Refused("which stakeholder? a6g request stakeholders revoke <sN>");
         await update(store.stakeholders, id, (s) => ({ ...s, key: null }));
         console.info(`${id}'s link no longer opens the form`);
         return 0;
       }
-      if (action) throw new Refused("e9g request stakeholders [add --name … --email … --role … | revoke <sN>]");
+      if (action) throw new Refused("a6g request stakeholders [add --name … --email … --role … | revoke <sN>]");
       const all = await store.stakeholders.all();
       console.info(
         all.length ? all.map((s) => `${s.id.padEnd(5)} ${s.name} <${s.email}>, ${s.role}${s.key ? " (has a link)" : ""}`).join("\n") : "no stakeholders"
@@ -143,7 +143,7 @@ export async function request(argv: string[]): Promise<number> {
     const r = await get(positional[0]);
     if (sub === "note") {
       const text = (optionText(options["text"]) ?? positional.slice(1).join(" ")).trim();
-      if (!text) throw new Refused('say what: e9g request note <id> "<text>"');
+      if (!text) throw new Refused('say what: a6g request note <id> "<text>"');
       // The planner's note on a new request starts its research; anyone else's leaves it new, for the planner.
       await update(store.requests, r.id, (x) => {
         const starts = x.status === "new" && who === "planner";
